@@ -1,0 +1,258 @@
+"use client";
+
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Slide1Data,
+  Slide2Data,
+  Slide3Data,
+  Slide4Data,
+  Slide5Data,
+  AdminCampaignTargetItem,
+  SaveDailyTargetsPayload,
+  RecognitionData,
+} from "@/types";
+import { useCrmConfig } from "@/hooks/use-crm-config";
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  sourceUrl?: string;
+  timestamp: string;
+  isMockFallback?: boolean;
+}
+
+// Slide 1 Hook
+export function useSlide1(date?: string, customPollInterval?: number | false) {
+  const { config } = useCrmConfig();
+  const refetchInterval =
+    customPollInterval !== undefined
+      ? customPollInterval
+      : config.autoSyncEnabled
+      ? config.analyticsSyncInterval * 1000
+      : false;
+
+  return useQuery<ApiResponse<Slide1Data>>({
+    queryKey: ["slide1", date || "today"],
+    queryFn: async () => {
+      const q = date ? `?date=${encodeURIComponent(date)}` : "";
+      const res = await fetch(`/api/analytics/slide1${q}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `CRM API error ${res.status}`);
+      }
+      return json;
+    },
+    refetchInterval,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  });
+}
+
+// Slide 2 Hook
+export function useSlide2(
+  date?: string,
+  page = 1,
+  limit: number | string = 10,
+  customPollInterval?: number | false
+) {
+  const { config } = useCrmConfig();
+  const refetchInterval =
+    customPollInterval !== undefined
+      ? customPollInterval
+      : config.autoSyncEnabled
+      ? config.analyticsSyncInterval * 1000
+      : false;
+
+  return useQuery<ApiResponse<Slide2Data>>({
+    queryKey: ["slide2", date || "today", page, limit],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (date) params.set("date", date);
+      params.set("page", String(page));
+      params.set("limit", String(limit));
+      const res = await fetch(`/api/analytics/slide2?${params.toString()}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `CRM API error ${res.status}`);
+      }
+      return json;
+    },
+    refetchInterval,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  });
+}
+
+// Slide 3 Hook (QA Heatmap)
+export function useSlide3(
+  date?: string,
+  interval?: number,
+  customPollInterval?: number | false
+) {
+  const { config } = useCrmConfig();
+  const bucketInterval = interval || config.heatmapGranularity || 10;
+  const refetchInterval =
+    customPollInterval !== undefined
+      ? customPollInterval
+      : config.autoSyncEnabled
+      ? config.analyticsSyncInterval * 1000
+      : false;
+
+  return useQuery<ApiResponse<Slide3Data>>({
+    queryKey: ["slide3", date || "today", bucketInterval],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (date) params.set("date", date);
+      params.set("interval", String(bucketInterval));
+      const res = await fetch(`/api/analytics/slide3?${params.toString()}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `CRM API error ${res.status}`);
+      }
+      return json;
+    },
+    refetchInterval,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  });
+}
+
+// Slide 4 Hook (Agent Heatmap)
+export function useSlide4(
+  date?: string,
+  interval?: number,
+  customPollInterval?: number | false
+) {
+  const { config } = useCrmConfig();
+  const bucketInterval = interval || config.heatmapGranularity || 10;
+  const refetchInterval =
+    customPollInterval !== undefined
+      ? customPollInterval
+      : config.autoSyncEnabled
+      ? config.analyticsSyncInterval * 1000
+      : false;
+
+  return useQuery<ApiResponse<Slide4Data>>({
+    queryKey: ["slide4", date || "today", bucketInterval],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (date) params.set("date", date);
+      params.set("interval", String(bucketInterval));
+      const res = await fetch(`/api/analytics/slide4?${params.toString()}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `CRM API error ${res.status}`);
+      }
+      return json;
+    },
+    refetchInterval,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  });
+}
+
+// Slide 5 Hook (Comparative Analytics)
+export function useSlide5(date?: string, customPollInterval?: number | false) {
+  const { config } = useCrmConfig();
+  const refetchInterval =
+    customPollInterval !== undefined
+      ? customPollInterval
+      : config.autoSyncEnabled
+      ? config.analyticsSyncInterval * 1000
+      : false;
+
+  return useQuery<ApiResponse<Slide5Data>>({
+    queryKey: ["slide5", date || "today"],
+    queryFn: async () => {
+      const q = date ? `?date=${encodeURIComponent(date)}` : "";
+      const res = await fetch(`/api/analytics/slide5${q}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `CRM API error ${res.status}`);
+      }
+      return json;
+    },
+    refetchInterval,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  });
+}
+
+// Campaign Targets Hook
+export function useCampaignTargets(date?: string, customPollInterval?: number | false) {
+  const { config } = useCrmConfig();
+  const targetDate = date || new Date().toISOString().split("T")[0];
+  const refetchInterval =
+    customPollInterval !== undefined
+      ? customPollInterval
+      : config.autoSyncEnabled
+      ? config.campaignTargetsSyncInterval * 1000
+      : false;
+
+  return useQuery<ApiResponse<{ target_date: string; total_campaigns: number; campaigns: AdminCampaignTargetItem[] }>>({
+    queryKey: ["campaign-targets", targetDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/campaign-targets?date=${encodeURIComponent(targetDate)}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `CRM API error ${res.status}`);
+      }
+      return json;
+    },
+    refetchInterval,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  });
+}
+
+// Save Campaign Targets Mutation
+export function useSaveCampaignTargets() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: SaveDailyTargetsPayload) => {
+      const res = await fetch("/api/campaign-targets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Failed to save daily targets in CRM database");
+      }
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["campaign-targets", variables.target_date] });
+      queryClient.invalidateQueries({ queryKey: ["slide1"] });
+    },
+  });
+}
+
+// Live Recognition & Announcements Hook
+export function useRecognitionFeed(date?: string, customPollInterval?: number | false) {
+  const { config } = useCrmConfig();
+  const refetchInterval =
+    customPollInterval !== undefined
+      ? customPollInterval
+      : config.autoSyncEnabled
+      ? config.recognitionSyncInterval * 1000
+      : false;
+
+  return useQuery<ApiResponse<RecognitionData>>({
+    queryKey: ["recognition", date || "today"],
+    queryFn: async () => {
+      const q = date ? `?date=${encodeURIComponent(date)}` : "";
+      const res = await fetch(`/api/analytics/recognition${q}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `CRM Recognition API error ${res.status}`);
+      }
+      return json;
+    },
+    refetchInterval,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  });
+}
