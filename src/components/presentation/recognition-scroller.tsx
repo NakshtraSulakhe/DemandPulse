@@ -7,13 +7,6 @@ import {
   Cake,
   Award,
   Sparkles,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  ChevronUp,
-  Play,
-  Pause,
-  Sliders,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -62,32 +55,24 @@ export default function RecognitionScroller({
     (sliderIndex + 1) * sliderPageSize
   );
 
-  const handleNextSlider = () => {
-    setSliderIndex((prev) => (prev >= maxSliderPage ? 0 : prev + 1));
-  };
-
-  const handlePrevSlider = () => {
-    setSliderIndex((prev) => (prev <= 0 ? maxSliderPage : prev - 1));
-  };
-
   const speedClass =
     speed === "fast"
       ? "animate-ticker-fast"
       : speed === "slow"
-      ? "animate-ticker-slow"
-      : "animate-ticker";
+        ? "animate-ticker-slow"
+        : "animate-ticker";
 
   if (error && !data) {
     return (
-      <div className="w-full glass-panel px-3 py-1.5 rounded-xl border border-rose-500/30 flex items-center justify-between text-xs text-rose-300">
+      <div className="w-full px-3.5 py-2 rounded-2xl border border-rose-500/30 bg-rose-50/70 dark:bg-rose-950/30 flex items-center justify-between text-xs text-rose-700 dark:text-rose-300 shadow-xs">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-rose-400" />
-          <span className="text-[11px]">Daily Recognition: Offline ({error.message})</span>
+          <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+          <span className="text-[11px] font-medium">Daily Recognition: Offline ({error.message})</span>
         </div>
         {onRetry && (
           <button
             onClick={onRetry}
-            className="px-2 py-0.5 rounded bg-rose-950/60 hover:bg-rose-900 border border-rose-500/40 text-white font-medium text-[10px]"
+            className="px-2.5 py-0.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-semibold text-[10px] cursor-pointer"
           >
             Retry
           </button>
@@ -98,9 +83,9 @@ export default function RecognitionScroller({
 
   if (isLoading && !data) {
     return (
-      <div className="w-full glass-panel px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2.5 text-xs text-slate-400">
-        <div className="w-3 h-3 border-2 border-cyan-400/20 border-t-cyan-400 rounded-full animate-spin" />
-        <span className="text-[11px]">Syncing live celebrations & top scorers...</span>
+      <div className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-slate-900/90 flex items-center gap-2.5 text-xs text-slate-500 dark:text-slate-400 shadow-xs">
+        <div className="w-3.5 h-3.5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
+        <span className="text-[11px] font-medium">Syncing live celebrations & top scorers...</span>
       </div>
     );
   }
@@ -112,53 +97,28 @@ export default function RecognitionScroller({
   const loopedItems = filteredItems.length > 0 ? [...filteredItems, ...filteredItems] : [];
 
   return (
-    <div className="w-full glass-panel rounded-xl border border-white/10 shadow-lg overflow-hidden backdrop-blur-xl relative transition-all">
-      {/* Top Status & Controls Bar */}
-      <div className="px-3 py-1.5 bg-slate-900/70 border-b border-white/5 flex flex-wrap items-center justify-between gap-2 text-[11px] select-none">
-        {/* Left: Section Header with Live Indicator & Quick Counts */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-cyan-500/15 border border-amber-400/25 text-amber-300 font-bold tracking-wide">
-            <Sparkles className="w-3 h-3 text-amber-400 animate-pulse" />
-            <span className="text-[9.5px] uppercase font-black tracking-wider">
-              Daily Recognition
-            </span>
-          </div>
-
-          <div className="hidden sm:flex items-center gap-2 text-slate-400 text-[10px]">
-            <span className="flex items-center gap-1 text-amber-300 font-medium">
-              <Trophy className="w-2.5 h-2.5 text-amber-400" /> {topScorersCount} Top Scorers Today
-            </span>
-            <span>•</span>
-            <span
-              className={`flex items-center gap-1 font-medium ${
-                birthdaysCount > 0 ? "text-rose-300 font-bold animate-pulse" : "text-slate-400"
-              }`}
-            >
-              <Cake className="w-2.5 h-2.5 text-rose-400" /> {birthdaysCount} Birthdays
-            </span>
-            <span>•</span>
-            <span
-              className={`flex items-center gap-1 font-medium ${
-                anniversariesCount > 0 ? "text-cyan-300 font-bold animate-pulse" : "text-slate-400"
-              }`}
-            >
-              <Award className="w-2.5 h-2.5 text-cyan-400" /> {anniversariesCount} Anniversaries
-            </span>
-          </div>
+    <div className="w-full rounded-2xl border border-slate-200/90 dark:border-white/10 border-t-[3px] border-t-cyan-400 bg-white/95 dark:bg-slate-900/90 shadow-sm overflow-hidden backdrop-blur-md transition-all">
+      {/* Top Header Row matching the exact screenshot layout */}
+      <div className="px-4 py-2 border-b border-slate-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-2 select-none bg-slate-50/70 dark:bg-slate-950/40">
+        {/* Left: Section Header Title */}
+        <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[11px]">
+          <Sparkles className="w-3.5 h-3.5 text-cyan-500" />
+          <span>Live Recognition & Announcements</span>
         </div>
 
-        {/* Right: Category Filter Pills & Mode Toggles */}
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-          <div className="flex items-center bg-slate-900/80 p-0.5 rounded-md border border-white/10">
+        {/* Right: Quick Category Filter Pills & Mode Pill Controls */}
+        <div className="flex items-center gap-1.5 text-[10.5px]">
+          {/* Quick Filter Pill Buttons */}
+          <div className="hidden sm:flex items-center gap-1">
             <button
               onClick={() => {
                 setActiveFilter("all");
                 setSliderIndex(0);
               }}
-              className={`px-1.5 py-0.5 rounded text-[9.5px] font-semibold transition-all ${
+              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all cursor-pointer ${
                 activeFilter === "all"
-                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/30"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-400/40"
+                  : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
               }`}
             >
               All ({rawItems.length})
@@ -168,81 +128,92 @@ export default function RecognitionScroller({
                 setActiveFilter("top_lead_scorer");
                 setSliderIndex(0);
               }}
-              className={`px-1.5 py-0.5 rounded text-[9.5px] font-semibold transition-all flex items-center gap-1 ${
+              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
                 activeFilter === "top_lead_scorer"
-                  ? "bg-amber-500/20 text-amber-300 border border-amber-400/30"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-400/40"
+                  : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
               }`}
             >
-              <Trophy className="w-2.5 h-2.5 text-amber-400" />
+              <Trophy className="w-2.5 h-2.5 text-amber-500" />
               <span>Top ({topScorersCount})</span>
             </button>
-            <button
-              onClick={() => {
-                setActiveFilter("birthday");
-                setSliderIndex(0);
-              }}
-              className={`px-1.5 py-0.5 rounded text-[9.5px] font-semibold transition-all flex items-center gap-1 ${
-                activeFilter === "birthday"
-                  ? "bg-rose-500/20 text-rose-300 border border-rose-400/30"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              <Cake className="w-2.5 h-2.5 text-rose-400" />
-              <span>Birthdays ({birthdaysCount})</span>
-            </button>
-            <button
-              onClick={() => {
-                setActiveFilter("anniversary");
-                setSliderIndex(0);
-              }}
-              className={`px-1.5 py-0.5 rounded text-[9.5px] font-semibold transition-all flex items-center gap-1 ${
-                activeFilter === "anniversary"
-                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400/30"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              <Award className="w-2.5 h-2.5 text-cyan-400" />
-              <span>Anniv ({anniversariesCount})</span>
-            </button>
+            {birthdaysCount > 0 && (
+              <button
+                onClick={() => {
+                  setActiveFilter("birthday");
+                  setSliderIndex(0);
+                }}
+                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
+                  activeFilter === "birthday"
+                    ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-400/40"
+                    : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                <Cake className="w-2.5 h-2.5 text-rose-500" />
+                <span>Birthdays ({birthdaysCount})</span>
+              </button>
+            )}
+            {anniversariesCount > 0 && (
+              <button
+                onClick={() => {
+                  setActiveFilter("anniversary");
+                  setSliderIndex(0);
+                }}
+                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
+                  activeFilter === "anniversary"
+                    ? "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-400/40"
+                    : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                <Award className="w-2.5 h-2.5 text-purple-500" />
+                <span>Anniv ({anniversariesCount})</span>
+              </button>
+            )}
           </div>
 
+          {/* Active Cards Pill - matches screenshot */}
+          <span className="px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-white/15 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10.5px] font-medium shadow-2xs">
+            {filteredItems.length} active card{filteredItems.length === 1 ? "" : "s"}
+          </span>
+
+          {/* Mode Pill - matches screenshot */}
           <button
             onClick={() => setDisplayMode(displayMode === "marquee" ? "slider" : "marquee")}
-            className="p-0.5 rounded bg-slate-900 border border-white/10 text-slate-300 hover:text-white text-[9.5px] flex items-center gap-1 px-1.5 cursor-pointer"
+            className="px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-white/15 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10.5px] font-medium transition-colors cursor-pointer shadow-2xs"
             title="Toggle between Marquee Ticker and Card Slider"
           >
-            <span>{displayMode === "marquee" ? "Ticker" : "Cards"}</span>
+            Mode: {displayMode === "marquee" ? "Marquee" : "Slider"}
           </button>
         </div>
       </div>
 
-      {/* Main Content Area: Marquee Ticker OR Slider */}
+      {/* Main Content Area: Single-line Horizontal Flow */}
       {filteredItems.length === 0 ? (
-        <div className="py-2 px-4 flex items-center justify-between text-xs text-slate-400">
+        <div className="py-2.5 px-4 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-1.5 text-[11px]">
-            {activeFilter === "birthday" && <Cake className="w-3.5 h-3.5 text-rose-400" />}
-            {activeFilter === "anniversary" && <Award className="w-3.5 h-3.5 text-cyan-400" />}
-            {activeFilter === "top_lead_scorer" && <Trophy className="w-3.5 h-3.5 text-amber-400" />}
+            {activeFilter === "birthday" && <Cake className="w-3.5 h-3.5 text-rose-500" />}
+            {activeFilter === "anniversary" && <Award className="w-3.5 h-3.5 text-purple-500" />}
+            {activeFilter === "top_lead_scorer" && <Trophy className="w-3.5 h-3.5 text-amber-500" />}
             <span>
               No {activeFilter === "birthday" ? "birthdays" : activeFilter === "anniversary" ? "work anniversaries" : "records"} celebrating today ({data?.target_date || "Today"}).
             </span>
           </div>
           <button
             onClick={() => setActiveFilter("all")}
-            className="text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer underline text-[10px]"
+            className="text-cyan-600 dark:text-cyan-400 hover:underline font-semibold cursor-pointer text-[10.5px]"
           >
             Show Top Scorers Today ({topScorersCount}) →
           </button>
         </div>
       ) : displayMode === "marquee" ? (
         <div
-          className="relative w-full overflow-hidden py-1.5 select-none"
+          className="relative w-full overflow-hidden py-2 px-2 select-none"
           onMouseEnter={() => setIsPaused(true)}
           onMouseLeave={() => setIsPaused(false)}
         >
-          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-[#070b14] to-transparent z-10 pointer-events-none" />
-          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[#070b14] to-transparent z-10 pointer-events-none" />
+          {/* Subtle edge fade overlays for light & dark mode */}
+          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white dark:from-[#070b14] to-transparent z-10 pointer-events-none" />
+          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white dark:from-[#070b14] to-transparent z-10 pointer-events-none" />
 
           <div
             className={speedClass}
@@ -256,14 +227,14 @@ export default function RecognitionScroller({
           </div>
         </div>
       ) : (
-        <div className="p-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+        <div className="p-2.5 grid grid-cols-1 md:grid-cols-3 gap-2.5">
           <AnimatePresence mode="wait">
             {visibleSliderItems.map((item) => (
               <motion.div
                 key={item.id}
-                initial={{ opacity: 0, y: 6 }}
+                initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
+                exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.2 }}
               >
                 <RecognitionCard item={item} isSlider />
@@ -277,7 +248,9 @@ export default function RecognitionScroller({
 }
 
 /**
- * Individual Celebratory Card - Reduced compact dimensions
+ * Individual Celebratory Card Strip
+ * Structured as a single sleek horizontal pill exactly as in the CRM Admin Dashboard screenshot:
+ * [Photo] [🏆 Badge] [#Rank] Cyrus Navrathinam • Operations • 112.5% productivity today...
  */
 function RecognitionCard({
   item,
@@ -290,37 +263,71 @@ function RecognitionCard({
   const isBirthday = item.type === "birthday";
   const isAnniversary = item.type === "anniversary";
 
-  const borderClass = isTopScorer
-    ? "border-amber-500/35 hover:border-amber-400 bg-gradient-to-r from-amber-950/30 via-slate-900/90 to-amber-950/20 shadow-amber-500/5"
-    : isBirthday
-    ? "border-rose-500/35 hover:border-rose-400 bg-gradient-to-r from-rose-950/30 via-slate-900/90 to-pink-950/20 shadow-rose-500/5"
-    : "border-cyan-500/35 hover:border-cyan-400 bg-gradient-to-r from-cyan-950/30 via-slate-900/90 to-blue-950/20 shadow-cyan-500/5";
+  // Check if item is a target achiever (top lead scorer or explicitly labelled target achiever)
+  const isTargetAchiever =
+    isTopScorer ||
+    item.eyebrow?.toLowerCase().includes("target achiever") ||
+    item.badge?.toLowerCase().includes("target achiever");
 
-  const badgeBg = isTopScorer
-    ? "bg-amber-500/15 text-amber-300 border-amber-400/30"
+  // Category Badge Pill Styling with high contrast in both Light & Dark modes
+  const badgeClasses = isTopScorer
+    ? "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300 border border-sky-200/90 dark:border-sky-500/30"
     : isBirthday
-    ? "bg-rose-500/15 text-rose-300 border-rose-400/30"
-    : "bg-cyan-500/15 text-cyan-300 border-cyan-400/30";
+    ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300 border border-rose-200/90 dark:border-rose-500/30"
+    : "bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200/90 dark:border-purple-500/30";
 
+  // Avatar Icon fallback background
   const iconBg = isTopScorer
-    ? "bg-amber-500/20 text-amber-400 ring-1 ring-amber-400/40"
+    ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
     : isBirthday
-    ? "bg-rose-500/20 text-rose-400 ring-1 ring-rose-400/40"
-    : "bg-cyan-500/20 text-cyan-400 ring-1 ring-cyan-400/40";
+    ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+    : "bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300";
+
+  // Resolve earned daily incentive amount
+  let earnedIncentive = item.incentive_amount;
+  if (!earnedIncentive && isTargetAchiever) {
+    const textPool = `${item.eyebrow || ""} ${item.message || ""} ${item.subtitle || ""}`;
+    const match = textPool.match(/(?:₹|INR\s*|Rs\.?\s*)(\d+[\d,]*)/i);
+    if (match) {
+      earnedIncentive = parseInt(match[1].replace(/,/g, ""), 10);
+    } else if (item.completion_percentage && item.completion_percentage >= 150) {
+      earnedIncentive = 1100;
+    } else if (item.completion_percentage && item.completion_percentage >= 125) {
+      earnedIncentive = 850;
+    } else if (item.score && item.score >= 8) {
+      earnedIncentive = 600;
+    } else {
+      earnedIncentive = 500;
+    }
+  }
+
+  // Format the earned daily incentive text
+  const formattedIncentiveText = earnedIncentive != null
+    ? `₹${earnedIncentive.toLocaleString("en-IN")} Daily Incentive Earned`
+    : `₹500 Daily Incentive Earned`;
+
+  // Display text: For target achievers, ALWAYS show the earned daily incentive amount instead of "Today's Target Achiever"
+  const hasIncentiveInEyebrow = item.eyebrow && (item.eyebrow.includes("₹") || item.eyebrow.toLowerCase().includes("incentive"));
+  const departmentOrIncentive = isTargetAchiever
+    ? (hasIncentiveInEyebrow ? item.eyebrow : formattedIncentiveText)
+    : (item.eyebrow || (isTopScorer ? "Operations" : "Team Member"));
+
+  // Achievement text / Subtitle
+  const detailsText = item.subtitle || item.message || "";
 
   return (
     <div
-      className={`relative mx-1 px-2.5 py-1.5 rounded-lg border ${borderClass} transition-all duration-200 shadow flex items-center gap-2.5 shrink-0 ${
-        isSlider ? "w-full" : "min-w-[190px] max-w-[225px]"
+      className={`relative mx-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-800/80 hover:border-cyan-400/50 shadow-2xs flex items-center gap-2.5 whitespace-nowrap shrink-0 transition-all ${
+        isSlider ? "w-full" : "max-w-none"
       }`}
     >
-      {/* Avatar / Icon Bubble */}
+      {/* 1. Circular Avatar Photo / Icon Bubble */}
       <div className="relative shrink-0">
         {item.profile_pic ? (
           <img
             src={item.profile_pic}
             alt={item.title}
-            className="w-8 h-8 rounded-lg object-cover ring-1 ring-white/15 shadow bg-slate-800"
+            className="w-7 h-7 sm:w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 dark:ring-white/20 shadow-xs bg-slate-100 dark:bg-slate-800"
             onError={(e) => {
               (e.target as HTMLElement).style.display = "none";
               const fallback = (e.target as HTMLElement).nextElementSibling as HTMLElement;
@@ -330,37 +337,60 @@ function RecognitionCard({
         ) : null}
         <div
           style={{ display: item.profile_pic ? "none" : "flex" }}
-          className={`w-8 h-8 rounded-lg ${iconBg} items-center justify-center font-bold text-[10px]`}
+          className={`w-7 h-7 sm:w-8 h-8 rounded-full ${iconBg} items-center justify-center font-bold shadow-xs`}
         >
-          {isTopScorer && <Trophy className="w-4 h-4 text-amber-400 animate-pulse" />}
-          {isBirthday && <Cake className="w-4 h-4 text-rose-400 animate-bounce" />}
-          {isAnniversary && <Award className="w-4 h-4 text-cyan-400 animate-pulse" />}
-        </div>
-
-        {isTopScorer && item.rank && (
-          <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[8.5px] flex items-center justify-center shadow">
-            {item.rank}
-          </span>
-        )}
-      </div>
-
-      {/* Card Content Text */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1 mb-0.5">
-          <span className={`px-1.5 py-0.2 rounded text-[8px] font-bold border ${badgeBg} truncate`}>
-            {item.badge}
-          </span>
-        </div>
-
-        {/* Agent Name: Increased font size and font weight for high visibility on TV displays */}
-        <div className="font-extrabold text-[13.5px] sm:text-[14.5px] text-white truncate tracking-tight leading-tight">
-          {item.title}
-        </div>
-
-        <div className="text-[9.5px] sm:text-[10px] text-slate-300 font-semibold truncate mt-0.5">
-          {item.subtitle}
+          {isTopScorer && <Trophy className="w-3.5 h-3.5" />}
+          {isBirthday && <Cake className="w-3.5 h-3.5" />}
+          {isAnniversary && <Award className="w-3.5 h-3.5" />}
         </div>
       </div>
+
+      {/* 2. Category Badge Pill (e.g. 🏆 Daily Incentive Winner) */}
+      <div className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1 shrink-0 ${badgeClasses}`}>
+        {isTopScorer && <Trophy className="w-3 h-3 text-sky-600 dark:text-sky-400" />}
+        {isBirthday && <Cake className="w-3 h-3 text-rose-600 dark:text-rose-400" />}
+        {isAnniversary && <Award className="w-3 h-3 text-purple-600 dark:text-purple-400" />}
+        <span>{item.badge}</span>
+      </div>
+
+      {/* 3. Rank Badge (#5) if available */}
+      {item.rank && (
+        <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 text-[10.5px] font-mono font-bold shrink-0">
+          #{item.rank}
+        </span>
+      )}
+
+      {/* 4. Agent Name: Bold, high contrast in both light & dark mode */}
+      <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-[13.5px] tracking-tight shrink-0">
+        {item.title}
+      </span>
+
+      {/* 5. Separator Bullet */}
+      <span className="text-slate-300 dark:text-slate-600 font-bold mx-0.5 select-none shrink-0">•</span>
+
+      {/* 6. Earned Daily Incentive Amount (for Target Achievers) or Department / Role */}
+      {isTargetAchiever ? (
+        <span className="font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200/90 dark:border-emerald-500/30 px-2 py-0.5 rounded-md text-xs shrink-0 shadow-2xs flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <span>{departmentOrIncentive}</span>
+        </span>
+      ) : (
+        <span className="text-slate-500 dark:text-slate-400 text-xs font-medium shrink-0">
+          {departmentOrIncentive}
+        </span>
+      )}
+
+      {/* 7. Separator Bullet */}
+      {detailsText && (
+        <span className="text-slate-300 dark:text-slate-600 font-bold mx-0.5 select-none shrink-0">•</span>
+      )}
+
+      {/* 8. Achievement message / Productivity */}
+      {detailsText && (
+        <span className="text-slate-600 dark:text-slate-300 text-xs font-normal truncate">
+          {detailsText}
+        </span>
+      )}
     </div>
   );
 }

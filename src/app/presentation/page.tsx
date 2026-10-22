@@ -43,14 +43,14 @@ export default function PresentationPage() {
       if (savedTv !== null) {
         setIsTvMode(savedTv === "true");
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const handleHeatmapIntervalChange = useCallback((newInterval: number) => {
     setHeatmapInterval(newInterval);
     try {
       localStorage.setItem("demandflow-heatmap-interval", String(newInterval));
-    } catch {}
+    } catch { }
   }, []);
 
   const handleToggleTvMode = useCallback(() => {
@@ -58,7 +58,7 @@ export default function PresentationPage() {
       const next = !prev;
       try {
         localStorage.setItem("demandflow-tv-mode", String(next));
-      } catch {}
+      } catch { }
       return next;
     });
   }, []);
@@ -176,7 +176,7 @@ export default function PresentationPage() {
       />
 
       {/* Live Daily Floor Recognition Ticker (Top Leads Scored, Birthdays, Anniversaries) */}
-      <div className="w-full max-w-[1450px] mx-auto px-3 sm:px-4 pt-1 z-10">
+      <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-5 pt-1.5 z-10">
         <RecognitionScroller
           data={recogQuery.data?.data}
           isLoading={recogQuery.isLoading}

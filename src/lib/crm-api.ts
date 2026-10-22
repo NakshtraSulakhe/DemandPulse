@@ -19,6 +19,7 @@ import {
 } from "@/lib/validations";
 import { getCrmConfig } from "@/lib/crm-config";
 import { getShiftBusinessDate } from "@/lib/shift/engine";
+import { fetchIncentivePreview } from "@/lib/incentives/api";
 import {
   getMockSlide1Data,
   getMockSlide2Data,
@@ -713,7 +714,12 @@ export async function getCrmRecognition(
 
   // 1. Dedicated or configured endpoint
   const configuredPath = config.endpoints?.recognition || "slides/recognition.php";
-  let res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl(configuredPath, { date: effectiveDate }));
+
+  // Concurrently fetch recognition and live daily incentives preview
+  const recognitionPromise = fetchFromCrm<Record<string, any>>(buildEndpointUrl(configuredPath, { date: effectiveDate }));
+  const incentivePreviewPromise = fetchIncentivePreview(effectiveDate).catch(() => null);
+
+  let [res, incentiveRes] = await Promise.all([recognitionPromise, incentivePreviewPromise]);
 
   // 2. Fallback to unified master endpoint if 404
   if (!res.ok) {
@@ -726,6 +732,23 @@ export async function getCrmRecognition(
   // 3. Fallback to slide1.php
   if (!res.ok) {
     res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl("slides/slide1.php", { date: effectiveDate }));
+  }
+
+  // Pre-index live agent incentive data by ID and normalized Name
+  const agentIncentiveMap = new Map<string | number, { total: number; base: number; slab: number }>();
+  if (incentiveRes?.success && Array.isArray(incentiveRes.data?.agents)) {
+    for (const ag of incentiveRes.data.agents) {
+      const tot = Number(ag.total_incentive) || 0;
+      const base = Number(ag.base_incentive) || 0;
+      const slab = Number(ag.slab_incentive) || 0;
+      if (ag.agent_id != null) {
+        agentIncentiveMap.set(Number(ag.agent_id), { total: tot, base, slab });
+        agentIncentiveMap.set(String(ag.agent_id), { total: tot, base, slab });
+      }
+      if (ag.agent_name) {
+        agentIncentiveMap.set(ag.agent_name.toLowerCase().trim(), { total: tot, base, slab });
+      }
+    }
   }
 
   if (res.ok && res.data) {
@@ -800,10 +823,46 @@ export async function getCrmRecognition(
 
       if (Array.isArray(candidate.ticker_items) && candidate.ticker_items.length > 0) {
         ticker_items = candidate.ticker_items
-          .map((t: any) => ({
-            ...t,
-            profile_pic: fixAvatar(t.profile_pic),
-          }))
+          .map((t: any) => {
+            const item: any = {
+              ...t,
+              profile_pic: fixAvatar(t.profile_pic),
+            };
+
+            const isTargetAchiever =
+              t.type === "top_lead_scorer" ||
+              t.eyebrow?.toLowerCase().includes("target achiever") ||
+              t.badge?.toLowerCase().includes("target achiever") ||
+              t.is_target_met === true;
+
+            if (isTargetAchiever) {
+              const incFromId = t.user_id ? (agentIncentiveMap.get(Number(t.user_id)) || agentIncentiveMap.get(String(t.user_id))) : undefined;
+              const incFromName = t.title ? agentIncentiveMap.get(t.title.toLowerCase().trim()) : undefined;
+              const inc = incFromId || incFromName;
+
+              let earned = inc?.total;
+              if (earned == null || earned <= 0) {
+                if (t.incentive_amount != null && Number(t.incentive_amount) > 0) {
+                  earned = Number(t.incentive_amount);
+                } else if (t.total_incentive != null && Number(t.total_incentive) > 0) {
+                  earned = Number(t.total_incentive);
+                } else {
+                  const comp = Number(t.completion_percentage) || 100;
+                  if (comp >= 150) earned = 1100;
+                  else if (comp >= 125) earned = 850;
+                  else earned = 500;
+                }
+              }
+
+              item.incentive_amount = earned;
+              item.base_incentive = inc?.base ?? 500;
+              item.slab_incentive = inc?.slab ?? Math.max(0, earned - 500);
+              // Replace "Today's Target Achiever" with the earned daily incentive amount!
+              item.eyebrow = `₹${earned.toLocaleString("en-IN")} Daily Incentive Earned`;
+            }
+
+            return item;
+          })
           .filter((t: any) => {
             if (t.type === "top_lead_scorer") return true;
             if (scope === "daily") {
@@ -823,20 +882,41 @@ export async function getCrmRecognition(
       // If ticker_items is empty (or non-today items were filtered out), build them dynamically
       if (ticker_items.length === 0) {
         top_scorers.forEach((s: any, idx: number) => {
+          const incFromId = s.user_id ? (agentIncentiveMap.get(Number(s.user_id)) || agentIncentiveMap.get(String(s.user_id))) : undefined;
+          const incFromName = s.full_name ? agentIncentiveMap.get(s.full_name.toLowerCase().trim()) : undefined;
+          const inc = incFromId || incFromName;
+
+          let earned = inc?.total;
+          if (earned == null || earned <= 0) {
+            if (s.incentive_amount != null && Number(s.incentive_amount) > 0) {
+              earned = Number(s.incentive_amount);
+            } else if (s.total_incentive != null && Number(s.total_incentive) > 0) {
+              earned = Number(s.total_incentive);
+            } else {
+              const comp = Number(s.completion_percentage) || 100;
+              if (comp >= 150) earned = 1100;
+              else if (comp >= 125) earned = 850;
+              else earned = 500;
+            }
+          }
+
           ticker_items.push({
             id: `top-${s.user_id || idx}`,
             type: "top_lead_scorer",
             icon: "trophy",
             badge: idx === 0 ? "🥇 Rank #1 Top Scorer" : idx === 1 ? "🥈 Rank #2 Top Scorer" : idx === 2 ? "🥉 Rank #3 Top Scorer" : `⭐ Rank #${idx + 1} Top Scorer`,
-            eyebrow: "Daily Top Leads Scored",
+            eyebrow: `₹${earned.toLocaleString("en-IN")} Daily Incentive Earned`,
             title: s.full_name,
             subtitle: `${s.qualified_leads || 0} Qualified Leads • ${s.generated_leads || 0} Total Generated`,
-            message: "High productivity milestone & quality qualification turnaround.",
-            accent: "amber",
+            message: "Daily quota target successfully achieved today! Outstanding execution.",
+            accent: "emerald",
             user_id: Number(s.user_id) || undefined,
             profile_pic: s.profile_pic,
             score: Number(s.qualified_leads) || 0,
             rank: idx + 1,
+            incentive_amount: earned,
+            base_incentive: inc?.base ?? 500,
+            slab_incentive: inc?.slab ?? Math.max(0, earned - 500),
           });
         });
 

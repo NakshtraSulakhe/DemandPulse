@@ -234,6 +234,10 @@ export interface RecognitionTickerItem {
   rank?: number;
   years?: number;
   is_today?: boolean;
+  completion_percentage?: number;
+  incentive_amount?: number;
+  base_incentive?: number;
+  slab_incentive?: number;
 }
 
 export interface RecognitionData {

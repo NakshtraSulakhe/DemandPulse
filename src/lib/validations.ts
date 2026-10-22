@@ -233,6 +233,10 @@ export const RecognitionTickerItemSchema = z.object({
   rank: z.coerce.number().optional(),
   years: z.coerce.number().optional(),
   is_today: z.boolean().optional(),
+  completion_percentage: z.coerce.number().optional(),
+  incentive_amount: z.coerce.number().optional(),
+  base_incentive: z.coerce.number().optional(),
+  slab_incentive: z.coerce.number().optional(),
 });
 
 export const RecognitionDataSchema = z.object({
