@@ -19,10 +19,11 @@ import {
 
 export default function CampaignTargetsPage() {
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
+  const [statusFilter, setStatusFilter] = useState<"Live" | "all">("Live");
   const [targetDrafts, setTargetDrafts] = useState<Record<number, { target: number; notes: string }>>({});
   const [saveStatus, setSaveStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  const { data: targetsData, isLoading, isFetching, refetch } = useCampaignTargets(selectedDate);
+  const { data: targetsData, isLoading, isFetching, refetch } = useCampaignTargets(selectedDate, statusFilter);
   const saveMutation = useSaveCampaignTargets();
 
   const campaigns = targetsData?.data?.campaigns || [];
@@ -139,8 +140,38 @@ export default function CampaignTargetsPage() {
           </p>
         </div>
 
-        {/* Date Selector & Batch Save */}
-        <div className="flex items-center gap-3">
+        {/* Date Selector, Status Filter & Batch Save */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Status Filter Toggle */}
+          <div className="flex items-center gap-1 p-1 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-xs">
+            <button
+              type="button"
+              onClick={() => setStatusFilter("Live")}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                statusFilter === "Live"
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+              title="Only Live campaigns: WHERE c.active = 1 AND (d.status = 'Live' OR d.status IS NULL)"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${statusFilter === "Live" ? "bg-white" : "bg-emerald-500"} animate-pulse`} />
+              <span>Live Campaigns</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter("all")}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                statusFilter === "all"
+                  ? "bg-cyan-600 text-white shadow-xs"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+              title="All active campaigns (including paused or draft)"
+            >
+              <span>All Campaigns</span>
+            </button>
+          </div>
+
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-xs">
             <Calendar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
             <input
@@ -247,10 +278,15 @@ export default function CampaignTargetsPage() {
           <div>
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-              Live CRM Campaigns & Daily Target Controls
+              <span>{statusFilter === "Live" ? "Live CRM Campaigns" : "All CRM Campaigns"} &amp; Daily Target Controls</span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                {campaigns.length} {statusFilter === "Live" ? "Live" : "Total"}
+              </span>
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Allocated target values persist to CRM MySQL table <code className="font-mono text-cyan-700 dark:text-cyan-300">campaign_daily_targets</code>
+              {statusFilter === "Live"
+                ? "Filtered strictly for Live Campaigns: WHERE c.active = 1 AND (d.status = 'Live' OR d.status IS NULL)."
+                : "Showing all active campaigns in DemandFlow Bridge (includes paused and draft)."}
             </p>
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -306,6 +342,16 @@ export default function CampaignTargetsPage() {
                         <td className="py-3.5 px-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <div className="font-semibold text-slate-900 dark:text-white">{camp.campaign_name}</div>
+                            {(!camp.campaign_status || camp.campaign_status.toLowerCase() === "live") ? (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 whitespace-nowrap flex items-center gap-1">
+                                <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                                LIVE
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 whitespace-nowrap">
+                                {camp.campaign_status}
+                              </span>
+                            )}
                             {camp.campaign_type && (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 whitespace-nowrap">
                                 {camp.campaign_type}

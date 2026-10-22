@@ -24,6 +24,8 @@ export const CampaignSlide1Schema = z.object({
   pending_qa: z.number().default(0),
   remaining_leads_to_qualify: z.number().default(0),
   completion_percentage: z.number().default(0),
+  campaign_status: z.string().optional().nullable(),
+  active: z.union([z.number(), z.boolean()]).optional().nullable(),
 }).passthrough();
 
 export const LateComerSchema = z.object({
@@ -100,8 +102,8 @@ export const Slide3ResponseSchema = z.object({
   sliders: z.any().optional(),
   slide3: z.object({
     date: z.string(),
-    shift_start: z.string().default("09:30:00"),
-    shift_end: z.string().default("18:30:00"),
+    shift_start: z.string().default("17:30:00"),
+    shift_end: z.string().default("02:30:00"),
     interval_minutes: z.number().default(10),
     total_intervals: z.number().default(54),
     total_qa_analysts: z.number().default(0),
@@ -191,6 +193,8 @@ export const AdminCampaignTargetItemSchema = z.object({
   remaining_leads_to_qualify: z.number().default(0),
   remaining_leads_to_generate: z.number().default(0),
   completion_percentage: z.number().default(0),
+  campaign_status: z.string().optional().nullable(),
+  active: z.union([z.number(), z.boolean()]).optional().nullable(),
   notes: z.string().optional().nullable(),
 }).passthrough();
 

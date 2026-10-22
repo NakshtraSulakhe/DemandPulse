@@ -19,9 +19,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { baseUrl, token, timeoutMs } = body;
+    const { baseUrl, token, timeoutMs, endpoints } = body;
 
-    const report = await testCrmConnection(baseUrl, token, timeoutMs);
+    const report = await testCrmConnection(baseUrl, token, timeoutMs, endpoints);
 
     return NextResponse.json({
       ok: report.ok,

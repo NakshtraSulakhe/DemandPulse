@@ -12,13 +12,15 @@ export const revalidate = 0;
  */
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date") || new Date().toISOString().split("T")[0];
-  const result = await getCrmCampaignTargets(date);
+  const status = req.nextUrl.searchParams.get("status") || "Live";
+  const result = await getCrmCampaignTargets(date, status);
 
   return NextResponse.json(result, {
     status: result.success ? 200 : 502,
     headers: {
       "Cache-Control": "no-store, no-cache, must-revalidate",
       "X-Data-Source": "live-crm-api",
+      "X-Campaign-Filter": status,
     },
   });
 }

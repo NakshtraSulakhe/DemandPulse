@@ -87,8 +87,8 @@ export function getMockSlide1Data(dateStr?: string): Slide1Data {
         user_id: 12,
         full_name: "Marcus Vance",
         role: "Senior SDR",
-        punch_in: "09:47:12",
-        shift_start_time: "09:30:00",
+        punch_in: "17:47:12",
+        shift_start_time: "17:30:00",
         grace_minutes: 10,
         late_minutes: 7,
         status: "Late Present",
@@ -97,8 +97,8 @@ export function getMockSlide1Data(dateStr?: string): Slide1Data {
         user_id: 19,
         full_name: "Aaliyah Chen",
         role: "Inbound Specialist",
-        punch_in: "09:51:30",
-        shift_start_time: "09:30:00",
+        punch_in: "17:51:30",
+        shift_start_time: "17:30:00",
         grace_minutes: 10,
         late_minutes: 11,
         status: "Late Present",
@@ -231,8 +231,8 @@ export function getMockSlide3Data(intervalMinutes = 10): Slide3Data {
 
   return {
     date: new Date().toISOString().split("T")[0],
-    shift_start: "09:30:00",
-    shift_end: "18:30:00",
+    shift_start: "17:30:00",
+    shift_end: "02:30:00",
     interval_minutes: intervalMinutes,
     total_intervals: slotCount,
     total_qa_analysts: analysts.length,
@@ -267,8 +267,8 @@ export function getMockSlide4Data(intervalMinutes = 10): Slide4Data {
 
   return {
     date: new Date().toISOString().split("T")[0],
-    shift_start: "09:30:00",
-    shift_end: "18:30:00",
+    shift_start: "17:30:00",
+    shift_end: "02:30:00",
     interval_minutes: intervalMinutes,
     total_intervals: slotCount,
     total_agents: agents.length,
@@ -277,7 +277,7 @@ export function getMockSlide4Data(intervalMinutes = 10): Slide4Data {
 }
 
 export function getMockSlide5Data(): Slide5Data {
-  const times = ["09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30"];
+  const times = ["17:30", "18:30", "19:30", "20:30", "21:30", "22:30", "23:30", "00:30", "01:30"];
   let cumGen = 0;
   let cumAud = 0;
   let cumQual = 0;

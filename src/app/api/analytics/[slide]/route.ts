@@ -48,8 +48,8 @@ export async function GET(
 
       case "slide3": {
         const interval = parseInt(searchParams.get("interval") || "10", 10);
-        const shiftStart = searchParams.get("shift_start") || "09:30:00";
-        const shiftEnd = searchParams.get("shift_end") || "18:30:00";
+        const shiftStart = searchParams.get("shift_start") || "17:30:00";
+        const shiftEnd = searchParams.get("shift_end") || "02:30:00";
         const result = await getCrmSlide3(date, interval, shiftStart, shiftEnd);
         return NextResponse.json(result, {
           status: result.success ? 200 : 502,
@@ -62,8 +62,8 @@ export async function GET(
 
       case "slide4": {
         const interval = parseInt(searchParams.get("interval") || "10", 10);
-        const shiftStart = searchParams.get("shift_start") || "09:30:00";
-        const shiftEnd = searchParams.get("shift_end") || "18:30:00";
+        const shiftStart = searchParams.get("shift_start") || "17:30:00";
+        const shiftEnd = searchParams.get("shift_end") || "02:30:00";
         const result = await getCrmSlide4(date, interval, shiftStart, shiftEnd);
         return NextResponse.json(result, {
           status: result.success ? 200 : 502,
@@ -75,7 +75,9 @@ export async function GET(
       }
 
       case "slide5": {
-        const result = await getCrmSlide5(date);
+        const shiftStart = searchParams.get("shift_start") || "17:30:00";
+        const shiftEnd = searchParams.get("shift_end") || "02:30:00";
+        const result = await getCrmSlide5(date, shiftStart, shiftEnd);
         return NextResponse.json(result, {
           status: result.success ? 200 : 502,
           headers: {

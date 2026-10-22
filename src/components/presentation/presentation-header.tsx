@@ -19,6 +19,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import ThemeToggle from "@/components/theme/theme-toggle";
 import HeatmapIntervalSelector from "@/components/presentation/heatmap-interval-selector";
+import { useShiftEngine } from "@/hooks/useShiftEngine";
 
 interface PresentationHeaderProps {
   currentSlide: number;
@@ -65,6 +66,7 @@ export default function PresentationHeader({
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(true);
   const [clock, setClock] = useState<string>("");
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const shift = useShiftEngine(5000);
 
   useEffect(() => {
     try {
@@ -144,6 +146,12 @@ export default function PresentationHeader({
               >
                 {autoRotate ? `${countdownSeconds}s remaining` : "Rotation Paused"}
               </span>
+              <div className="hidden lg:flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800/80 border border-slate-700 text-slate-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Shift: {shift.businessDate}</span>
+                <span className="text-slate-500">•</span>
+                <span className="text-amber-300">US: {shift.currentUsFormatted || "—"}</span>
+              </div>
             </div>
           </div>
 
@@ -398,9 +406,22 @@ export default function PresentationHeader({
                     <span className="hidden sm:inline font-medium">Admin</span>
                   </Link>
 
-                  {/* Live Clock */}
-                  <div className="flex items-center pl-1.5 border-l border-slate-300 dark:border-slate-800 text-[11px] font-mono font-medium text-slate-700 dark:text-slate-300">
-                    {clock || "--:--:--"}
+                  {/* Live Dual Clock & Shift Business Date */}
+                  <div className="flex items-center gap-2 pl-2 border-l border-slate-300 dark:border-slate-800 text-[11px] font-mono">
+                    <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                      <span className="text-[9.5px] font-bold text-slate-400">IST:</span>
+                      <span className="font-bold text-cyan-600 dark:text-cyan-400">{shift.currentIstFormatted || clock}</span>
+                    </div>
+                    <span className="text-slate-300 dark:text-slate-700">•</span>
+                    <div className="flex items-center gap-1 text-amber-700 dark:text-amber-300">
+                      <span className="text-[9.5px] font-bold text-slate-400">US ({shift.usTimezoneAbbr}):</span>
+                      <span className="font-bold">{shift.currentUsFormatted || "—"}</span>
+                    </div>
+                    <span className="text-slate-300 dark:text-slate-700 hidden xl:inline">•</span>
+                    <div className="hidden xl:flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-800 dark:text-cyan-200 border border-cyan-500/20 text-[10px] font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>Shift: {shift.businessDate}</span>
+                    </div>
                   </div>
                 </div>
               </div>

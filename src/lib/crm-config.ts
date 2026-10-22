@@ -1,16 +1,29 @@
 import fs from "fs/promises";
 import path from "path";
-import { CrmConfig, CrmConnectionTestReport, CrmEndpointTestResult } from "@/types/crm-config";
+import {
+  CrmConfig,
+  CrmConnectionTestReport,
+  CrmEndpointTestResult,
+  CrmCustomEndpoint,
+  DEFAULT_CRM_ENDPOINTS,
+} from "@/types/crm-config";
 
 const CONFIG_FILE_PATH = path.join(process.cwd(), "data", "crm-config.json");
+
+export { DEFAULT_CRM_ENDPOINTS };
 
 export function getDefaultCrmConfig(): CrmConfig {
   const envRefreshMs = parseInt(process.env.NEXT_PUBLIC_REFRESH_INTERVAL || "30000", 10);
   const analyticsSec = Math.max(5, Math.round(envRefreshMs / 1000)) || 30;
 
+  const defaultEndpointsMap: Record<string, string> = {};
+  DEFAULT_CRM_ENDPOINTS.forEach((ep) => {
+    defaultEndpointsMap[ep.id] = ep.path;
+  });
+
   return {
-    crmApiBaseUrl: process.env.CRM_API_BASE_URL || "http://localhost/demandflowbridge/api/v1",
-    crmApiToken: process.env.CRM_API_TOKEN || "",
+    crmApiBaseUrl: process.env.CRM_API_BASE_URL || "https://app.tarajglobal.com/demandflowbridge/api/v1",
+    crmApiToken: process.env.CRM_API_TOKEN || "df_admin_secret_token_2026",
     crmApiTimeoutMs: 30000,
     crmMockFallback: false,
     autoSyncEnabled: true,
@@ -20,8 +33,10 @@ export function getDefaultCrmConfig(): CrmConfig {
     slideRotationInterval: 25,
     heatmapGranularity: 10,
     recognitionDisplayScope: "daily",
+    endpoints: defaultEndpointsMap,
+    customEndpoints: DEFAULT_CRM_ENDPOINTS,
     lastUpdated: new Date().toISOString(),
-    updatedBy: "System Default (.env)",
+    updatedBy: "System Default (Live Production)",
   };
 }
 
@@ -35,9 +50,26 @@ export async function getCrmConfig(): Promise<CrmConfig> {
   try {
     const raw = await fs.readFile(CONFIG_FILE_PATH, "utf-8");
     const parsed = JSON.parse(raw);
+
+    // Merge customEndpoints with default built-ins to ensure all required endpoints exist
+    const savedCustom: CrmCustomEndpoint[] = Array.isArray(parsed.customEndpoints) ? parsed.customEndpoints : [];
+    const mergedEndpointsMap: Record<string, string> = { ...defaults.endpoints, ...(parsed.endpoints || {}) };
+
+    const mergedCustomEndpoints: CrmCustomEndpoint[] = [...DEFAULT_CRM_ENDPOINTS];
+    savedCustom.forEach((ep) => {
+      const idx = mergedCustomEndpoints.findIndex((d) => d.id === ep.id);
+      if (idx >= 0) {
+        mergedCustomEndpoints[idx] = { ...mergedCustomEndpoints[idx], ...ep };
+      } else {
+        mergedCustomEndpoints.push(ep);
+      }
+    });
+
     return {
       ...defaults,
       ...parsed,
+      endpoints: mergedEndpointsMap,
+      customEndpoints: mergedCustomEndpoints,
       // Ensure positive integers for intervals
       analyticsSyncInterval: Number(parsed.analyticsSyncInterval) || defaults.analyticsSyncInterval,
       recognitionSyncInterval: Number(parsed.recognitionSyncInterval) || defaults.recognitionSyncInterval,
@@ -61,9 +93,20 @@ export async function getCrmConfig(): Promise<CrmConfig> {
  */
 export async function saveCrmConfig(updates: Partial<CrmConfig>, updatedBy = "Admin Console"): Promise<CrmConfig> {
   const current = await getCrmConfig();
+
+  // If customEndpoints was updated, synchronize endpoints mapping
+  let updatedEndpoints = updates.endpoints || current.endpoints || {};
+  if (updates.customEndpoints && Array.isArray(updates.customEndpoints)) {
+    updatedEndpoints = { ...updatedEndpoints };
+    updates.customEndpoints.forEach((ep) => {
+      updatedEndpoints[ep.id] = ep.path;
+    });
+  }
+
   const merged: CrmConfig = {
     ...current,
     ...updates,
+    endpoints: updatedEndpoints,
     lastUpdated: new Date().toISOString(),
     updatedBy,
   };
@@ -93,38 +136,51 @@ export async function resetCrmConfig(): Promise<CrmConfig> {
 export async function testCrmConnection(
   customBaseUrl?: string,
   customToken?: string,
-  timeoutMs = 15000
+  timeoutMs = 15000,
+  endpointsToProbe?: CrmCustomEndpoint[]
 ): Promise<CrmConnectionTestReport> {
   const activeConfig = await getCrmConfig();
   const baseUrl = (customBaseUrl || activeConfig.crmApiBaseUrl).trim().replace(/\/+$/, "");
   const token = customToken !== undefined ? customToken.trim() : activeConfig.crmApiToken;
 
-  const endpointsToTest = [
-    { name: "Slide 1 Operations Overview", path: "slides/slide1.php" },
-    { name: "Slide 2 Agent Productivity", path: "slides/slide2.php" },
-    { name: "Slide 3 QA Heatmap", path: "slides/slide3.php" },
-    { name: "Campaign Daily Targets", path: "campaign_daily_targets.php" },
-    { name: "Live Recognition Ticker", path: "slides/recognition.php" },
-  ];
-
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  const endpointsList = endpointsToProbe && endpointsToProbe.length > 0
+    ? endpointsToProbe
+    : activeConfig.customEndpoints || DEFAULT_CRM_ENDPOINTS;
 
   const results: CrmEndpointTestResult[] = [];
 
-  for (const ep of endpointsToTest) {
-    const fullUrl = `${baseUrl}/${ep.path}`;
+  for (const ep of endpointsList) {
+    if (ep.enabled === false) continue;
+
+    let fullUrl = ep.path.startsWith("http://") || ep.path.startsWith("https://")
+      ? ep.path
+      : `${baseUrl}/${ep.path.replace(/^\/+/, "")}`;
+
+    // Attach token query param if token exists and not already present
+    if (token) {
+      try {
+        const u = new URL(fullUrl);
+        if (!u.searchParams.has("token")) {
+          u.searchParams.set("token", token);
+          fullUrl = u.toString();
+        }
+      } catch {}
+    }
+
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const startTime = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const res = await fetch(fullUrl, {
-        method: "GET",
+        method: ep.method || "GET",
         headers,
         cache: "no-store",
         signal: controller.signal,
@@ -166,7 +222,7 @@ export async function testCrmConnection(
   let overallStatus: "healthy" | "degraded" | "unreachable" = "unreachable";
   let message = "";
 
-  if (okCount === results.length) {
+  if (okCount === results.length && results.length > 0) {
     overallStatus = "healthy";
     message = `All ${okCount} upstream CRM endpoints responded successfully with ${avgLatency}ms average latency.`;
   } else if (okCount > 0) {

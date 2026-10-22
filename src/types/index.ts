@@ -23,6 +23,8 @@ export interface CampaignSlide1 {
   pending_qa: number;
   remaining_leads_to_qualify: number;
   completion_percentage: number;
+  campaign_status?: string | null;
+  active?: number | boolean | null;
 }
 
 export interface LateComer {
@@ -93,6 +95,10 @@ export interface Slide3Data {
   total_qa_analysts: number;
   qa_heatmap: QaHeatmapAnalyst[];
   sliders?: RecognitionData;
+  today_audited?: number;
+  today_qualified?: number;
+  today_disqualified?: number;
+  today_pending_qa?: number;
 }
 
 export interface AgentHeatmapInterval {
@@ -175,6 +181,12 @@ export interface AdminCampaignTargetItem {
   remaining_leads_to_qualify: number;
   remaining_leads_to_generate: number;
   completion_percentage: number;
+  campaign_status?: string | null;
+  active?: number | boolean | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  pacing_type?: string | null;
+  pacing_count?: number;
   notes?: string | null;
 }
 

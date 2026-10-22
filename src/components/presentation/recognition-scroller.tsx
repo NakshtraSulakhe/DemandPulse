@@ -310,8 +310,8 @@ function RecognitionCard({
 
   return (
     <div
-      className={`relative mx-1 px-2.5 py-1.5 rounded-lg border ${borderClass} transition-all duration-200 shadow flex items-center gap-2 shrink-0 ${
-        isSlider ? "w-full" : "min-w-[240px] max-w-[280px]"
+      className={`relative mx-1 px-2.5 py-1.5 rounded-lg border ${borderClass} transition-all duration-200 shadow flex items-center gap-2.5 shrink-0 ${
+        isSlider ? "w-full" : "min-w-[190px] max-w-[225px]"
       }`}
     >
       {/* Avatar / Icon Bubble */}
@@ -320,7 +320,7 @@ function RecognitionCard({
           <img
             src={item.profile_pic}
             alt={item.title}
-            className="w-7 h-7 rounded-lg object-cover ring-1 ring-white/15 shadow bg-slate-800"
+            className="w-8 h-8 rounded-lg object-cover ring-1 ring-white/15 shadow bg-slate-800"
             onError={(e) => {
               (e.target as HTMLElement).style.display = "none";
               const fallback = (e.target as HTMLElement).nextElementSibling as HTMLElement;
@@ -330,15 +330,15 @@ function RecognitionCard({
         ) : null}
         <div
           style={{ display: item.profile_pic ? "none" : "flex" }}
-          className={`w-7 h-7 rounded-lg ${iconBg} items-center justify-center font-bold text-[10px]`}
+          className={`w-8 h-8 rounded-lg ${iconBg} items-center justify-center font-bold text-[10px]`}
         >
-          {isTopScorer && <Trophy className="w-3.5 h-3.5 text-amber-400 animate-pulse" />}
-          {isBirthday && <Cake className="w-3.5 h-3.5 text-rose-400 animate-bounce" />}
-          {isAnniversary && <Award className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />}
+          {isTopScorer && <Trophy className="w-4 h-4 text-amber-400 animate-pulse" />}
+          {isBirthday && <Cake className="w-4 h-4 text-rose-400 animate-bounce" />}
+          {isAnniversary && <Award className="w-4 h-4 text-cyan-400 animate-pulse" />}
         </div>
 
         {isTopScorer && item.rank && (
-          <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[8px] flex items-center justify-center shadow">
+          <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-500 text-slate-950 font-black text-[8.5px] flex items-center justify-center shadow">
             {item.rank}
           </span>
         )}
@@ -346,20 +346,18 @@ function RecognitionCard({
 
       {/* Card Content Text */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1">
-          <span className={`px-1 py-0.2 rounded text-[8px] font-bold border ${badgeBg}`}>
+        <div className="flex items-center gap-1 mb-0.5">
+          <span className={`px-1.5 py-0.2 rounded text-[8px] font-bold border ${badgeBg} truncate`}>
             {item.badge}
-          </span>
-          <span className="text-[9px] text-slate-400 uppercase tracking-wider font-mono truncate">
-            {item.eyebrow}
           </span>
         </div>
 
-        <div className="font-bold text-[11px] text-white truncate tracking-tight">
+        {/* Agent Name: Increased font size and font weight for high visibility on TV displays */}
+        <div className="font-extrabold text-[13.5px] sm:text-[14.5px] text-white truncate tracking-tight leading-tight">
           {item.title}
         </div>
 
-        <div className="text-[9.5px] text-slate-300 font-medium truncate">
+        <div className="text-[9.5px] sm:text-[10px] text-slate-300 font-semibold truncate mt-0.5">
           {item.subtitle}
         </div>
       </div>

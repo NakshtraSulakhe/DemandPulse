@@ -16,6 +16,15 @@ import {
   Server,
   Menu,
   X,
+  Coins,
+  FileCheck2,
+  CalendarCheck2,
+  UserCheck,
+  SendHorizontal,
+  Building,
+  FileSpreadsheet,
+  Clock,
+  Sliders,
 } from "lucide-react";
 
 import ThemeToggle from "@/components/theme/theme-toggle";
@@ -26,10 +35,23 @@ import RecognitionScroller from "@/components/presentation/recognition-scroller"
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/shifts", label: "US Shift Management", icon: Clock },
   { href: "/admin/campaign-targets", label: "Campaign Targets", icon: Target },
   { href: "/admin/target-history", label: "Target History", icon: History },
   { href: "/admin/crm-config", label: "CRM & Sync API", icon: Server },
   { href: "/admin/presentation-settings", label: "Display Settings", icon: Settings },
+];
+
+const INCENTIVE_NAV_ITEMS = [
+  { href: "/admin/incentives", label: "Incentive Dashboard", icon: Coins },
+  { href: "/admin/incentives/config", label: "Incentive Configuration", icon: Sliders },
+  { href: "/admin/incentives/daily", label: "Daily Incentive Audit", icon: FileCheck2 },
+  { href: "/admin/incentives/settlements", label: "Settlement Management", icon: CalendarCheck2 },
+  { href: "/admin/incentives/approvals", label: "Payout Approvals", icon: UserCheck },
+  { href: "/admin/incentives/disbursements", label: "Payment Disbursement", icon: SendHorizontal },
+  { href: "/admin/incentives/beneficiaries", label: "Beneficiary Management", icon: Building },
+  { href: "/admin/incentives/history", label: "Transaction History", icon: History },
+  { href: "/admin/incentives/payroll", label: "Payroll Reconciliation", icon: FileSpreadsheet },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -132,7 +154,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     key={item.href}
                     href={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    className={`flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${
                       isActive
                         ? "bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 border border-cyan-500/40 dark:border-cyan-500/30 font-bold shadow-sm"
                         : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/5"
@@ -143,6 +165,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       <span>{item.label}</span>
                     </div>
                     {isActive && <ChevronRight className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />}
+                  </Link>
+                );
+              })}
+
+              <div className="text-[10px] font-bold text-amber-500 dark:text-amber-400 uppercase tracking-wider px-3 mt-4 mb-1 flex items-center justify-between">
+                <span>Incentive Automation</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              </div>
+              {INCENTIVE_NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${
+                      isActive
+                        ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/40 dark:border-amber-500/30 font-bold shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </div>
+                    {isActive && <ChevronRight className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />}
                   </Link>
                 );
               })}

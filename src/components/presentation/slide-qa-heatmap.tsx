@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Slide3Data, QaHeatmapAnalyst, QaHeatmapInterval } from "@/types";
+import { Slide3Data, QaHeatmapAnalyst, QaHeatmapInterval, CampaignSlide1 } from "@/types";
 import { formatNumber } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import {
@@ -25,6 +25,7 @@ interface SlideQaHeatmapProps {
   onRetry?: () => void;
   interval?: number;
   onIntervalChange?: (newInterval: number) => void;
+  campaignsData?: CampaignSlide1[];
 }
 
 export default function SlideQaHeatmap({
@@ -34,18 +35,49 @@ export default function SlideQaHeatmap({
   onRetry,
   interval = 10,
   onIntervalChange,
+  campaignsData,
 }: SlideQaHeatmapProps) {
   const { isDark } = useTheme();
   const [viewMode, setViewMode] = useState<"echarts" | "matrix">("echarts");
 
-  const analysts: QaHeatmapAnalyst[] = data?.qa_heatmap || [];
+  // Sort analysts by total audited descending
+  const analysts: QaHeatmapAnalyst[] = useMemo(() => {
+    const raw = data?.qa_heatmap || [];
+    return [...raw].sort((a, b) => (b.total_audited || 0) - (a.total_audited || 0));
+  }, [data?.qa_heatmap]);
+
   const intervals: QaHeatmapInterval[] = analysts[0]?.intervals || [];
   const totalAnalysts = data?.total_qa_analysts || analysts.length;
   const totalQualified = analysts.reduce((acc: number, a: QaHeatmapAnalyst) => acc + (a.total_qualified || 0), 0);
   const totalAudited = analysts.reduce((acc: number, a: QaHeatmapAnalyst) => acc + (a.total_audited || 0), 0);
+
+  // Live campaign QA metrics (matching CRM Admin Dashboard Today count: Qualified + Disqualified = Audited, and Pending QA)
+  const campaignTotals = useMemo(() => {
+    if (!campaignsData || campaignsData.length === 0) return null;
+    let qual = 0;
+    let disq = 0;
+    let pending = 0;
+    for (const c of campaignsData) {
+      qual += Number(c.qualified_leads || 0);
+      disq += Number(c.disqualified_leads || 0);
+      pending += Number(c.pending_qa || 0);
+    }
+    return {
+      audited: qual + disq,
+      qualified: qual,
+      disqualified: disq,
+      pending_qa: pending,
+    };
+  }, [campaignsData]);
+
+  const displayQualified = campaignTotals?.qualified ?? data?.today_qualified ?? totalQualified;
+  const displayAudited = campaignTotals?.audited ?? data?.today_audited ?? totalAudited;
+  const displayPendingQa = campaignTotals?.pending_qa ?? data?.today_pending_qa;
+  const acceptanceRate = displayAudited > 0 ? Math.round((displayQualified / displayAudited) * 100) : 0;
+
   const intervalMinutes = data?.interval_minutes || interval;
   const totalIntervals = data?.total_intervals || intervals.length;
-  const shiftHours = data?.shift_start && data?.shift_end ? `${data.shift_start} - ${data.shift_end}` : "09:30 - 18:30";
+  const shiftHours = data?.shift_start && data?.shift_end ? `${data.shift_start} - ${data.shift_end}` : "17:30 - 02:30";
 
   // Prepare ECharts heatmap configuration
   const chartOption = useMemo(() => {
@@ -219,7 +251,7 @@ export default function SlideQaHeatmap({
               Verified Qualified
             </span>
             <div className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1.5 tv-stat-number tv-stat-number-emerald">
-              {formatNumber(totalQualified)} <span className="text-xs text-emerald-500 dark:text-emerald-300 font-bold">Leads</span>
+              {formatNumber(displayQualified)} <span className="text-xs text-emerald-500 dark:text-emerald-300 font-bold">Leads</span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Approved compliance today</p>
           </div>
@@ -235,10 +267,15 @@ export default function SlideQaHeatmap({
               Total Leads Audited
             </span>
             <div className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-blue-600 dark:text-blue-400 mt-1.5 tv-stat-number">
-              {formatNumber(totalAudited)} <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">Processed</span>
+              {formatNumber(displayAudited)} <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">Processed</span>
             </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-              <span className="text-blue-600 dark:text-blue-400 font-bold">{totalAudited > 0 ? Math.round((totalQualified / totalAudited) * 100) : 0}%</span> QA acceptance rate
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center flex-wrap gap-1.5">
+              <span className="text-blue-600 dark:text-blue-400 font-bold">{acceptanceRate}% QA rate</span>
+              {displayPendingQa !== undefined && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold text-[10px]">
+                  {displayPendingQa} Pending QA
+                </span>
+              )}
             </p>
           </div>
           <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">

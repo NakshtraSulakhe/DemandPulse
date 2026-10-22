@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Slide2Data } from "@/types";
 import { formatNumber, formatPercent } from "@/lib/utils";
 import {
@@ -33,7 +33,17 @@ export default function SlideAgentProductivity({
 }: SlideAgentProductivityProps) {
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
 
-  const agents = data?.agents || [];
+  // Sort agents by lead generated count descending (who has generated more leads should be on top)
+  const agents = useMemo(() => {
+    const rawAgents = data?.agents || [];
+    return [...rawAgents].sort((a, b) => {
+      const diff = (b.generated_leads ?? 0) - (a.generated_leads ?? 0);
+      if (diff !== 0) return diff;
+      const ptsDiff = (b.achieved_points ?? 0) - (a.achieved_points ?? 0);
+      if (ptsDiff !== 0) return ptsDiff;
+      return a.agent_name.localeCompare(b.agent_name);
+    });
+  }, [data?.agents]);
 
   // Group agents into rotating frames
   const chunks: Array<typeof agents> = [];

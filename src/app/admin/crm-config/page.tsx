@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Server,
   RefreshCw,
@@ -27,9 +27,19 @@ import {
   Copy,
   Pause,
   Play,
+  Plus,
+  Trash2,
+  Edit2,
+  ExternalLink,
+  Code2,
+  Search,
+  Filter,
+  X,
+  SlidersHorizontal,
+  ArrowUpRight,
 } from "lucide-react";
 import { useCrmConfig } from "@/hooks/use-crm-config";
-import { CrmConfig } from "@/types/crm-config";
+import { CrmConfig, CrmCustomEndpoint, DEFAULT_CRM_ENDPOINTS } from "@/types/crm-config";
 import { formatIntervalDisplay } from "@/lib/utils";
 
 interface IntervalCardProps {
@@ -244,19 +254,71 @@ function IntervalCard({
 
 const QUICK_PRESETS = [
   {
+    name: "Taraj Global Live Hosted (Production)",
+    url: "https://app.tarajglobal.com/demandflowbridge/api/v1",
+    token: "df_admin_secret_token_2026",
+    desc: "Official hosted cloud API with live production analytics and 51 campaigns",
+  },
+  {
     name: "Local Apache / XAMPP",
     url: "http://localhost/demandflowbridge/api/v1",
+    token: "",
     desc: "Default local development stack",
   },
   {
     name: "Localhost Loopback",
     url: "http://127.0.0.1/demandflowbridge/api/v1",
+    token: "",
     desc: "Direct loopback without DNS resolution",
   },
   {
     name: "LAN Bridge Server",
     url: "http://192.168.1.100/demandflowbridge/api/v1",
+    token: "",
     desc: "Dedicated internal operations server",
+  },
+];
+
+const ENDPOINT_TEMPLATES: Omit<CrmCustomEndpoint, "enabled">[] = [
+  {
+    id: "slides_analytics_master",
+    name: "Consolidated Slides Master Analytics",
+    path: "slides_analytics.php?type=slide1",
+    fallbackPath: "slides_analytics.php",
+    method: "GET",
+    category: "presentation",
+    description: "Consolidated live stream returning all 5 slides, agent metrics, and celebratory tickers",
+    isBuiltIn: true,
+  },
+  {
+    id: "agent_daily_incentives",
+    name: "Daily Agent Incentive API",
+    path: "agent_incentives.php",
+    fallbackPath: "slides_analytics.php?type=slide2",
+    method: "GET",
+    category: "operations",
+    description: "SDR commission calculations, tier milestones, and point accelerator bonuses",
+    isBuiltIn: false,
+  },
+  {
+    id: "lead_quality_matrix",
+    name: "Lead Quality Inspection Feed",
+    path: "lead_quality_matrix.php",
+    fallbackPath: "slides/slide3.php",
+    method: "GET",
+    category: "operations",
+    description: "Real-time QA acceptance rates, rejection tags, and auditor notes",
+    isBuiltIn: false,
+  },
+  {
+    id: "campaign_targets_writer",
+    name: "Campaign Target Writer API",
+    path: "campaign_daily_targets.php",
+    fallbackPath: "",
+    method: "POST",
+    category: "targets",
+    description: "Saves daily lead allocation targets and monthly quotas to MySQL database",
+    isBuiltIn: false,
   },
 ];
 
@@ -280,9 +342,48 @@ export default function CrmConfigPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedEndpointId, setCopiedEndpointId] = useState<string | null>(null);
+  const [copiedProxyId, setCopiedProxyId] = useState<string | null>(null);
   const [formDirty, setFormDirty] = useState(false);
   const [syncStatusMessage, setSyncStatusMessage] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"sync" | "api" | "diagnostics" | "all">("sync");
+  const [activeTab, setActiveTab] = useState<"sync" | "api" | "endpoints" | "diagnostics" | "all">("sync");
+
+  // Endpoint management state
+  const [endpointSearch, setEndpointSearch] = useState("");
+  const [endpointCategory, setEndpointCategory] = useState<"all" | "presentation" | "operations" | "targets" | "custom">("all");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEndpoint, setEditingEndpoint] = useState<CrmCustomEndpoint | null>(null);
+  const [modalForm, setModalForm] = useState<{
+    id: string;
+    name: string;
+    path: string;
+    fallbackPath: string;
+    method: "GET" | "POST";
+    category: "presentation" | "operations" | "targets" | "custom";
+    description: string;
+    enabled: boolean;
+  }>({
+    id: "",
+    name: "",
+    path: "",
+    fallbackPath: "",
+    method: "GET",
+    category: "custom",
+    description: "",
+    enabled: true,
+  });
+
+  // Single probe results
+  const [probingEndpoints, setProbingEndpoints] = useState<Record<string, boolean>>({});
+  const [probeResults, setProbeResults] = useState<Record<string, { ok: boolean; status: number; latencyMs: number; error?: string }>>({});
+
+  // Active custom endpoints list
+  const currentEndpoints: CrmCustomEndpoint[] = useMemo(() => {
+    if (formData.customEndpoints && formData.customEndpoints.length > 0) {
+      return formData.customEndpoints;
+    }
+    return DEFAULT_CRM_ENDPOINTS;
+  }, [formData.customEndpoints]);
 
   // Keep form updated when config loads
   useEffect(() => {
@@ -330,6 +431,7 @@ export default function CrmConfigPage() {
         baseUrl: formData.crmApiBaseUrl,
         token: formData.crmApiToken,
         timeoutMs: formData.crmApiTimeoutMs,
+        endpoints: currentEndpoints,
       });
       setActiveTab("diagnostics");
     } catch {
@@ -357,6 +459,248 @@ export default function CrmConfigPage() {
     setCopiedUrl(true);
     setTimeout(() => setCopiedUrl(false), 2000);
   };
+
+  const getFullUpstreamUrl = (path: string) => {
+    const cleanBase = (formData.crmApiBaseUrl || "").replace(/\/+$/, "");
+    const cleanPath = (path || "").replace(/^\/+/, "");
+    let full = cleanPath.startsWith("http://") || cleanPath.startsWith("https://")
+      ? cleanPath
+      : `${cleanBase}/${cleanPath}`;
+    if (formData.crmApiToken && formData.crmApiToken.trim().length > 0) {
+      try {
+        const u = new URL(full);
+        if (!u.searchParams.has("token")) {
+          u.searchParams.set("token", formData.crmApiToken.trim());
+          full = u.toString();
+        }
+      } catch {}
+    }
+    return full;
+  };
+
+  const copyEndpointUrl = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedEndpointId(id);
+    setTimeout(() => setCopiedEndpointId(null), 2000);
+  };
+
+  const copyProxyUrl = (id: string) => {
+    if (typeof window !== "undefined") {
+      const proxyUrl = `${window.location.origin}/api/crm/proxy?endpoint=${id}`;
+      navigator.clipboard.writeText(proxyUrl);
+      setCopiedProxyId(id);
+      setTimeout(() => setCopiedProxyId(null), 2000);
+    }
+  };
+
+  // Endpoint Modal Handlers
+  const handleOpenAddModal = () => {
+    setEditingEndpoint(null);
+    setModalForm({
+      id: `api_${Date.now().toString(36)}`,
+      name: "",
+      path: "",
+      fallbackPath: "",
+      method: "GET",
+      category: "custom",
+      description: "",
+      enabled: true,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (ep: CrmCustomEndpoint) => {
+    setEditingEndpoint(ep);
+    setModalForm({
+      id: ep.id,
+      name: ep.name,
+      path: ep.path,
+      fallbackPath: ep.fallbackPath || "",
+      method: ep.method || "GET",
+      category: ep.category || "custom",
+      description: ep.description || "",
+      enabled: ep.enabled !== false,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleApplyTemplate = (template: typeof ENDPOINT_TEMPLATES[number]) => {
+    setModalForm((prev) => ({
+      ...prev,
+      name: template.name,
+      path: template.path,
+      fallbackPath: template.fallbackPath || "",
+      method: template.method || "GET",
+      category: template.category || "custom",
+      description: template.description || "",
+      id: editingEndpoint ? prev.id : `${template.id}_${Date.now().toString(36).slice(-4)}`,
+    }));
+  };
+
+  const handleSaveModalEndpoint = () => {
+    if (!modalForm.name.trim() || !modalForm.path.trim()) {
+      alert("Please provide both an Endpoint Name and an Upstream Path.");
+      return;
+    }
+
+    const cleanId = (modalForm.id.trim() || modalForm.name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_"));
+    const updatedEndpoint: CrmCustomEndpoint = {
+      id: cleanId,
+      name: modalForm.name.trim(),
+      path: modalForm.path.trim(),
+      fallbackPath: modalForm.fallbackPath.trim() || undefined,
+      method: modalForm.method,
+      category: modalForm.category,
+      description: modalForm.description.trim(),
+      enabled: modalForm.enabled,
+      isBuiltIn: editingEndpoint?.isBuiltIn || false,
+    };
+
+    const nextEndpoints = [...currentEndpoints];
+    const existingIdx = nextEndpoints.findIndex(
+      (e) => e.id === cleanId || (editingEndpoint && e.id === editingEndpoint.id)
+    );
+
+    if (existingIdx >= 0) {
+      nextEndpoints[existingIdx] = updatedEndpoint;
+    } else {
+      nextEndpoints.push(updatedEndpoint);
+    }
+
+    const nextEndpointsMap = { ...(formData.endpoints || {}) };
+    nextEndpointsMap[cleanId] = updatedEndpoint.path;
+
+    setFormData((prev) => ({
+      ...prev,
+      customEndpoints: nextEndpoints,
+      endpoints: nextEndpointsMap,
+    }));
+    setFormDirty(true);
+    setIsModalOpen(false);
+  };
+
+  const handleDeleteEndpoint = (id: string) => {
+    const ep = currentEndpoints.find((e) => e.id === id);
+    if (ep?.isBuiltIn) {
+      alert("Built-in core endpoints cannot be deleted as they are required by presentation dashboard slides. You can toggle them inactive instead.");
+      return;
+    }
+
+    if (window.confirm(`Are you sure you want to remove the endpoint "${ep?.name || id}"?`)) {
+      const nextEndpoints = currentEndpoints.filter((e) => e.id !== id);
+      const nextEndpointsMap = { ...(formData.endpoints || {}) };
+      delete nextEndpointsMap[id];
+
+      setFormData((prev) => ({
+        ...prev,
+        customEndpoints: nextEndpoints,
+        endpoints: nextEndpointsMap,
+      }));
+      setFormDirty(true);
+    }
+  };
+
+  const handleToggleEndpointEnabled = (id: string) => {
+    const nextEndpoints = currentEndpoints.map((e) =>
+      e.id === id ? { ...e, enabled: e.enabled === false ? true : false } : e
+    );
+    setFormData((prev) => ({
+      ...prev,
+      customEndpoints: nextEndpoints,
+    }));
+    setFormDirty(true);
+  };
+
+  const handleInlinePathChange = (id: string, newPath: string) => {
+    const nextEndpoints = currentEndpoints.map((e) =>
+      e.id === id ? { ...e, path: newPath } : e
+    );
+    const nextEndpointsMap = { ...(formData.endpoints || {}) };
+    nextEndpointsMap[id] = newPath;
+
+    setFormData((prev) => ({
+      ...prev,
+      customEndpoints: nextEndpoints,
+      endpoints: nextEndpointsMap,
+    }));
+    setFormDirty(true);
+  };
+
+  const handleResetEndpointsToDefault = () => {
+    if (window.confirm("Reset all endpoints back to the default DemandFlow built-in routes? Any custom endpoints will be discarded.")) {
+      const defaultMap: Record<string, string> = {};
+      DEFAULT_CRM_ENDPOINTS.forEach((ep) => {
+        defaultMap[ep.id] = ep.path;
+      });
+      setFormData((prev) => ({
+        ...prev,
+        customEndpoints: DEFAULT_CRM_ENDPOINTS,
+        endpoints: defaultMap,
+      }));
+      setFormDirty(true);
+    }
+  };
+
+  const handleSingleProbe = async (endpoint: CrmCustomEndpoint) => {
+    setProbingEndpoints((prev) => ({ ...prev, [endpoint.id]: true }));
+    try {
+      const report = await testConnection({
+        baseUrl: formData.crmApiBaseUrl,
+        token: formData.crmApiToken,
+        timeoutMs: formData.crmApiTimeoutMs,
+        endpoints: [endpoint],
+      });
+      const res = report.endpoints.find(
+        (e) => e.name === endpoint.name || e.endpoint === endpoint.path
+      );
+      if (res) {
+        setProbeResults((prev) => ({
+          ...prev,
+          [endpoint.id]: {
+            ok: res.ok,
+            status: res.status,
+            latencyMs: res.latencyMs,
+            error: res.error,
+          },
+        }));
+      } else {
+        setProbeResults((prev) => ({
+          ...prev,
+          [endpoint.id]: {
+            ok: report.ok,
+            status: report.ok ? 200 : 500,
+            latencyMs: report.averageLatencyMs,
+          },
+        }));
+      }
+    } catch (err: unknown) {
+      setProbeResults((prev) => ({
+        ...prev,
+        [endpoint.id]: {
+          ok: false,
+          status: 0,
+          latencyMs: 0,
+          error: err instanceof Error ? err.message : "Connection failed",
+        },
+      }));
+    } finally {
+      setProbingEndpoints((prev) => ({ ...prev, [endpoint.id]: false }));
+    }
+  };
+
+  // Filtered endpoints for display
+  const filteredEndpoints = useMemo(() => {
+    return currentEndpoints.filter((ep) => {
+      const matchesCategory = endpointCategory === "all" || ep.category === endpointCategory;
+      const matchesSearch =
+        endpointSearch.trim() === "" ||
+        ep.name.toLowerCase().includes(endpointSearch.toLowerCase()) ||
+        ep.id.toLowerCase().includes(endpointSearch.toLowerCase()) ||
+        ep.path.toLowerCase().includes(endpointSearch.toLowerCase()) ||
+        (ep.description && ep.description.toLowerCase().includes(endpointSearch.toLowerCase()));
+      return matchesCategory && matchesSearch;
+    });
+  }, [currentEndpoints, endpointCategory, endpointSearch]);
 
   if (isLoading && !config) {
     return (
@@ -510,20 +854,24 @@ export default function CrmConfigPage() {
           </div>
         </div>
 
-        <div className="glass-panel p-3.5 rounded-xl border border-slate-200/80 dark:border-white/10 flex items-center justify-between">
+        <div
+          onClick={() => setActiveTab("endpoints")}
+          className="glass-panel p-3.5 rounded-xl border border-slate-200/80 dark:border-white/10 flex items-center justify-between cursor-pointer hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all group"
+          title="Click to manage dynamic project API endpoints"
+        >
           <div>
             <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-              Failover Mode
+              Registered API Endpoints
             </span>
-            <span className={`text-xs font-bold block mt-0.5 ${formData.crmMockFallback ? "text-amber-600 dark:text-amber-400" : "text-cyan-600 dark:text-cyan-400"}`}>
-              {formData.crmMockFallback ? "Mock Fallback ON" : "Live API Direct"}
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block mt-0.5 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+              {currentEndpoints.filter((e) => e.enabled !== false).length} Active / {currentEndpoints.length} Total
             </span>
-            <span className="text-[10px] text-slate-500">
-              {formData.crmMockFallback ? "Guaranteed offline demo" : "Strict CRM requirement"}
+            <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-medium">
+              Click to configure &amp; add APIs &rarr;
             </span>
           </div>
           <div className="p-2 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-            <Sparkles className="w-4 h-4" />
+            <Database className="w-4 h-4" />
           </div>
         </div>
 
@@ -578,6 +926,21 @@ export default function CrmConfigPage() {
         >
           <Server className="w-4 h-4" />
           <span>CRM REST API Connection</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("endpoints")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === "endpoints"
+              ? "border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-500/5 shadow-sm"
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Database className="w-4 h-4 text-cyan-500" />
+          <span>API Endpoints & Dynamic Routes</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
+            {currentEndpoints.length} APIs
+          </span>
         </button>
 
         <button
@@ -932,45 +1295,583 @@ export default function CrmConfigPage() {
             </div>
           </div>
 
-          {/* Upstream Endpoints Directory */}
-          <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10">
-            <h2 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-2">
-              <Database className="w-4 h-4 text-cyan-500" />
-              Calculated Upstream Endpoints Directory
-            </h2>
-            <p className="text-[11px] text-slate-500 mb-3">
-              The Next.js backend transparently proxies the following CRM API endpoints based on your configured base URL:
-            </p>
+          {/* Upstream Endpoints Summary Card */}
+          <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+                <Database className="w-4 h-4 text-cyan-500" />
+                Dynamic Upstream Endpoints Directory ({currentEndpoints.length} Registered)
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-xl">
+                Every slide, heatmap, ticker, and campaign target endpoint routes dynamically through these upstream paths. You can modify paths, add new custom project APIs, and test probes in the Endpoints tab.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("endpoints")}
+              className="px-3.5 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 text-xs font-semibold border border-cyan-500/30 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <span>Manage & Configure APIs</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-              {[
-                { name: "Slide 1 Operations Overview", path: "/slides/slide1.php", fallback: "/slides_analytics.php?action=slide1" },
-                { name: "Slide 2 Agent Productivity", path: "/slides/slide2.php", fallback: "/slides_analytics.php?action=slide2" },
-                { name: "Slide 3 QA 10m Heatmap", path: "/slides/slide3.php", fallback: "/slides_analytics.php?action=slide3" },
-                { name: "Slide 4 Agent 10m Heatmap", path: "/slides/slide4.php", fallback: "/slides_analytics.php?action=slide4" },
-                { name: "Slide 5 Comparative Analysis", path: "/slides/slide5.php", fallback: "/slides_analytics.php?action=slide5" },
-                { name: "Campaign Daily Targets", path: "/campaign_daily_targets.php", fallback: "Auto-creates schema" },
-                { name: "Live Recognition & Ticker", path: "/slides/recognition.php", fallback: "/slides_analytics.php?action=recognition" },
-              ].map((ep) => (
-                <div key={ep.name} className="p-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-900/60 border border-slate-200 dark:border-white/5 flex flex-col justify-between">
-                  <div className="font-semibold text-slate-800 dark:text-slate-200 text-[11px]">{ep.name}</div>
-                  <div className="font-mono text-[10px] text-cyan-700 dark:text-cyan-300 mt-1 truncate" title={`${formData.crmApiBaseUrl}${ep.path}`}>
-                    {formData.crmApiBaseUrl.replace(/\/+$/, "")}{ep.path}
-                  </div>
+      {/* SECTION 3: API Endpoints & Dynamic Routes (Custom & Built-in) */}
+      {(activeTab === "endpoints" || activeTab === "all") && (
+        <div className="flex flex-col gap-5 animate-fadeIn">
+          {activeTab === "all" && (
+            <div className="flex items-center gap-2 pt-4 border-b border-slate-200/60 dark:border-white/10 pb-2">
+              <Database className="w-5 h-5 text-cyan-500" />
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">3. API Endpoints & Dynamic Custom Routes</h2>
+            </div>
+          )}
+
+          {/* Endpoints Management Panel */}
+          <div className="glass-panel p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-col gap-5">
+            {/* Header with Title and Add Button */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Database className="w-4 h-4 text-cyan-500" />
+                    Project API Endpoints & Flexible Upstream Routes
+                  </h2>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/20">
+                    {currentEndpoints.filter((e) => e.enabled !== false).length} Active / {currentEndpoints.length} Total
+                  </span>
                 </div>
-              ))}
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                  Register new CRM API endpoints, modify upstream paths, customize fallback routes, and probe latency in real-time. Any API added here is instantly queryable by the dashboard and available via the universal Next.js proxy route <code className="font-mono text-cyan-700 dark:text-cyan-300 text-[10px]">/api/crm/proxy?endpoint=[id]</code>.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleResetEndpointsToDefault}
+                  className="px-3 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 text-xs font-semibold border border-slate-300 dark:border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="Reset endpoints back to built-in defaults"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Reset Endpoints</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenAddModal}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold shadow-md shadow-cyan-600/20 border border-cyan-400/30 transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Register New API Endpoint</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Templates Bar */}
+            <div className="p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-cyan-500 flex-shrink-0" />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Quick Register Templates:
+                </span>
+                <span className="text-[11px] text-slate-500 hidden md:inline">
+                  Click a template to pre-fill endpoint details
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {ENDPOINT_TEMPLATES.map((tmpl) => (
+                  <button
+                    key={tmpl.id}
+                    type="button"
+                    onClick={() => {
+                      handleOpenAddModal();
+                      setTimeout(() => handleApplyTemplate(tmpl), 50);
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-slate-900 hover:bg-cyan-500/10 text-slate-700 dark:text-slate-300 hover:text-cyan-700 dark:hover:text-cyan-300 border border-slate-200 dark:border-white/10 hover:border-cyan-500/30 transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                  >
+                    <span>+</span>
+                    <span>{tmpl.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
+              {/* Category Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                {[
+                  { id: "all", label: "All APIs", count: currentEndpoints.length },
+                  { id: "presentation", label: "Presentation", count: currentEndpoints.filter((e) => e.category === "presentation").length },
+                  { id: "operations", label: "Operations", count: currentEndpoints.filter((e) => e.category === "operations").length },
+                  { id: "targets", label: "Targets & Quotas", count: currentEndpoints.filter((e) => e.category === "targets").length },
+                  { id: "custom", label: "Custom Routes", count: currentEndpoints.filter((e) => e.category === "custom").length },
+                ].map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setEndpointCategory(cat.id as any)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                      endpointCategory === cat.id
+                        ? "bg-cyan-500/20 border-cyan-500 text-cyan-800 dark:text-cyan-300 shadow-sm"
+                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    <span>{cat.label}</span>
+                    <span className="text-[10px] opacity-75 font-mono">({cat.count})</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Search Box */}
+              <div className="relative min-w-[240px]">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={endpointSearch}
+                  onChange={(e) => setEndpointSearch(e.target.value)}
+                  placeholder="Filter by name, ID, or path..."
+                  className="w-full pl-9 pr-8 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+                />
+                {endpointSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setEndpointSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Endpoints Table / Cards List */}
+            <div className="flex flex-col gap-3">
+              {filteredEndpoints.length === 0 ? (
+                <div className="p-8 text-center rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
+                  <Database className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    No endpoints match your search or filter.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEndpointSearch("");
+                      setEndpointCategory("all");
+                    }}
+                    className="mt-2 text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:underline"
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+              ) : (
+                filteredEndpoints.map((ep) => {
+                  const isProbing = probingEndpoints[ep.id];
+                  const probeRes = probeResults[ep.id];
+                  const fullUrl = getFullUpstreamUrl(ep.path);
+                  const isCopiedFull = copiedEndpointId === ep.id;
+                  const isCopiedProxy = copiedProxyId === ep.id;
+
+                  const categoryBadges: Record<string, string> = {
+                    presentation: "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30",
+                    operations: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30",
+                    targets: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+                    custom: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30",
+                  };
+
+                  return (
+                    <div
+                      key={ep.id}
+                      className={`p-4 rounded-xl border transition-all flex flex-col gap-3 ${
+                        ep.enabled === false
+                          ? "bg-slate-100/50 dark:bg-slate-900/30 border-slate-200 dark:border-white/5 opacity-60"
+                          : "bg-white dark:bg-slate-900/70 border-slate-200/90 dark:border-white/10 hover:border-cyan-500/40 shadow-xs"
+                      }`}
+                    >
+                      {/* Top Row: Badges, Title, Enabled Switch, Actions */}
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Method Badge */}
+                          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md uppercase border ${
+                            ep.method === "POST"
+                              ? "bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/30"
+                              : "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
+                          }`}>
+                            {ep.method || "GET"}
+                          </span>
+
+                          {/* Category Badge */}
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize border ${
+                            categoryBadges[ep.category || "custom"] || categoryBadges.custom
+                          }`}>
+                            {ep.category || "custom"}
+                          </span>
+
+                          {/* Built-in vs Custom Badge */}
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {ep.isBuiltIn ? "• Built-in Route" : "• Custom API"}
+                          </span>
+
+                          {/* Endpoint ID Slug */}
+                          <code className="text-[11px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/5">
+                            id: {ep.id}
+                          </code>
+                        </div>
+
+                        {/* Right Actions: Enabled Toggle, Probe, Edit, Delete */}
+                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                          {/* Probe Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleSingleProbe(ep)}
+                            disabled={isProbing}
+                            className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 text-xs font-semibold border border-cyan-500/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            title="Directly probe this specific endpoint to measure upstream response"
+                          >
+                            <Activity className={`w-3.5 h-3.5 ${isProbing ? "animate-spin text-cyan-400" : "text-cyan-500"}`} />
+                            <span>{isProbing ? "Probing..." : "Probe Endpoint"}</span>
+                          </button>
+
+                          {/* Probe Status Feedback */}
+                          {probeRes && (
+                            <span className={`text-[10px] font-mono font-bold px-2 py-1 rounded-lg border flex items-center gap-1 ${
+                              probeRes.ok
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 animate-fadeIn"
+                                : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 animate-fadeIn"
+                            }`}>
+                              {probeRes.ok ? <Check className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                              <span>{probeRes.status ? `HTTP ${probeRes.status}` : "Failed"} • {probeRes.latencyMs}ms</span>
+                            </span>
+                          )}
+
+                          {/* Edit Full Modal */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(ep)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-white/10 transition-all"
+                            title="Edit full endpoint metadata"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Delete Button (Custom Only) */}
+                          {!ep.isBuiltIn && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteEndpoint(ep.id)}
+                              className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-500/10 border border-rose-500/20 transition-all"
+                              title="Delete custom endpoint"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {/* Active / Inactive Toggle Switch */}
+                          <label className="relative inline-flex items-center cursor-pointer ml-1" title={ep.enabled !== false ? "Endpoint active" : "Endpoint disabled"}>
+                            <input
+                              type="checkbox"
+                              checked={ep.enabled !== false}
+                              onChange={() => handleToggleEndpointEnabled(ep.id)}
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Middle Row: Name and Description */}
+                      <div>
+                        <div className="text-sm font-bold text-slate-900 dark:text-white">
+                          {ep.name}
+                        </div>
+                        {ep.description && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {ep.description}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Bottom Row: Editable Path and URL Previews */}
+                      <div className="pt-2 border-t border-slate-200/60 dark:border-white/5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+                        {/* Inline Upstream Path Input */}
+                        <div className="flex-1 flex items-center gap-2">
+                          <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+                            Upstream Path:
+                          </span>
+                          <div className="flex-1 relative">
+                            <input
+                              type="text"
+                              value={ep.path}
+                              onChange={(e) => handleInlinePathChange(ep.id, e.target.value)}
+                              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 font-mono text-[11px] text-cyan-700 dark:text-cyan-300 focus:outline-none focus:border-cyan-500"
+                              placeholder="e.g. slides/slide1.php or slides_analytics.php?type=slide1"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Copy Upstream Full URL */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => copyEndpointUrl(ep.id, fullUrl)}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+                            title="Copy direct upstream URL with token included"
+                          >
+                            {isCopiedFull ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>{isCopiedFull ? "URL Copied!" : "Copy Full URL"}</span>
+                          </button>
+
+                          {/* Copy Next.js Universal Proxy Route */}
+                          <button
+                            type="button"
+                            onClick={() => copyProxyUrl(ep.id)}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                            title="Copy internal Next.js proxy route for use in components"
+                          >
+                            {isCopiedProxy ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Code2 className="w-3.5 h-3.5" />}
+                            <span>{isCopiedProxy ? "Proxy Copied!" : "Copy Proxy Route"}</span>
+                          </button>
+
+                          {/* Direct link */}
+                          <a
+                            href={fullUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-500 hover:bg-cyan-500/10 border border-slate-200 dark:border-white/10 transition-all"
+                            title="Open direct CRM URL in new browser tab"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* SECTION 3: Live Endpoint Diagnostics */}
+      {/* Register / Edit API Endpoint Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl flex flex-col overflow-hidden animate-scaleIn">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Database className="w-4 h-4 text-cyan-500" />
+                  <span>{editingEndpoint ? "Edit API Endpoint" : "Register New API Endpoint"}</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Configure the upstream PHP script path, HTTP method, and category for this endpoint.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 flex flex-col gap-4 overflow-y-auto max-h-[70vh]">
+              {/* Template Quick Select (Only when adding new) */}
+              {!editingEndpoint && (
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
+                    Start From Template (Optional)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {ENDPOINT_TEMPLATES.map((tmpl) => (
+                      <button
+                        key={tmpl.id}
+                        type="button"
+                        onClick={() => handleApplyTemplate(tmpl)}
+                        className="p-2 rounded-xl text-left bg-slate-50 dark:bg-slate-800/80 hover:bg-cyan-500/10 border border-slate-200 dark:border-white/10 hover:border-cyan-500/30 transition-all"
+                      >
+                        <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                          {tmpl.name}
+                        </div>
+                        <div className="font-mono text-[10px] text-cyan-700 dark:text-cyan-300 mt-0.5 truncate">
+                          {tmpl.path}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Endpoint ID Slug */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1">
+                  Endpoint Identifier / Slug <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={modalForm.id}
+                  disabled={editingEndpoint?.isBuiltIn}
+                  onChange={(e) => setModalForm((prev) => ({ ...prev, id: e.target.value }))}
+                  placeholder="e.g. agent_incentives or slide1"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500 disabled:opacity-50"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Used as query key in proxy routes: <code className="text-cyan-600 font-mono">/api/crm/proxy?endpoint={modalForm.id || "[id]"}</code>
+                </span>
+              </div>
+
+              {/* Display Name */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1">
+                  Display Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={modalForm.name}
+                  onChange={(e) => setModalForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Daily Agent Incentive API"
+                  className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* Upstream Path or Full URL */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1">
+                  Upstream Path or Full URL <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={modalForm.path}
+                  onChange={(e) => setModalForm((prev) => ({ ...prev, path: e.target.value }))}
+                  placeholder="e.g. slides/slide1.php or slides_analytics.php?type=slide1"
+                  className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block truncate">
+                  Resolved upstream: <code className="text-cyan-700 dark:text-cyan-300 font-mono">{getFullUpstreamUrl(modalForm.path || "your-endpoint.php")}</code>
+                </span>
+              </div>
+
+              {/* Fallback Path */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1">
+                  Fallback Path (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={modalForm.fallbackPath}
+                  onChange={(e) => setModalForm((prev) => ({ ...prev, fallbackPath: e.target.value }))}
+                  placeholder="e.g. slides_analytics.php?type=slide1"
+                  className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 font-mono text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Automatically queried if the primary upstream path returns a 404 or connection error.
+                </span>
+              </div>
+
+              {/* Method and Category */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1">
+                    HTTP Method
+                  </label>
+                  <select
+                    value={modalForm.method}
+                    onChange={(e) => setModalForm((prev) => ({ ...prev, method: e.target.value as "GET" | "POST" }))}
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value="GET">GET (Query data)</option>
+                    <option value="POST">POST (Submit / Save)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1">
+                    Category
+                  </label>
+                  <select
+                    value={modalForm.category}
+                    onChange={(e) => setModalForm((prev) => ({ ...prev, category: e.target.value as any }))}
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                  >
+                    <option value="presentation">Presentation (Slides & Displays)</option>
+                    <option value="operations">Operations (SDRs & Heatmaps)</option>
+                    <option value="targets">Targets & Quotas</option>
+                    <option value="custom">Custom Project Route</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1">
+                  Description / Documentation
+                </label>
+                <textarea
+                  value={modalForm.description}
+                  onChange={(e) => setModalForm((prev) => ({ ...prev, description: e.target.value }))}
+                  rows={2}
+                  placeholder="Explain what this API endpoint provides or how it is utilized..."
+                  className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* Active Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-white/5">
+                <div>
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Enable Endpoint
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    When enabled, background sync workers and proxy routes will actively query this endpoint.
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={modalForm.enabled}
+                    onChange={(e) => setModalForm((prev) => ({ ...prev, enabled: e.target.checked }))}
+                    className="sr-only peer"
+                  />
+                  <div className="w-10 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 dark:border-white/10 flex items-center justify-end gap-2 bg-slate-50/50 dark:bg-slate-900/50">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveModalEndpoint}
+                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-md shadow-cyan-600/20 border border-cyan-400/30 transition-all flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{editingEndpoint ? "Update Endpoint" : "Register Endpoint"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 4: Live Endpoint Diagnostics */}
       {(activeTab === "diagnostics" || activeTab === "all") && (
         <div className="flex flex-col gap-5 animate-fadeIn">
           {activeTab === "all" && (
             <div className="flex items-center gap-2 pt-4 border-b border-slate-200/60 dark:border-white/10 pb-2">
               <Activity className="w-5 h-5 text-cyan-500" />
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">3. Live Endpoint Diagnostics & Health Probe</h2>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">4. Live Endpoint Diagnostics & Health Probe</h2>
             </div>
           )}
 

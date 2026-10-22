@@ -4,8 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CrmConfig, CrmConnectionTestReport } from "@/types/crm-config";
 
 const DEFAULT_CONFIG: CrmConfig = {
-  crmApiBaseUrl: "http://localhost/demandflowbridge/api/v1",
-  crmApiToken: "",
+  crmApiBaseUrl: "https://app.tarajglobal.com/demandflowbridge/api/v1",
+  crmApiToken: "df_admin_secret_token_2026",
   crmApiTimeoutMs: 30000,
   crmMockFallback: false,
   autoSyncEnabled: true,
@@ -63,7 +63,7 @@ export function useCrmConfig() {
   const testConnectionMutation = useMutation<
     CrmConnectionTestReport,
     Error,
-    { baseUrl?: string; token?: string; timeoutMs?: number } | undefined
+    { baseUrl?: string; token?: string; timeoutMs?: number; endpoints?: any[] } | undefined
   >({
     mutationFn: async (params) => {
       const res = await fetch("/api/admin/crm-config/test", {

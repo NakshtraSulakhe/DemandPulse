@@ -37,7 +37,11 @@ export default function SlideAgentHeatmap({
   const { isDark } = useTheme();
   const [viewMode, setViewMode] = useState<"echarts" | "matrix">("echarts");
 
-  const agents: AgentHeatmapItem[] = data?.agent_heatmap || [];
+  const agents: AgentHeatmapItem[] = useMemo(() => {
+    const raw = data?.agent_heatmap || [];
+    return [...raw].sort((a, b) => (b.total_generated || 0) - (a.total_generated || 0));
+  }, [data?.agent_heatmap]);
+
   const intervals: AgentHeatmapInterval[] = agents[0]?.intervals || [];
   const totalAgents = data?.total_agents || agents.length;
   const totalGenerated = agents.reduce((acc: number, a: AgentHeatmapItem) => acc + (a.total_generated || 0), 0);

@@ -207,7 +207,7 @@ export default function SlideComparativeAnalytics({
                 Shift Timeline: Outbound Generation vs QA Qualification
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Pacing comparison across shift intervals (09:30 - 18:30)
+                Pacing comparison across shift intervals (17:30 - 02:30)
               </p>
             </div>
             <div className="flex items-center gap-2 text-[10.5px] font-bold">

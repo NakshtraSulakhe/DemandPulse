@@ -180,7 +180,7 @@ export function useSlide5(date?: string, customPollInterval?: number | false) {
 }
 
 // Campaign Targets Hook
-export function useCampaignTargets(date?: string, customPollInterval?: number | false) {
+export function useCampaignTargets(date?: string, status: string = "Live", customPollInterval?: number | false) {
   const { config } = useCrmConfig();
   const targetDate = date || new Date().toISOString().split("T")[0];
   const refetchInterval =
@@ -191,9 +191,12 @@ export function useCampaignTargets(date?: string, customPollInterval?: number | 
       : false;
 
   return useQuery<ApiResponse<{ target_date: string; total_campaigns: number; campaigns: AdminCampaignTargetItem[] }>>({
-    queryKey: ["campaign-targets", targetDate],
+    queryKey: ["campaign-targets", targetDate, status],
     queryFn: async () => {
-      const res = await fetch(`/api/campaign-targets?date=${encodeURIComponent(targetDate)}`, { cache: "no-store" });
+      const res = await fetch(
+        `/api/campaign-targets?date=${encodeURIComponent(targetDate)}&status=${encodeURIComponent(status)}`,
+        { cache: "no-store" }
+      );
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
         throw new Error(json.error || `CRM API error ${res.status}`);
