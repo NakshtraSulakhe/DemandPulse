@@ -106,6 +106,13 @@ export interface SettleResponseData {
   inserted_count?: number;
   updated_count?: number;
   skipped_count?: number;
+  total_agents?: number;
+  eligible_count?: number;
+  total_settled_amount?: number;
+  records_created?: number;
+  records_updated?: number;
+  records_skipped?: number;
+  preview_only?: boolean;
 }
 
 export interface ApprovalActionPayload {

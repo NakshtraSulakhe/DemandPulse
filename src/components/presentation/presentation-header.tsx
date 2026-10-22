@@ -74,14 +74,14 @@ export default function PresentationHeader({
       if (savedDrawerState !== null) {
         setIsDrawerOpen(savedDrawerState === "true");
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const handleToggleDrawer = (open: boolean) => {
     setIsDrawerOpen(open);
     try {
       localStorage.setItem("demandflow-header-drawer-open", String(open));
-    } catch {}
+    } catch { }
   };
 
   const activeSlideInfo = SLIDE_TITLES.find((s) => s.id === currentSlide) || SLIDE_TITLES[0];
@@ -105,11 +105,11 @@ export default function PresentationHeader({
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch(() => { });
       setIsFullscreen(true);
     } else {
       if (document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
+        document.exitFullscreen().catch(() => { });
         setIsFullscreen(false);
       }
     }
@@ -138,11 +138,10 @@ export default function PresentationHeader({
                 Slide {currentSlide}: {activeSlideInfo.label}
               </span>
               <span
-                className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${
-                  autoRotate
+                className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${autoRotate
                     ? "bg-cyan-500/20 text-cyan-300 border-cyan-400/30"
                     : "bg-amber-500/20 text-amber-300 border-amber-400/30"
-                }`}
+                  }`}
               >
                 {autoRotate ? `${countdownSeconds}s remaining` : "Rotation Paused"}
               </span>
@@ -170,11 +169,10 @@ export default function PresentationHeader({
             <button
               onClick={onToggleAutoRotate}
               title={autoRotate ? "Pause slide rotation" : "Resume slide rotation"}
-              className={`px-2 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
-                autoRotate
+              className={`px-2 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${autoRotate
                   ? "bg-cyan-500/20 border-cyan-400/30 text-cyan-300 hover:bg-cyan-500/30"
                   : "bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30"
-              }`}
+                }`}
             >
               {autoRotate ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
               <span className="text-[10px]">{autoRotate ? "Pause" : "Play"}</span>
@@ -184,11 +182,10 @@ export default function PresentationHeader({
               <button
                 onClick={onToggleTvMode}
                 title={isTvMode ? "TV Mode: Active" : "Enable TV Mode"}
-                className={`p-1 rounded-lg border text-[10px] flex items-center gap-1 ${
-                  isTvMode
+                className={`p-1 rounded-lg border text-[10px] flex items-center gap-1 ${isTvMode
                     ? "bg-cyan-500/20 border-cyan-400/30 text-cyan-300"
                     : "bg-slate-800 border-white/10 text-slate-400"
-                }`}
+                  }`}
               >
                 <Tv className="w-3 h-3" />
               </button>
@@ -231,7 +228,7 @@ export default function PresentationHeader({
                   <div>
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold tracking-tight text-slate-900 dark:text-white text-xs sm:text-sm">
-                        DemandFlow
+                        DemandPulse
                       </span>
                       <span className="px-1 py-0.2 text-[8.5px] font-bold bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 rounded">
                         LIVE
@@ -248,14 +245,12 @@ export default function PresentationHeader({
                   <div className="hidden xl:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-200/60 dark:bg-slate-900/80 border border-slate-300/70 dark:border-slate-700 text-[10.5px]">
                     <span className="relative flex h-2 w-2">
                       <span
-                        className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                          isLiveConnection ? "bg-emerald-400" : "bg-rose-400"
-                        }`}
+                        className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isLiveConnection ? "bg-emerald-400" : "bg-rose-400"
+                          }`}
                       />
                       <span
-                        className={`relative inline-flex rounded-full h-2 w-2 ${
-                          isLiveConnection ? "bg-emerald-500" : "bg-rose-500"
-                        }`}
+                        className={`relative inline-flex rounded-full h-2 w-2 ${isLiveConnection ? "bg-emerald-500" : "bg-rose-500"
+                          }`}
                       />
                     </span>
                     <span
@@ -278,18 +273,16 @@ export default function PresentationHeader({
                       <button
                         key={slide.id}
                         onClick={() => onSelectSlide(slide.id)}
-                        className={`relative px-2 sm:px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                          isActive
+                        className={`relative px-2 sm:px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${isActive
                             ? "bg-gradient-to-r from-cyan-500/25 to-blue-600/35 text-cyan-900 dark:text-cyan-200 border border-cyan-500/50 dark:border-cyan-400/50 shadow font-bold"
                             : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-300/50 dark:hover:bg-white/5"
-                        }`}
+                          }`}
                       >
                         <span
-                          className={`w-3.5 h-3.5 rounded-full text-[9px] flex items-center justify-center font-bold ${
-                            isActive
+                          className={`w-3.5 h-3.5 rounded-full text-[9px] flex items-center justify-center font-bold ${isActive
                               ? "bg-cyan-500 text-black shadow-sm"
                               : "bg-slate-300 dark:bg-slate-800 text-slate-700 dark:text-slate-400"
-                          }`}
+                            }`}
                         >
                           {slide.id}
                         </span>
@@ -311,11 +304,10 @@ export default function PresentationHeader({
                   <button
                     onClick={onToggleAutoRotate}
                     title={autoRotate ? "Pause auto-slide rotation" : "Resume auto-slide rotation"}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer shadow-sm ${
-                      autoRotate
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer shadow-sm ${autoRotate
                         ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-800 dark:text-cyan-300 hover:bg-cyan-500/30"
                         : "bg-emerald-500/20 border-emerald-500/50 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-500/30"
-                    }`}
+                      }`}
                   >
                     {autoRotate ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
                     <span>{autoRotate ? `Pause (${countdownSeconds}s)` : "Play Rotation"}</span>
@@ -360,9 +352,8 @@ export default function PresentationHeader({
                     <button
                       onClick={onManualRefresh}
                       title="Refresh CRM analytics data"
-                      className={`p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer ${
-                        isFetching ? "animate-spin text-cyan-500" : ""
-                      }`}
+                      className={`p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer ${isFetching ? "animate-spin text-cyan-500" : ""
+                        }`}
                     >
                       <RefreshCw className="w-3 h-3" />
                     </button>
@@ -373,11 +364,10 @@ export default function PresentationHeader({
                     <button
                       onClick={onToggleTvMode}
                       title={isTvMode ? "65″ Floor TV Mode: Active" : "Enable 65″ Floor TV Mode"}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition-all cursor-pointer ${
-                        isTvMode
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition-all cursor-pointer ${isTvMode
                           ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-800 dark:text-cyan-300 shadow-sm"
                           : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                      }`}
+                        }`}
                     >
                       <Tv className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
                       <span className="hidden xl:inline">TV</span>

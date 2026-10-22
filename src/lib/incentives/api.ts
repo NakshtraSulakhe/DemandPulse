@@ -149,10 +149,39 @@ export async function settleIncentives(payload: {
   manager_override?: boolean;
   override_reason?: string;
 }): Promise<CrmApiResponse<SettleResponseData>> {
-  return callIncentiveApi<SettleResponseData>("settle.php", {
+  const result = await callIncentiveApi<any>("settle.php", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+
+  if (result.success && result.data) {
+    const raw = result.data;
+    const normalized: SettleResponseData = {
+      work_date: raw.work_date || payload.work_date,
+      mode: (raw.mode || payload.mode) as SettlementMode,
+      total_agents_processed: raw.total_agents ?? raw.total_agents_processed ?? 0,
+      eligible_agents_count: raw.eligible_count ?? raw.eligible_agents ?? raw.eligible_agents_count ?? 0,
+      total_incentive_amount: raw.total_settled_amount ?? raw.total_incentive ?? raw.total_incentive_amount ?? 0,
+      inserted_count: raw.records_created ?? raw.inserted_count ?? 0,
+      updated_count: raw.records_updated ?? raw.updated_count ?? 0,
+      skipped_count: raw.records_skipped ?? raw.skipped_count ?? 0,
+      records: raw.agents || raw.records || [],
+      agents: raw.agents || raw.records || [],
+      total_agents: raw.total_agents,
+      eligible_count: raw.eligible_count,
+      total_settled_amount: raw.total_settled_amount,
+      records_created: raw.records_created,
+      records_updated: raw.records_updated,
+      records_skipped: raw.records_skipped,
+      preview_only: raw.preview_only,
+    };
+    return {
+      ...result,
+      data: normalized,
+    };
+  }
+
+  return result;
 }
 
 /**

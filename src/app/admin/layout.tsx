@@ -84,7 +84,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
             <div>
               <div className="font-bold text-sm tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5">
-                DemandFlow <span className="text-cyan-600 dark:text-cyan-400 text-xs font-semibold">ADMIN PORTAL</span>
+                DemandPulse <span className="text-cyan-600 dark:text-cyan-400 text-xs font-semibold">ADMIN PORTAL</span>
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400">Operations Target Management</p>
             </div>
@@ -126,9 +126,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Sidebar - Distinct visually & Independently Scrollable */}
         <aside
-          className={`fixed md:static inset-y-0 left-0 z-50 md:z-auto w-64 lg:w-72 flex-shrink-0 bg-slate-50/95 dark:bg-[#0c1220] border-r border-slate-200/90 dark:border-white/10 p-4 flex flex-col justify-between h-full overflow-y-auto transition-transform duration-200 ease-in-out shadow-xl md:shadow-none ${
-            mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-          }`}
+          className={`fixed md:static inset-y-0 left-0 z-50 md:z-auto w-64 lg:w-72 flex-shrink-0 bg-slate-50/95 dark:bg-[#0c1220] border-r border-slate-200/90 dark:border-white/10 p-4 flex flex-col justify-between h-full overflow-y-auto transition-transform duration-200 ease-in-out shadow-xl md:shadow-none ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+            }`}
         >
           <div className="flex flex-col gap-4">
             {/* Mobile close button */}
@@ -154,11 +153,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     key={item.href}
                     href={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${
-                      isActive
-                        ? "bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 border border-cyan-500/40 dark:border-cyan-500/30 font-bold shadow-sm"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/5"
-                    }`}
+                    className={`flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${isActive
+                      ? "bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 border border-cyan-500/40 dark:border-cyan-500/30 font-bold shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/5"
+                      }`}
                   >
                     <div className="flex items-center gap-2.5">
                       <Icon className="w-4 h-4" />
@@ -181,11 +179,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     key={item.href}
                     href={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${
-                      isActive
-                        ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/40 dark:border-amber-500/30 font-bold shadow-sm"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/5"
-                    }`}
+                    className={`flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${isActive
+                      ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/40 dark:border-amber-500/30 font-bold shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/5"
+                      }`}
                   >
                     <div className="flex items-center gap-2.5">
                       <Icon className="w-4 h-4" />
