@@ -25,9 +25,222 @@ import {
   Activity,
   Check,
   Copy,
+  Pause,
+  Play,
 } from "lucide-react";
 import { useCrmConfig } from "@/hooks/use-crm-config";
 import { CrmConfig } from "@/types/crm-config";
+import { formatIntervalDisplay } from "@/lib/utils";
+
+interface IntervalCardProps {
+  title: string;
+  icon: React.ReactNode;
+  description: string;
+  valueSeconds: number;
+  onChange: (val: number) => void;
+  accent: "cyan" | "amber" | "purple" | "emerald";
+  presets: { label: string; seconds: number }[];
+  minSeconds?: number;
+  maxSeconds?: number;
+  footerRateType?: "rate" | "cadence";
+  children?: React.ReactNode;
+}
+
+function IntervalCard({
+  title,
+  icon,
+  description,
+  valueSeconds,
+  onChange,
+  accent,
+  presets,
+  minSeconds = 5,
+  maxSeconds = 3600,
+  footerRateType = "rate",
+  children,
+}: IntervalCardProps) {
+  const [unit, setUnit] = useState<"sec" | "min">(() =>
+    valueSeconds >= 60 && valueSeconds % 30 === 0 ? "min" : "sec"
+  );
+  const [inputValue, setInputValue] = useState<string>(() =>
+    unit === "min" ? String(Number((valueSeconds / 60).toFixed(2))) : String(valueSeconds)
+  );
+
+  useEffect(() => {
+    if (unit === "min") {
+      setInputValue(String(Number((valueSeconds / 60).toFixed(2))));
+    } else {
+      setInputValue(String(valueSeconds));
+    }
+  }, [valueSeconds, unit]);
+
+  const handleUnitToggle = (newUnit: "sec" | "min") => {
+    if (newUnit === unit) return;
+    setUnit(newUnit);
+    if (newUnit === "min") {
+      setInputValue(String(Number((valueSeconds / 60).toFixed(2))));
+    } else {
+      setInputValue(String(valueSeconds));
+    }
+  };
+
+  const handleInputChange = (raw: string) => {
+    setInputValue(raw);
+    const parsed = parseFloat(raw);
+    if (isNaN(parsed) || parsed <= 0) return;
+
+    let computedSec = unit === "min" ? Math.round(parsed * 60) : Math.round(parsed);
+    computedSec = Math.max(minSeconds, Math.min(maxSeconds, computedSec));
+    onChange(computedSec);
+  };
+
+  const colors = {
+    cyan: {
+      text: "text-cyan-700 dark:text-cyan-400",
+      badge: "text-cyan-700 dark:text-cyan-300 bg-cyan-500/10 border-cyan-500/30",
+      presetActive: "bg-cyan-500/20 border-cyan-500 text-cyan-800 dark:text-cyan-300 font-bold shadow-sm",
+      unitActive: "bg-cyan-600 dark:bg-cyan-500 text-white font-bold shadow-sm",
+      borderFocus: "focus:border-cyan-500",
+    },
+    amber: {
+      text: "text-amber-700 dark:text-amber-400",
+      badge: "text-amber-700 dark:text-amber-300 bg-amber-500/10 border-amber-500/30",
+      presetActive: "bg-amber-500/20 border-amber-500 text-amber-800 dark:text-amber-300 font-bold shadow-sm",
+      unitActive: "bg-amber-600 dark:bg-amber-500 text-white font-bold shadow-sm",
+      borderFocus: "focus:border-amber-500",
+    },
+    purple: {
+      text: "text-purple-700 dark:text-purple-400",
+      badge: "text-purple-700 dark:text-purple-300 bg-purple-500/10 border-purple-500/30",
+      presetActive: "bg-purple-500/20 border-purple-500 text-purple-800 dark:text-purple-300 font-bold shadow-sm",
+      unitActive: "bg-purple-600 dark:bg-purple-500 text-white font-bold shadow-sm",
+      borderFocus: "focus:border-purple-500",
+    },
+    emerald: {
+      text: "text-emerald-700 dark:text-emerald-400",
+      badge: "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/30",
+      presetActive: "bg-emerald-500/20 border-emerald-500 text-emerald-800 dark:text-emerald-300 font-bold shadow-sm",
+      unitActive: "bg-emerald-600 dark:bg-emerald-500 text-white font-bold shadow-sm",
+      borderFocus: "focus:border-emerald-500",
+    },
+  }[accent];
+
+  return (
+    <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-col justify-between">
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <div className={`flex items-center gap-2 ${colors.text} text-xs font-bold`}>
+            {icon}
+            <span>{title}</span>
+          </div>
+          <span className={`font-mono text-xs font-extrabold px-2 py-0.5 rounded-lg border ${colors.badge}`}>
+            {formatIntervalDisplay(valueSeconds)}
+          </span>
+        </div>
+
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3.5 leading-relaxed">
+          {description}
+        </p>
+
+        {/* Quick Presets */}
+        <div className="mb-3">
+          <div className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 mb-1.5 tracking-wider">
+            Quick Presets:
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {presets.map((p) => (
+              <button
+                key={p.seconds}
+                type="button"
+                onClick={() => onChange(p.seconds)}
+                className={`px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                  valueSeconds === p.seconds
+                    ? colors.presetActive
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom Input with Seconds / Minutes Toggle */}
+        <div className="p-3 rounded-xl bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div>
+              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                Custom Duration:
+              </span>
+              <span className="text-[10px] text-slate-500 block">
+                Configure in exact seconds or minutes
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                step={unit === "min" ? "0.1" : "1"}
+                min={unit === "min" ? "0.1" : String(minSeconds)}
+                max={unit === "min" ? String(maxSeconds / 60) : String(maxSeconds)}
+                value={inputValue}
+                onChange={(e) => handleInputChange(e.target.value)}
+                className={`w-20 px-2.5 py-1 text-xs font-mono font-bold bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-800 dark:text-white focus:outline-none ${colors.borderFocus}`}
+                placeholder={unit === "min" ? "min" : "sec"}
+              />
+
+              {/* Unit Toggle: Seconds / Minutes */}
+              <div className="flex rounded-lg p-0.5 bg-slate-200 dark:bg-slate-800 border border-slate-300/80 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => handleUnitToggle("sec")}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                    unit === "sec"
+                      ? colors.unitActive
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  Sec (s)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleUnitToggle("min")}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                    unit === "min"
+                      ? colors.unitActive
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  Min (m)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {children}
+      </div>
+
+      <div className="pt-2.5 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between text-[10px] text-slate-500">
+        {footerRateType === "rate" ? (
+          <>
+            <span>Estimated request rate:</span>
+            <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+              ~{Math.round(3600 / (valueSeconds || 30))} queries / hr per active client
+            </span>
+          </>
+        ) : (
+          <>
+            <span>Configured cadence:</span>
+            <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+              {formatIntervalDisplay(valueSeconds)}
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const QUICK_PRESETS = [
   {
@@ -68,7 +281,8 @@ export default function CrmConfigPage() {
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [formDirty, setFormDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<"api" | "sync" | "diagnostics">("api");
+  const [syncStatusMessage, setSyncStatusMessage] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<"sync" | "api" | "diagnostics" | "all">("sync");
 
   // Keep form updated when config loads
   useEffect(() => {
@@ -80,6 +294,23 @@ export default function CrmConfigPage() {
   const handleChange = <K extends keyof CrmConfig>(key: K, value: CrmConfig[K]) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
     setFormDirty(true);
+  };
+
+  const handleToggleAutoSync = async () => {
+    try {
+      const nextState = !formData.autoSyncEnabled;
+      const updated = await updateConfig({ ...formData, autoSyncEnabled: nextState });
+      setFormData(updated);
+      setSyncStatusMessage(
+        nextState
+          ? `Auto-sync resumed! Live polling active every ${formatIntervalDisplay(updated.analyticsSyncInterval)}.`
+          : "Auto-sync paused! Automated CRM API polling halted across all dashboards and slides."
+      );
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 4000);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to toggle auto-sync");
+    }
   };
 
   const handleSave = async () => {
@@ -137,7 +368,7 @@ export default function CrmConfigPage() {
   }
 
   return (
-    <div className="w-full flex flex-col gap-6 animate-fadeIn max-w-5xl">
+    <div className="w-full flex flex-col gap-6 animate-fadeIn max-w-[1750px] mx-auto">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
@@ -154,6 +385,34 @@ export default function CrmConfigPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          {/* 1-Click Pause / Resume Auto-Sync Button */}
+          <button
+            onClick={handleToggleAutoSync}
+            disabled={isSaving}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50 ${
+              formData.autoSyncEnabled
+                ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/30"
+                : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-500/30 animate-pulse"
+            }`}
+            title={
+              formData.autoSyncEnabled
+                ? "Click to immediately pause all background CRM API polling"
+                : "Click to resume automatic background CRM API polling"
+            }
+          >
+            {formData.autoSyncEnabled ? (
+              <>
+                <Pause className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 fill-amber-500/30" />
+                <span>Pause API Sync</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 fill-emerald-500/30" />
+                <span>Resume API Sync</span>
+              </>
+            )}
+          </button>
+
           <button
             onClick={handleInstantSync}
             disabled={syncSuccess}
@@ -193,7 +452,7 @@ export default function CrmConfigPage() {
         <div className="p-3.5 rounded-xl text-xs bg-emerald-100/90 dark:bg-emerald-950/60 border border-emerald-400/50 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-200 flex items-center justify-between animate-fadeIn shadow-sm">
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-            <span>CRM API configuration and sync intervals updated successfully! All active slides and dashboard components have adjusted to the new schedule.</span>
+            <span>{syncStatusMessage || "CRM API configuration and sync intervals updated successfully! All active slides and dashboard components have adjusted to the new schedule."}</span>
           </div>
         </div>
       )}
@@ -230,16 +489,20 @@ export default function CrmConfigPage() {
           </div>
         </div>
 
-        <div className="glass-panel p-3.5 rounded-xl border border-slate-200/80 dark:border-white/10 flex items-center justify-between">
+        <div
+          onClick={() => setActiveTab("sync")}
+          className="glass-panel p-3.5 rounded-xl border border-slate-200/80 dark:border-white/10 flex items-center justify-between cursor-pointer hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all group"
+          title="Click to view and configure sync timing intervals"
+        >
           <div>
             <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
               Auto-Sync Cadence
             </span>
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block mt-0.5">
-              {formData.autoSyncEnabled ? `Every ${formData.analyticsSyncInterval}s` : "Paused"}
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block mt-0.5 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+              {formData.autoSyncEnabled ? `Every ${formatIntervalDisplay(formData.analyticsSyncInterval)}` : "Paused"}
             </span>
             <span className="text-[10px] text-slate-500">
-              {formData.autoSyncEnabled ? `~${Math.round(3600 / formData.analyticsSyncInterval)} queries/hr` : "Polling inactive"}
+              {formData.autoSyncEnabled ? `~${Math.round(3600 / (formData.analyticsSyncInterval || 30))} queries/hr` : "Polling inactive"}
             </span>
           </div>
           <div className={`p-2 rounded-lg border ${formData.autoSyncEnabled ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" : "bg-amber-500/10 text-amber-600 border-amber-500/20"}`}>
@@ -289,12 +552,27 @@ export default function CrmConfigPage() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200/80 dark:border-white/10 gap-2">
+      <div className="flex border-b border-slate-200/80 dark:border-white/10 gap-2 overflow-x-auto pb-0.5">
+        <button
+          onClick={() => setActiveTab("sync")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === "sync"
+              ? "border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-500/5 shadow-sm"
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Clock className="w-4 h-4 text-cyan-500" />
+          <span>API Sync Intervals & Cadence (Time Configuration)</span>
+          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
+            {formatIntervalDisplay(formData.analyticsSyncInterval)}
+          </span>
+        </button>
+
         <button
           onClick={() => setActiveTab("api")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === "api"
-              ? "border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-500/5"
+              ? "border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-500/5 shadow-sm"
               : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
@@ -303,22 +581,10 @@ export default function CrmConfigPage() {
         </button>
 
         <button
-          onClick={() => setActiveTab("sync")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-            activeTab === "sync"
-              ? "border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-500/5"
-              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <Sliders className="w-4 h-4" />
-          <span>API Sync Intervals & Cadence</span>
-        </button>
-
-        <button
           onClick={() => setActiveTab("diagnostics")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === "diagnostics"
-              ? "border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-500/5"
+              ? "border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-500/5 shadow-sm"
               : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
@@ -328,11 +594,196 @@ export default function CrmConfigPage() {
             <span className={`w-2 h-2 rounded-full ${testReport.ok ? "bg-emerald-500" : "bg-rose-500 animate-pulse"}`} />
           )}
         </button>
-      </div>
 
-      {/* TAB 1: CRM REST API Connection */}
-      {activeTab === "api" && (
+        <button
+          onClick={() => setActiveTab("all")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === "all"
+              ? "border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-500/5 shadow-sm"
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>All Settings (Full Overview)</span>
+        </button>
+      </div>      {/* SECTION 1: API Sync Intervals & Cadence (Time Configuration) */}
+      {(activeTab === "sync" || activeTab === "all") && (
         <div className="flex flex-col gap-5 animate-fadeIn">
+          {activeTab === "all" && (
+            <div className="flex items-center gap-2 pt-2 border-b border-slate-200/60 dark:border-white/10 pb-2">
+              <Clock className="w-5 h-5 text-cyan-500" />
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">1. API Sync Intervals & Timing Cadence</h2>
+            </div>
+          )}
+
+          {/* Master Auto-Sync Switch */}
+          <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex items-center justify-between">
+            <div className="flex items-start gap-3">
+              <div className={`p-2.5 rounded-xl border ${formData.autoSyncEnabled ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" : "bg-slate-200 dark:bg-slate-800 text-slate-500 border-slate-300 dark:border-slate-700"}`}>
+                <Radio className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-slate-900 dark:text-white">
+                  Automated Background Synchronization
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  When enabled, all client screens, dashboard cards, and TV presentations automatically poll the CRM API at the configured intervals below.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border ${
+                formData.autoSyncEnabled
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                  : "bg-amber-500/10 text-amber-600 border-amber-500/20"
+              }`}>
+                {formData.autoSyncEnabled ? "POLLING ACTIVE" : "POLLING PAUSED"}
+              </span>
+
+              <button
+                type="button"
+                onClick={handleToggleAutoSync}
+                disabled={isSaving}
+                className={`relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  formData.autoSyncEnabled ? "bg-emerald-600" : "bg-slate-300 dark:bg-slate-700"
+                }`}
+                title={formData.autoSyncEnabled ? "Click to pause auto-sync" : "Click to resume auto-sync"}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    formData.autoSyncEnabled ? "translate-x-6" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Sync Intervals Grid - Responsive Widescreen */}
+          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-5">
+            {/* 1. Analytics Polling Refresh Interval */}
+            <IntervalCard
+              title="Live Slides Analytics Poll Interval"
+              icon={<Activity className="w-4 h-4 text-cyan-500" />}
+              description="Cadence for refetching Slide 1 (KPIs & Campaigns), Slide 2 (SDR points), Slide 3 & 4 (heatmaps), and Slide 5 (comparative)."
+              valueSeconds={formData.analyticsSyncInterval || 30}
+              onChange={(val) => handleChange("analyticsSyncInterval", val)}
+              accent="cyan"
+              presets={[
+                { label: "10s", seconds: 10 },
+                { label: "15s", seconds: 15 },
+                { label: "20s", seconds: 20 },
+                { label: "30s", seconds: 30 },
+                { label: "45s", seconds: 45 },
+                { label: "1 min", seconds: 60 },
+                { label: "2 min", seconds: 120 },
+                { label: "5 min", seconds: 300 },
+                { label: "10 min", seconds: 600 },
+              ]}
+              footerRateType="rate"
+            />
+
+            {/* 2. Live Recognition & Celebrations Scroller Interval */}
+            <IntervalCard
+              title="Recognition & Celebrations Ticker Poll"
+              icon={<Sparkles className="w-4 h-4 text-amber-500" />}
+              description="Frequency for syncing top lead scores, birthdays, and work anniversaries on the global scrolling ribbon."
+              valueSeconds={formData.recognitionSyncInterval || 20}
+              onChange={(val) => handleChange("recognitionSyncInterval", val)}
+              accent="amber"
+              presets={[
+                { label: "10s", seconds: 10 },
+                { label: "15s", seconds: 15 },
+                { label: "20s", seconds: 20 },
+                { label: "30s", seconds: 30 },
+                { label: "45s", seconds: 45 },
+                { label: "1 min", seconds: 60 },
+                { label: "2 min", seconds: 120 },
+                { label: "5 min", seconds: 300 },
+              ]}
+              footerRateType="rate"
+            >
+              <div className="pt-2.5 border-t border-slate-200/60 dark:border-white/5 mb-1">
+                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5 uppercase tracking-wider">
+                  Celebration Milestones Filter:
+                </span>
+                <div className="flex gap-1.5">
+                  {[
+                    { id: "daily", label: "Daily (Today Only)" },
+                    { id: "weekly", label: "This Week" },
+                    { id: "monthly", label: "This Month" },
+                  ].map((scope) => (
+                    <button
+                      key={scope.id}
+                      type="button"
+                      onClick={() => handleChange("recognitionDisplayScope", scope.id as any)}
+                      className={`flex-1 py-1 px-2 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                        (formData.recognitionDisplayScope || "daily") === scope.id
+                          ? "bg-amber-500/20 border-amber-500 text-amber-800 dark:text-amber-300 shadow-sm"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                      }`}
+                    >
+                      {scope.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </IntervalCard>
+
+            {/* 3. Campaign Targets Polling Interval */}
+            <IntervalCard
+              title="Campaign Daily Targets Sync Cadence"
+              icon={<Database className="w-4 h-4 text-purple-500" />}
+              description="Interval for checking database campaign allocations, remaining targets to qualify, and lead counts."
+              valueSeconds={formData.campaignTargetsSyncInterval || 30}
+              onChange={(val) => handleChange("campaignTargetsSyncInterval", val)}
+              accent="purple"
+              presets={[
+                { label: "15s", seconds: 15 },
+                { label: "30s", seconds: 30 },
+                { label: "45s", seconds: 45 },
+                { label: "1 min", seconds: 60 },
+                { label: "2 min", seconds: 120 },
+                { label: "5 min", seconds: 300 },
+                { label: "10 min", seconds: 600 },
+              ]}
+              footerRateType="cadence"
+            />
+
+            {/* 4. Automated TV Slide Rotation Interval */}
+            <IntervalCard
+              title="TV Slide Carousel Rotation Timer"
+              icon={<Clock className="w-4 h-4 text-emerald-500" />}
+              description="Seconds or minutes each slide stays visible before automatically advancing to the next active slide in TV presentation mode."
+              valueSeconds={formData.slideRotationInterval || 25}
+              onChange={(val) => handleChange("slideRotationInterval", val)}
+              accent="emerald"
+              presets={[
+                { label: "15s", seconds: 15 },
+                { label: "20s", seconds: 20 },
+                { label: "25s", seconds: 25 },
+                { label: "30s", seconds: 30 },
+                { label: "45s", seconds: 45 },
+                { label: "1 min", seconds: 60 },
+                { label: "2 min", seconds: 120 },
+              ]}
+              footerRateType="cadence"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 2: CRM REST API Connection */}
+      {(activeTab === "api" || activeTab === "all") && (
+        <div className="flex flex-col gap-5 animate-fadeIn">
+          {activeTab === "all" && (
+            <div className="flex items-center gap-2 pt-4 border-b border-slate-200/60 dark:border-white/10 pb-2">
+              <Server className="w-5 h-5 text-cyan-500" />
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">2. CRM REST API Connection & Upstream Endpoints</h2>
+            </div>
+          )}
+
           {/* Main Connection Parameters */}
           <div className="glass-panel p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-col gap-5">
             <div>
@@ -451,7 +902,7 @@ export default function CrmConfigPage() {
               </div>
             </div>
 
-            {/* Offline Mock Fallback Switch */}
+            {/* Intelligent Mock Fallback Switch */}
             <div className="pt-4 border-t border-slate-200/60 dark:border-white/10">
               <div className="flex items-start justify-between gap-4 p-4 rounded-xl bg-purple-500/5 border border-purple-500/20">
                 <div className="flex items-start gap-3">
@@ -481,7 +932,7 @@ export default function CrmConfigPage() {
             </div>
           </div>
 
-          {/* CRM Upstream Endpoints Directory */}
+          {/* Upstream Endpoints Directory */}
           <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10">
             <h2 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-2">
               <Database className="w-4 h-4 text-cyan-500" />
@@ -513,206 +964,16 @@ export default function CrmConfigPage() {
         </div>
       )}
 
-      {/* TAB 2: API Sync Intervals & Cadence */}
-      {activeTab === "sync" && (
+      {/* SECTION 3: Live Endpoint Diagnostics */}
+      {(activeTab === "diagnostics" || activeTab === "all") && (
         <div className="flex flex-col gap-5 animate-fadeIn">
-          {/* Master Auto-Sync Switch */}
-          <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex items-center justify-between">
-            <div className="flex items-start gap-3">
-              <div className={`p-2.5 rounded-xl border ${formData.autoSyncEnabled ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" : "bg-slate-200 dark:bg-slate-800 text-slate-500 border-slate-300 dark:border-slate-700"}`}>
-                <Radio className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-sm font-bold text-slate-900 dark:text-white">
-                  Automated Background Synchronization
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  When enabled, all client screens, dashboard cards, and TV presentations automatically poll the CRM API at the configured intervals below.
-                </p>
-              </div>
+          {activeTab === "all" && (
+            <div className="flex items-center gap-2 pt-4 border-b border-slate-200/60 dark:border-white/10 pb-2">
+              <Activity className="w-5 h-5 text-cyan-500" />
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">3. Live Endpoint Diagnostics & Health Probe</h2>
             </div>
+          )}
 
-            <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
-              <input
-                type="checkbox"
-                checked={formData.autoSyncEnabled}
-                onChange={(e) => handleChange("autoSyncEnabled", e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-12 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-            </label>
-          </div>
-
-          {/* Sync Intervals Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* 1. Analytics Polling Refresh Interval */}
-            <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2 text-cyan-700 dark:text-cyan-400 text-xs font-bold">
-                    <Activity className="w-4 h-4 text-cyan-500" />
-                    <span>Live Slides Analytics Poll Interval</span>
-                  </div>
-                  <span className="font-mono text-xs font-extrabold text-cyan-600 dark:text-cyan-400">
-                    {formData.analyticsSyncInterval}s
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3.5">
-                  Cadence for refetching Slide 1 (KPIs & Campaigns), Slide 2 (SDR points), Slide 3 & 4 (heatmaps), and Slide 5 (comparative).
-                </p>
-
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {[10, 15, 20, 30, 45, 60, 120, 300].map((sec) => (
-                    <button
-                      key={sec}
-                      type="button"
-                      onClick={() => handleChange("analyticsSyncInterval", sec)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                        formData.analyticsSyncInterval === sec
-                          ? "bg-cyan-500/20 border-cyan-500 text-cyan-800 dark:text-cyan-300 shadow-sm"
-                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                      }`}
-                    >
-                      {sec >= 60 ? `${sec / 60}m` : `${sec}s`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-2.5 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between text-[10px] text-slate-500">
-                <span>Estimated request rate:</span>
-                <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                  {Math.round(3600 / formData.analyticsSyncInterval)} queries / hr per active client
-                </span>
-              </div>
-            </div>
-
-            {/* 2. Live Recognition & Celebrations Scroller Interval */}
-            <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-xs font-bold">
-                    <Sparkles className="w-4 h-4 text-amber-500" />
-                    <span>Recognition & Celebrations Ticker Poll</span>
-                  </div>
-                  <span className="font-mono text-xs font-extrabold text-amber-600 dark:text-amber-400">
-                    {formData.recognitionSyncInterval}s
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3.5">
-                  Frequency for syncing top lead scores, birthdays, and work anniversaries on the global scrolling ribbon.
-                </p>
-
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {[10, 15, 20, 30, 45, 60].map((sec) => (
-                    <button
-                      key={sec}
-                      type="button"
-                      onClick={() => handleChange("recognitionSyncInterval", sec)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                        formData.recognitionSyncInterval === sec
-                          ? "bg-amber-500/20 border-amber-500 text-amber-800 dark:text-amber-300 shadow-sm"
-                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                      }`}
-                    >
-                      {sec}s
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-2.5 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between text-[10px] text-slate-500">
-                <span>Default recommended:</span>
-                <span className="font-mono font-bold text-slate-700 dark:text-slate-300">20s</span>
-              </div>
-            </div>
-
-            {/* 3. Campaign Targets Polling Interval */}
-            <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2 text-purple-700 dark:text-purple-400 text-xs font-bold">
-                    <Database className="w-4 h-4 text-purple-500" />
-                    <span>Campaign Daily Targets Sync Cadence</span>
-                  </div>
-                  <span className="font-mono text-xs font-extrabold text-purple-600 dark:text-purple-400">
-                    {formData.campaignTargetsSyncInterval}s
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3.5">
-                  Interval for checking database campaign allocations, remaining targets to qualify, and lead counts.
-                </p>
-
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {[15, 30, 45, 60, 120, 300].map((sec) => (
-                    <button
-                      key={sec}
-                      type="button"
-                      onClick={() => handleChange("campaignTargetsSyncInterval", sec)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                        formData.campaignTargetsSyncInterval === sec
-                          ? "bg-purple-500/20 border-purple-500 text-purple-800 dark:text-purple-300 shadow-sm"
-                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                      }`}
-                    >
-                      {sec >= 60 ? `${sec / 60}m` : `${sec}s`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-2.5 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between text-[10px] text-slate-500">
-                <span>Auto-invalidates on save:</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-bold">Yes (Instant replication)</span>
-              </div>
-            </div>
-
-            {/* 4. Automated TV Slide Rotation Interval */}
-            <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 text-xs font-bold">
-                    <Clock className="w-4 h-4 text-emerald-500" />
-                    <span>TV Slide Carousel Rotation Timer</span>
-                  </div>
-                  <span className="font-mono text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
-                    {formData.slideRotationInterval}s
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3.5">
-                  Seconds each slide stays visible before automatically advancing to the next active slide in TV presentation mode.
-                </p>
-
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {[15, 20, 25, 30, 45, 60].map((sec) => (
-                    <button
-                      key={sec}
-                      type="button"
-                      onClick={() => handleChange("slideRotationInterval", sec)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                        formData.slideRotationInterval === sec
-                          ? "bg-emerald-500/20 border-emerald-500 text-emerald-800 dark:text-emerald-300 shadow-sm"
-                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                      }`}
-                    >
-                      {sec}s
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-2.5 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between text-[10px] text-slate-500">
-                <span>Default presentation duration:</span>
-                <span className="font-mono font-bold text-slate-700 dark:text-slate-300">25s</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: Live Endpoint Diagnostics */}
-      {activeTab === "diagnostics" && (
-        <div className="flex flex-col gap-5 animate-fadeIn">
           <div className="glass-panel p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>

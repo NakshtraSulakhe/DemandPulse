@@ -291,12 +291,14 @@ html:not(.dark) .tv-stat-number-purple {
 
 /* Ultra-legible table row height and text for distance viewing on Floor TV */
 .floor-tv-display table th {
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
 }
 
 .floor-tv-display table td {
-  padding-top: 0.95rem;
-  padding-bottom: 0.95rem;
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
 }
 
 @media screen and (min-width: 1440px) {

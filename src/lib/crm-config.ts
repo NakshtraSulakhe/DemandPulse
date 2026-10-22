@@ -19,6 +19,7 @@ export function getDefaultCrmConfig(): CrmConfig {
     campaignTargetsSyncInterval: 30,
     slideRotationInterval: 25,
     heatmapGranularity: 10,
+    recognitionDisplayScope: "daily",
     lastUpdated: new Date().toISOString(),
     updatedBy: "System Default (.env)",
   };
@@ -43,6 +44,9 @@ export async function getCrmConfig(): Promise<CrmConfig> {
       campaignTargetsSyncInterval: Number(parsed.campaignTargetsSyncInterval) || defaults.campaignTargetsSyncInterval,
       slideRotationInterval: Number(parsed.slideRotationInterval) || defaults.slideRotationInterval,
       heatmapGranularity: Number(parsed.heatmapGranularity) || defaults.heatmapGranularity,
+      recognitionDisplayScope: ["daily", "weekly", "monthly"].includes(parsed.recognitionDisplayScope)
+        ? parsed.recognitionDisplayScope
+        : "daily",
       crmApiTimeoutMs: Number(parsed.crmApiTimeoutMs) || defaults.crmApiTimeoutMs,
       crmMockFallback: typeof parsed.crmMockFallback === "boolean" ? parsed.crmMockFallback : defaults.crmMockFallback,
       autoSyncEnabled: typeof parsed.autoSyncEnabled === "boolean" ? parsed.autoSyncEnabled : defaults.autoSyncEnabled,

@@ -12,6 +12,9 @@ export interface CampaignSlide1 {
   campaign_name: string;
   campaign_code: string;
   client_code?: string | null;
+  campaign_type?: string | null;
+  description?: string | null;
+  campaign_description?: string | null;
   monthly_allocation: number;
   daily_target: number;
   generated_leads: number;
@@ -160,6 +163,9 @@ export interface AdminCampaignTargetItem {
   campaign_name: string;
   campaign_code: string;
   client_code?: string | null;
+  campaign_type?: string | null;
+  description?: string | null;
+  campaign_description?: string | null;
   monthly_allocation: number;
   daily_target: number;
   generated_leads: number;

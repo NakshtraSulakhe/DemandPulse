@@ -130,40 +130,40 @@ export default function CampaignTargetsPage() {
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <Target className="w-5 h-5 text-cyan-400" />
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Target className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
             Campaign Daily Targets Allocation
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Allocate daily campaign targets and monitor real-time fulfillment across qualified leads
           </p>
         </div>
 
         {/* Date Selector & Batch Save */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-panel border border-white/10 text-xs">
-            <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-xs">
+            <Calendar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-slate-200 outline-none text-xs cursor-pointer font-mono"
+              className="bg-transparent text-slate-800 dark:text-slate-200 outline-none text-xs cursor-pointer font-mono"
             />
           </div>
 
           <button
             onClick={() => refetch()}
             disabled={isFetching}
-            className="p-2 rounded-xl glass-panel border border-white/10 text-slate-300 hover:text-white transition-colors"
+            className="p-2 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             title="Refresh CRM campaigns"
           >
-            <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin text-cyan-400" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin text-cyan-500" : ""}`} />
           </button>
 
           <button
             onClick={handleSaveAll}
             disabled={saveMutation.isPending || campaigns.length === 0}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 border border-cyan-400/30 transition-all disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 border border-cyan-400/30 transition-all disabled:opacity-50 cursor-pointer"
           >
             <Save className="w-4 h-4" />
             <span>{saveMutation.isPending ? "Saving..." : "Save All Targets"}</span>
@@ -176,19 +176,19 @@ export default function CampaignTargetsPage() {
         <div
           className={`p-3.5 rounded-xl text-xs flex items-center justify-between border ${
             saveStatus.type === "success"
-              ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-200"
-              : "bg-rose-950/60 border-rose-500/40 text-rose-200"
+              ? "bg-emerald-100/90 dark:bg-emerald-950/60 border-emerald-400/50 dark:border-emerald-500/40 text-emerald-800 dark:text-emerald-200"
+              : "bg-rose-100/90 dark:bg-rose-950/60 border-rose-400/50 dark:border-rose-500/40 text-rose-800 dark:text-rose-200"
           }`}
         >
           <div className="flex items-center gap-2">
             {saveStatus.type === "success" ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-rose-400" />
+              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
             )}
             <span>{saveStatus.message}</span>
           </div>
-          <button onClick={() => setSaveStatus(null)} className="text-slate-400 hover:text-white">
+          <button onClick={() => setSaveStatus(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
             ✕
           </button>
         </div>
@@ -196,65 +196,65 @@ export default function CampaignTargetsPage() {
 
       {/* Overview Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="glass-panel p-4 rounded-xl border border-white/10">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+        <div className="glass-panel p-4 rounded-xl border border-slate-200/80 dark:border-white/10">
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Total Monthly Alloc
           </span>
-          <div className="text-2xl font-black text-white mt-1">
-            {formatNumber(totalAllocatedMonthly)} <span className="text-xs text-slate-400">leads</span>
+          <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+            {formatNumber(totalAllocatedMonthly)} <span className="text-xs text-slate-500 dark:text-slate-400">leads</span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-0.5">Verified contract allocations</p>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Verified contract allocations</p>
         </div>
 
-        <div className="glass-panel p-4 rounded-xl border border-white/10">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+        <div className="glass-panel p-4 rounded-xl border border-slate-200/80 dark:border-white/10">
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Daily Target Total
           </span>
-          <div className="text-2xl font-black text-cyan-400 mt-1">
-            {formatNumber(totalDailyTargets)} <span className="text-xs text-cyan-300">leads</span>
+          <div className="text-2xl font-black text-cyan-600 dark:text-cyan-400 mt-1">
+            {formatNumber(totalDailyTargets)} <span className="text-xs text-cyan-700 dark:text-cyan-300">leads</span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-0.5">Assigned for {selectedDate}</p>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Assigned for {selectedDate}</p>
         </div>
 
-        <div className="glass-panel p-4 rounded-xl border border-white/10">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+        <div className="glass-panel p-4 rounded-xl border border-slate-200/80 dark:border-white/10">
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Today Qualified
           </span>
-          <div className="text-2xl font-black text-emerald-400 mt-1">
-            {formatNumber(totalQualifiedToday)} <span className="text-xs text-emerald-300">leads</span>
+          <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+            {formatNumber(totalQualifiedToday)} <span className="text-xs text-emerald-700 dark:text-emerald-300">leads</span>
           </div>
-          <p className="text-[10px] text-emerald-400 mt-0.5">
+          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5">
             {formatPercent(totalDailyTargets > 0 ? (totalQualifiedToday / totalDailyTargets) * 100 : 0)} achieved
           </p>
         </div>
 
-        <div className="glass-panel p-4 rounded-xl border border-white/10">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+        <div className="glass-panel p-4 rounded-xl border border-slate-200/80 dark:border-white/10">
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Daily Remaining
           </span>
-          <div className="text-2xl font-black text-blue-300 mt-1">
-            {formatNumber(totalDailyRemaining)} <span className="text-xs text-blue-200">leads</span>
+          <div className="text-2xl font-black text-blue-600 dark:text-blue-300 mt-1">
+            {formatNumber(totalDailyRemaining)} <span className="text-xs text-blue-700 dark:text-blue-200">leads</span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-0.5">
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
             MAX(0, Target - Qualified)
           </p>
         </div>
       </div>
 
       {/* Target Allocation Table */}
-      <div className="glass-panel rounded-2xl p-5 border border-white/10 shadow-2xl flex flex-col">
-        <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-3">
+      <div className="glass-panel rounded-2xl p-5 border border-slate-200/80 dark:border-white/10 shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200/80 dark:border-white/10 mb-3">
           <div>
-            <h2 className="text-sm font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-cyan-400" />
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
               Live CRM Campaigns & Daily Target Controls
             </h2>
-            <p className="text-[11px] text-slate-400">
-              Allocated target values persist to CRM MySQL table <code className="font-mono text-cyan-300">campaign_daily_targets</code>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Allocated target values persist to CRM MySQL table <code className="font-mono text-cyan-700 dark:text-cyan-300">campaign_daily_targets</code>
             </p>
           </div>
-          <div className="text-xs text-slate-400 flex items-center gap-1.5">
-            <Info className="w-3.5 h-3.5 text-cyan-400" />
+          <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <Info className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
             <span>Rule: Daily Remaining = MAX(0, Target - Qualified)</span>
           </div>
         </div>
@@ -304,8 +304,20 @@ export default function CampaignTargetsPage() {
                     return (
                       <tr key={camp.campaign_id} className="hover:bg-slate-100/60 dark:hover:bg-white/[0.02] transition-colors">
                         <td className="py-3.5 px-3">
-                          <div className="font-semibold text-slate-900 dark:text-white">{camp.campaign_name}</div>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="font-semibold text-slate-900 dark:text-white">{camp.campaign_name}</div>
+                            {camp.campaign_type && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 whitespace-nowrap">
+                                {camp.campaign_type}
+                              </span>
+                            )}
+                          </div>
+                          {(camp.description || camp.campaign_description) && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1 max-w-md" title={camp.description || camp.campaign_description || ""}>
+                              {camp.description || camp.campaign_description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
                             <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700">
                               {camp.campaign_code}
                             </span>

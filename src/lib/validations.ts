@@ -13,6 +13,9 @@ export const CampaignSlide1Schema = z.object({
   campaign_name: z.string(),
   campaign_code: z.string(),
   client_code: z.string().optional().nullable(),
+  campaign_type: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  campaign_description: z.string().optional().nullable(),
   monthly_allocation: z.number().default(0),
   daily_target: z.number().default(0),
   generated_leads: z.number().default(0),
@@ -21,7 +24,7 @@ export const CampaignSlide1Schema = z.object({
   pending_qa: z.number().default(0),
   remaining_leads_to_qualify: z.number().default(0),
   completion_percentage: z.number().default(0),
-});
+}).passthrough();
 
 export const LateComerSchema = z.object({
   user_id: z.number(),
@@ -176,6 +179,9 @@ export const AdminCampaignTargetItemSchema = z.object({
   campaign_name: z.string(),
   campaign_code: z.string(),
   client_code: z.string().optional().nullable(),
+  campaign_type: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  campaign_description: z.string().optional().nullable(),
   monthly_allocation: z.number().default(0),
   daily_target: z.number().default(0),
   generated_leads: z.number().default(0),
@@ -186,7 +192,7 @@ export const AdminCampaignTargetItemSchema = z.object({
   remaining_leads_to_generate: z.number().default(0),
   completion_percentage: z.number().default(0),
   notes: z.string().optional().nullable(),
-});
+}).passthrough();
 
 export const CampaignDailyTargetsResponseSchema = z.object({
   ok: z.boolean().default(true),

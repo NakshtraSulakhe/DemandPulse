@@ -175,8 +175,8 @@ export default function PresentationPage() {
         onToggleTvMode={handleToggleTvMode}
       />
 
-      {/* Live Floor Recognition & Celebrations Scroller (Top Leads Scored, Birthdays, Anniversaries) */}
-      <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 pt-3 z-10">
+      {/* Live Daily Floor Recognition Ticker (Top Leads Scored, Birthdays, Anniversaries) */}
+      <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-5 pt-1.5 z-10">
         <RecognitionScroller
           data={recogQuery.data?.data}
           isLoading={recogQuery.isLoading}
@@ -186,7 +186,7 @@ export default function PresentationPage() {
       </div>
 
       {/* Slide Content Display Area */}
-      <main className="flex-1 w-full max-w-[1920px] mx-auto p-4 sm:p-6 z-10 flex flex-col justify-between">
+      <main className="flex-1 w-full max-w-[1920px] mx-auto p-2 sm:p-4 z-10 flex flex-col justify-between">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentSlide}

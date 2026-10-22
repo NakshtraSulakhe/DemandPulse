@@ -18,6 +18,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useCrmConfig } from "@/hooks/use-crm-config";
+import { formatIntervalDisplay } from "@/lib/utils";
 
 export default function AdminDashboardPage() {
   const { config, triggerInstantSync } = useCrmConfig();
@@ -96,7 +97,7 @@ export default function AdminDashboardPage() {
               CRM & Sync Intervals
             </h2>
             <p className="text-xs text-slate-600 dark:text-slate-400 mt-1.5 leading-relaxed">
-              Configure CRM API Base URL, Bearer tokens, test upstream endpoint latency, and adjust live polling intervals ({config.analyticsSyncInterval}s cadence).
+              Configure CRM API Base URL, Bearer tokens, test upstream endpoint latency, and adjust live polling intervals ({formatIntervalDisplay(config.analyticsSyncInterval)} cadence).
             </p>
           </div>
           <Link
@@ -193,10 +194,10 @@ export default function AdminDashboardPage() {
           <div className="p-3 rounded-xl bg-slate-100/90 dark:bg-slate-900/60 border border-slate-200 dark:border-white/5">
             <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Slide Analytics Interval</span>
             <span className="font-mono text-cyan-700 dark:text-cyan-300 text-xs font-bold">
-              {config.analyticsSyncInterval} seconds
+              {formatIntervalDisplay(config.analyticsSyncInterval)}
             </span>
             <span className="block mt-1 text-[10px] text-slate-500">
-              ~{Math.round(3600 / config.analyticsSyncInterval)} sync polls / hr
+              ~{Math.round(3600 / (config.analyticsSyncInterval || 30))} sync polls / hr
             </span>
           </div>
 
@@ -213,7 +214,7 @@ export default function AdminDashboardPage() {
           <div className="p-3 rounded-xl bg-slate-100/90 dark:bg-slate-900/60 border border-slate-200 dark:border-white/5">
             <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Celebration Ticker Cadence</span>
             <span className="font-mono text-amber-700 dark:text-amber-300 text-xs font-bold">
-              {config.recognitionSyncInterval} seconds
+              {formatIntervalDisplay(config.recognitionSyncInterval)}
             </span>
             <span className="block mt-1 text-[10px] text-slate-500">
               Top scorers, birthdays & anniversaries

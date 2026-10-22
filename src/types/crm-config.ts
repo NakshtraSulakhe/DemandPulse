@@ -9,6 +9,7 @@ export interface CrmConfig {
   campaignTargetsSyncInterval: number; // in seconds (e.g. 15, 30, 60)
   slideRotationInterval: number; // in seconds (e.g. 15, 20, 25, 30)
   heatmapGranularity: number; // in minutes (5, 10, 15, 30, 60)
+  recognitionDisplayScope?: "daily" | "weekly" | "monthly"; // default "daily"
   lastUpdated?: string;
   updatedBy?: string;
 }

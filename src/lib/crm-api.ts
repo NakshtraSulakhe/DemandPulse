@@ -474,6 +474,19 @@ export async function getCrmRecognition(
         return `${crmMediaHost}/${pic.replace(/^\/+/, "")}`;
       };
 
+      const targetDate = candidate.target_date || dateStr || new Date().toISOString().split("T")[0];
+      const targetMonthDay = targetDate.slice(5, 10); // "MM-DD" e.g. "10-22"
+
+      const isDateMatchingToday = (d?: string | null): boolean => {
+        if (!d || typeof d !== "string") return false;
+        const clean = d.trim();
+        if (clean.length >= 10 && clean.slice(5, 10) === targetMonthDay) return true;
+        if (clean.length === 5 && clean === targetMonthDay) return true;
+        return false;
+      };
+
+      const scope = config.recognitionDisplayScope || "daily";
+
       const top_scorers = Array.isArray(candidate.top_scorers)
         ? candidate.top_scorers.map((s: any) => ({
             ...s,
@@ -481,36 +494,68 @@ export async function getCrmRecognition(
           }))
         : [];
 
-      const birthdays = Array.isArray(candidate.birthdays)
-        ? candidate.birthdays.map((b: any) => ({
-            ...b,
-            profile_pic: fixAvatar(b.profile_pic),
-          }))
-        : [];
+      // Daily filter: only include birthdays that occur ON TODAY (MM-DD match or is_today flag)
+      const birthdays = (Array.isArray(candidate.birthdays) ? candidate.birthdays : [])
+        .map((b: any) => ({
+          ...b,
+          profile_pic: fixAvatar(b.profile_pic),
+          is_today: isDateMatchingToday(b.date_of_birth) || b.is_today === true,
+        }))
+        .filter((b: any) => {
+          if (scope === "daily") {
+            return b.is_today === true;
+          }
+          return true;
+        });
 
-      const anniversaries = Array.isArray(candidate.anniversaries)
-        ? candidate.anniversaries.map((a: any) => ({
-            ...a,
-            profile_pic: fixAvatar(a.profile_pic),
-          }))
-        : [];
+      // Daily filter: only include work anniversaries that occur ON TODAY
+      const anniversaries = (Array.isArray(candidate.anniversaries) ? candidate.anniversaries : [])
+        .map((a: any) => ({
+          ...a,
+          profile_pic: fixAvatar(a.profile_pic),
+          is_today: isDateMatchingToday(a.date_of_joining) || a.is_today === true,
+        }))
+        .filter((a: any) => {
+          if (scope === "daily") {
+            return a.is_today === true;
+          }
+          return true;
+        });
 
-      let ticker_items = Array.isArray(candidate.ticker_items)
-        ? candidate.ticker_items.map((t: any) => ({
+      // Filter precomputed ticker items or construct them dynamically from filtered daily data
+      let ticker_items: any[] = [];
+
+      if (Array.isArray(candidate.ticker_items) && candidate.ticker_items.length > 0) {
+        ticker_items = candidate.ticker_items
+          .map((t: any) => ({
             ...t,
             profile_pic: fixAvatar(t.profile_pic),
           }))
-        : [];
+          .filter((t: any) => {
+            if (t.type === "top_lead_scorer") return true;
+            if (scope === "daily") {
+              if (t.type === "birthday") {
+                const bdayUser = candidate.birthdays?.find((b: any) => String(b.user_id) === String(t.user_id));
+                return t.is_today === true || isDateMatchingToday(bdayUser?.date_of_birth);
+              }
+              if (t.type === "anniversary") {
+                const anniUser = candidate.anniversaries?.find((a: any) => String(a.user_id) === String(t.user_id));
+                return t.is_today === true || isDateMatchingToday(anniUser?.date_of_joining);
+              }
+            }
+            return true;
+          });
+      }
 
-      // If CRM response didn't include precomputed ticker_items, build them dynamically from live data
+      // If ticker_items is empty (or non-today items were filtered out), build them dynamically
       if (ticker_items.length === 0) {
         top_scorers.forEach((s: any, idx: number) => {
           ticker_items.push({
             id: `top-${s.user_id || idx}`,
             type: "top_lead_scorer",
             icon: "trophy",
-            badge: `Top Lead Scorer #${idx + 1}`,
-            eyebrow: "Top Leads Scored",
+            badge: idx === 0 ? "🥇 Rank #1 Top Scorer" : idx === 1 ? "🥈 Rank #2 Top Scorer" : idx === 2 ? "🥉 Rank #3 Top Scorer" : `⭐ Rank #${idx + 1} Top Scorer`,
+            eyebrow: "Daily Top Leads Scored",
             title: s.full_name,
             subtitle: `${s.qualified_leads || 0} Qualified Leads • ${s.generated_leads || 0} Total Generated`,
             message: "High productivity milestone & quality qualification turnaround.",
@@ -527,7 +572,7 @@ export async function getCrmRecognition(
             id: `bday-${b.user_id || idx}`,
             type: "birthday",
             icon: "cake",
-            badge: "🎂 Birthday Celebration",
+            badge: "🎂 Celebrating Birthday Today!",
             eyebrow: "Birthday Celebration",
             title: `Happy Birthday, ${b.full_name}!`,
             subtitle: b.department || b.role || "Operations Team",
@@ -535,7 +580,7 @@ export async function getCrmRecognition(
             accent: "rose",
             user_id: Number(b.user_id) || undefined,
             profile_pic: b.profile_pic,
-            is_today: false,
+            is_today: true,
           });
         });
 
@@ -545,8 +590,8 @@ export async function getCrmRecognition(
             id: `anni-${a.user_id || idx}`,
             type: "anniversary",
             icon: "award",
-            badge: `🌟 ${yrs} Year${yrs > 1 ? "s" : ""} Milestone`,
-            eyebrow: "Work Anniversary",
+            badge: `🌟 ${yrs} Year${yrs > 1 ? "s" : ""} Work Anniversary!`,
+            eyebrow: "Work Anniversary Today",
             title: `Happy Work Anniversary, ${a.full_name}!`,
             subtitle: `${yrs} Year${yrs > 1 ? "s" : ""} of Excellence & Dedication`,
             message: "Thank you for your valuable dedication, consistency, and hard work.",
@@ -554,13 +599,13 @@ export async function getCrmRecognition(
             user_id: Number(a.user_id) || undefined,
             profile_pic: a.profile_pic,
             years: yrs,
-            is_today: false,
+            is_today: true,
           });
         });
       }
 
       const recognitionData: RecognitionData = {
-        target_date: candidate.target_date || new Date().toISOString().split("T")[0],
+        target_date: targetDate,
         total_items: ticker_items.length,
         top_scorers_count: top_scorers.length,
         birthdays_count: birthdays.length,
