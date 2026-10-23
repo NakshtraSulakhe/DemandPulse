@@ -43,6 +43,8 @@ export interface Slide1Data {
   campaigns: CampaignSlide1[];
   late_comers: LateComer[];
   sliders?: RecognitionData;
+  total_live_campaigns?: number;
+  total_allocated_campaigns?: number;
 }
 
 export interface AgentSlide2 {
@@ -188,6 +190,7 @@ export interface AdminCampaignTargetItem {
   pacing_type?: string | null;
   pacing_count?: number;
   notes?: string | null;
+  has_saved_allocation?: boolean;
 }
 
 export interface CampaignDailyTargetsResponse {
@@ -195,17 +198,22 @@ export interface CampaignDailyTargetsResponse {
   target_date: string;
   total_campaigns: number;
   campaigns: AdminCampaignTargetItem[];
+  client_codes?: string[];
 }
 
 export interface TargetAllocationInput {
   campaign_id: number;
   daily_target: number;
   notes?: string | null;
+  campaign_name?: string | null;
+  client_code?: string | null;
+  monthly_allocation?: number | null;
 }
 
 export interface SaveDailyTargetsPayload {
   target_date: string;
   targets: TargetAllocationInput[];
+  user?: string;
 }
 
 export interface PresentationSettings {

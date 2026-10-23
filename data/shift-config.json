@@ -8,7 +8,7 @@
   "durationMinutes": 540,
   "reportingTimezone": "America/New_York",
   "businessDateRule": "SHIFT_START_DATE",
-  "gracePeriodMinutes": 15,
+  "gracePeriodMinutes": 0 ,
   "workingDays": [
     1,
     2,

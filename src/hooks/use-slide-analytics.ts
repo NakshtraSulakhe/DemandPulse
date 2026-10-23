@@ -8,6 +8,7 @@ import {
   Slide4Data,
   Slide5Data,
   AdminCampaignTargetItem,
+  CampaignDailyTargetsResponse,
   SaveDailyTargetsPayload,
   RecognitionData,
 } from "@/types";
@@ -190,7 +191,7 @@ export function useCampaignTargets(date?: string, status: string = "Live", custo
       ? config.campaignTargetsSyncInterval * 1000
       : false;
 
-  return useQuery<ApiResponse<{ target_date: string; total_campaigns: number; campaigns: AdminCampaignTargetItem[] }>>({
+  return useQuery<ApiResponse<CampaignDailyTargetsResponse>>({
     queryKey: ["campaign-targets", targetDate, status],
     queryFn: async () => {
       const res = await fetch(
@@ -206,6 +207,50 @@ export function useCampaignTargets(date?: string, status: string = "Live", custo
     refetchInterval,
     placeholderData: (prev) => prev,
     retry: 1,
+  });
+}
+
+// Allocation Audit History Hook
+export function useAllocationHistory(params?: {
+  date?: string;
+  campaign_id?: number;
+  client_code?: string;
+  limit?: number;
+}) {
+  return useQuery<{
+    ok: boolean;
+    success: boolean;
+    total_records: number;
+    records: Array<{
+      id: number;
+      allocation_id: string;
+      campaign_id: number;
+      campaign_name?: string;
+      client_code?: string;
+      business_date: string;
+      previous_target: number | null;
+      new_target: number;
+      changed_by: string;
+      change_timestamp: string;
+      operation_type: string;
+      notes?: string;
+    }>;
+  }>({
+    queryKey: ["allocation-history", params],
+    queryFn: async () => {
+      const q = new URLSearchParams();
+      if (params?.date) q.set("date", params.date);
+      if (params?.campaign_id) q.set("campaign_id", String(params.campaign_id));
+      if (params?.client_code) q.set("client_code", params.client_code);
+      if (params?.limit) q.set("limit", String(params.limit));
+      const res = await fetch(`/api/campaign-targets/history?${q.toString()}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to fetch allocation audit history");
+      }
+      return json;
+    },
+    staleTime: 5000,
   });
 }
 
@@ -228,6 +273,7 @@ export function useSaveCampaignTargets() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["campaign-targets", variables.target_date] });
+      queryClient.invalidateQueries({ queryKey: ["allocation-history"] });
       queryClient.invalidateQueries({ queryKey: ["slide1"] });
     },
   });

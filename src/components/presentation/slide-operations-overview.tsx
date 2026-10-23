@@ -184,12 +184,12 @@ export default function SlideOperationsOverview({
                 Live Campaigns Target Allocation & Lead Progress
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Filtered strictly for Live Campaigns (status = &apos;Live&apos; &amp; active = 1)
+                Displaying {campaigns.length} of {data?.total_live_campaigns || campaigns.length} live campaigns with today&apos;s daily allocation entered
               </p>
             </div>
             <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              {campaigns.length} Live
+              {campaigns.length} of {data?.total_live_campaigns || campaigns.length} Live Campaigns Allocated
             </span>
           </div>
 
@@ -211,8 +211,11 @@ export default function SlideOperationsOverview({
               <tbody className="divide-y divide-slate-200 dark:divide-white/5">
                 {campaigns.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-500 font-medium text-xs">
-                      No live campaigns found for this date (status = &apos;Live&apos; &amp; active = 1).
+                    <td colSpan={9} className="py-10 text-center text-slate-500 font-medium text-xs">
+                      No campaigns with saved daily target allocations for today (0 of {data?.total_live_campaigns || 0} live campaigns allocated).
+                      <div className="text-[11px] text-slate-400 mt-1">
+                        Allocate positive daily targets in Admin Portal → Campaign Targets to display campaigns on this live slide.
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -305,6 +308,45 @@ export default function SlideOperationsOverview({
                   })
                 )}
               </tbody>
+              {campaigns.length > 0 && (() => {
+                const totMonthly = campaigns.reduce((acc, c) => acc + (Number(c.monthly_allocation) || 0), 0);
+                const totDaily = campaigns.reduce((acc, c) => acc + (Number(c.daily_target) || 0), 0);
+                const totGen = campaigns.reduce((acc, c) => acc + (Number(c.generated_leads) || 0), 0);
+                const totQual = campaigns.reduce((acc, c) => acc + (Number(c.qualified_leads) || 0), 0);
+                const totDisq = campaigns.reduce((acc, c) => acc + (Number(c.disqualified_leads) || 0), 0);
+                const totPending = campaigns.reduce((acc, c) => acc + (Number(c.pending_qa) || 0), 0);
+                const totRemaining = Math.max(0, totDaily - totQual);
+                const totProgress = totDaily > 0 ? (totQual / totDaily) * 100 : 0;
+                return (
+                  <tfoot className="bg-slate-100/90 dark:bg-slate-900/95 font-bold text-slate-900 dark:text-white border-t-2 border-slate-300 dark:border-white/20 sticky bottom-0 z-10 text-xs">
+                    <tr>
+                      <td className="py-2.5 px-2.5 uppercase text-[10.5px] font-black">
+                        Total Allocated ({campaigns.length} of {data?.total_live_campaigns || campaigns.length} Live Campaigns)
+                      </td>
+                      <td className="py-2.5 px-2 text-center">{formatNumber(totMonthly)}</td>
+                      <td className="py-2.5 px-2 text-center text-cyan-600 dark:text-cyan-300 font-black">
+                        {formatNumber(totDaily)}
+                      </td>
+                      <td className="py-2.5 px-2 text-center">{formatNumber(totGen)}</td>
+                      <td className="py-2.5 px-2 text-center text-emerald-600 dark:text-emerald-400 font-black">
+                        {formatNumber(totQual)}
+                      </td>
+                      <td className="py-2.5 px-2 text-center text-rose-600 dark:text-rose-400">
+                        {formatNumber(totDisq)}
+                      </td>
+                      <td className="py-2.5 px-2 text-center text-amber-600 dark:text-amber-400">
+                        {formatNumber(totPending)}
+                      </td>
+                      <td className="py-2.5 px-2 text-center text-blue-600 dark:text-blue-300 font-black">
+                        {formatNumber(totRemaining)}
+                      </td>
+                      <td className="py-2.5 px-2.5 text-right font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-black">
+                        {formatPercent(totProgress)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                );
+              })()}
             </table>
           </div>
         </div>

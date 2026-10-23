@@ -20,6 +20,7 @@ import {
 import { getCrmConfig } from "@/lib/crm-config";
 import { getShiftBusinessDate } from "@/lib/shift/engine";
 import { fetchIncentivePreview } from "@/lib/incentives/api";
+import { getAllocationsMapForDate } from "@/lib/db/allocations";
 import {
   getMockSlide1Data,
   getMockSlide2Data,
@@ -196,11 +197,17 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
   const timestamp = new Date().toISOString();
   const effectiveDate = dateStr || getShiftBusinessDate();
 
-  // 1. Try dynamically configured path for Slide 1 with status=Live
+  // 1. Fetch Slide 1 data (KPI cards, all live campaigns, late comers)
   const configuredPath = config.endpoints?.slide1 || "slides/slide1.php";
-  let res = await fetchFromCrm<unknown>(buildEndpointUrl(configuredPath, { date: effectiveDate, status: "Live" }));
+  const slide1Promise = fetchFromCrm<unknown>(buildEndpointUrl(configuredPath, { date: effectiveDate, status: "Live" }));
 
-  // 2. Fallback to configured fallback or slides_analytics.php?type=slide1
+  // 2. Concurrently fetch daily targets from CRM API to ensure synchronization across serverless containers
+  const targetsPath = config.endpoints?.campaign_targets || "campaign_daily_targets.php";
+  const targetsPromise = fetchFromCrm<unknown>(buildEndpointUrl(targetsPath, { date: effectiveDate, status: "Live" }));
+
+  let [res, targetsRes] = await Promise.all([slide1Promise, targetsPromise]);
+
+  // Fallback to configured fallback or slides_analytics.php?type=slide1 if needed
   if (!res.ok) {
     const fallbackPath =
       config.customEndpoints?.find((e) => e.id === "slide1")?.fallbackPath ||
@@ -208,28 +215,79 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
     res = await fetchFromCrm<unknown>(buildEndpointUrl(fallbackPath, { date: effectiveDate, status: "Live" }));
   }
 
-  // 3. Fallback to action=slide1 if needed
   if (!res.ok) {
     res = await fetchFromCrm<unknown>(buildEndpointUrl("slides_analytics.php?action=slide1", { date: effectiveDate, status: "Live" }));
+  }
+
+  // Retrieve saved allocations from SQLite database for this business date
+  const savedAllocationsMap = getAllocationsMapForDate(effectiveDate);
+
+  // Also build map of positive targets from CRM's campaign_daily_targets.php
+  const crmTargetsMap = new Map<number, number>();
+  if (targetsRes.ok && targetsRes.data) {
+    const parsedTargets = CampaignDailyTargetsResponseSchema.safeParse(targetsRes.data);
+    if (parsedTargets.success) {
+      for (const t of parsedTargets.data.campaigns) {
+        if (typeof t.daily_target === "number" && t.daily_target > 0) {
+          crmTargetsMap.set(t.campaign_id, t.daily_target);
+        }
+      }
+    }
   }
 
   if (res.ok && res.data) {
     const parsed = Slide1ResponseSchema.safeParse(res.data);
     if (parsed.success) {
-      // Enforce strict Live filter: c.active = 1 AND (d.status = 'Live' OR d.status IS NULL)
-      // Paused, Completed, Draft, or Cancelled campaigns are excluded from Slide 1
-      const liveOnlyCampaigns = parsed.data.slide1.campaigns.filter((c: any) => {
+      // Find all live active campaigns for today
+      const allLiveCampaigns = parsed.data.slide1.campaigns.filter((c: any) => {
         if (c.active !== undefined && c.active !== null && Number(c.active) === 0) return false;
-        const st = (c.campaign_status || c.status || "").trim();
-        if (!st) return true; // (d.status IS NULL)
-        return st.toLowerCase() === "live";
+        const st = (c.campaign_status || c.status || "").trim().toLowerCase();
+        if (st && st !== "live") return false;
+        return true;
       });
+
+      const totalLiveCampaignsCount = allLiveCampaigns.length;
+
+      // Filter: Show ONLY campaigns for which an allocation was entered for that day with daily_target > 0
+      const allocatedLiveCampaigns = allLiveCampaigns
+        .filter((c: any) => {
+          // Check SQLite database first
+          const savedInDb = savedAllocationsMap.get(c.campaign_id);
+          if (savedInDb !== undefined) {
+            return savedInDb.daily_target > 0;
+          }
+          // Fallback to CRM saved targets (e.g. on Vercel stateless instances)
+          const targetInCrm = crmTargetsMap.get(c.campaign_id);
+          return Boolean(targetInCrm && targetInCrm > 0);
+        })
+        .map((c: any) => {
+          // Use daily target from SQLite if present, else from CRM targets
+          const savedInDb = savedAllocationsMap.get(c.campaign_id);
+          const dailyTarget = savedInDb ? savedInDb.daily_target : (crmTargetsMap.get(c.campaign_id) || 0);
+          const qualifiedLeads = Number(c.qualified_leads) || 0;
+          const remaining = Math.max(0, dailyTarget - qualifiedLeads);
+          const completionPct = dailyTarget > 0 ? Math.round((qualifiedLeads / dailyTarget) * 100 * 10) / 10 : 0;
+
+          return {
+            ...c,
+            daily_target: dailyTarget,
+            remaining_leads_to_qualify: remaining,
+            completion_percentage: completionPct,
+            monthly_allocation: Number(c.monthly_allocation) || 0,
+            generated_leads: Number(c.generated_leads) || 0,
+            qualified_leads: qualifiedLeads,
+            disqualified_leads: Number(c.disqualified_leads) || 0,
+            pending_qa: Number(c.pending_qa) || 0,
+          };
+        });
 
       return {
         success: true,
         data: {
           ...parsed.data.slide1,
-          campaigns: liveOnlyCampaigns,
+          total_live_campaigns: totalLiveCampaignsCount,
+          total_allocated_campaigns: allocatedLiveCampaigns.length,
+          campaigns: allocatedLiveCampaigns,
         },
         sourceUrl: res.effectiveUrl,
         timestamp,
@@ -239,9 +297,30 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
 
   // If CRM fails and Mock Fallback is enabled
   if (config.crmMockFallback) {
+    const mockData = getMockSlide1Data(effectiveDate);
+    const mockFiltered = mockData.campaigns
+      .filter((c: any) => {
+        const saved = savedAllocationsMap.get(c.campaign_id);
+        return Boolean(saved && saved.daily_target > 0);
+      })
+      .map((c: any) => {
+        const saved = savedAllocationsMap.get(c.campaign_id)!;
+        const dailyTarget = saved.daily_target;
+        const qualifiedLeads = Number(c.qualified_leads) || 0;
+        return {
+          ...c,
+          daily_target: dailyTarget,
+          remaining_leads_to_qualify: Math.max(0, dailyTarget - qualifiedLeads),
+          completion_percentage: dailyTarget > 0 ? Math.round((qualifiedLeads / dailyTarget) * 100 * 10) / 10 : 0,
+        };
+      });
+
     return {
       success: true,
-      data: getMockSlide1Data(effectiveDate),
+      data: {
+        ...mockData,
+        campaigns: mockFiltered,
+      },
       sourceUrl: "[Mock Fallback Mode]",
       timestamp,
       isMockFallback: true,

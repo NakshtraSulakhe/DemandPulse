@@ -203,17 +203,22 @@ export const CampaignDailyTargetsResponseSchema = z.object({
   target_date: z.string(),
   total_campaigns: z.number().default(0),
   campaigns: z.array(AdminCampaignTargetItemSchema),
+  client_codes: z.array(z.string()).optional(),
 });
 
 export const TargetAllocationInputSchema = z.object({
-  campaign_id: z.number(),
-  daily_target: z.number().min(0),
+  campaign_id: z.number().int(),
+  daily_target: z.number().int("Daily target must be an integer").min(0, "Daily target cannot be negative"),
   notes: z.string().optional().nullable(),
+  campaign_name: z.string().optional().nullable(),
+  client_code: z.string().optional().nullable(),
+  monthly_allocation: z.number().optional().nullable(),
 });
 
 export const SaveDailyTargetsPayloadSchema = z.object({
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Target date must be YYYY-MM-DD"),
   targets: z.array(TargetAllocationInputSchema).min(1, "At least one target is required"),
+  user: z.string().optional(),
 });
 
 // Live Recognition & Announcements Schema
