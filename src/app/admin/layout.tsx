@@ -136,7 +136,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Sidebar - Distinct visually & Independently Scrollable */}
         <aside
-          className={`fixed md:static inset-y-0 left-0 z-50 md:z-auto w-64 lg:w-72 flex-shrink-0 bg-slate-50/95 dark:bg-[#0c1220] border-r border-slate-200/90 dark:border-white/10 p-4 flex flex-col justify-between h-full overflow-y-auto transition-transform duration-200 ease-in-out shadow-xl md:shadow-none ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+          className={`fixed md:static inset-y-0 left-0 z-50 md:z-auto w-64 lg:w-72 flex-shrink-0 bg-slate-50/95 dark:bg-[#000000] border-r border-slate-200/90 dark:border-white/10 p-4 flex flex-col justify-between h-full overflow-y-auto transition-transform duration-200 ease-in-out shadow-xl md:shadow-none ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
             }`}
         >
           <div className="flex flex-col gap-4">
@@ -235,7 +235,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Link
               href="/admin/crm-config"
               onClick={() => setMobileMenuOpen(false)}
-              className="p-3.5 rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-white/10 text-[11px] text-slate-600 dark:text-slate-400 flex flex-col gap-1 hover:border-cyan-500/40 transition-colors group cursor-pointer shadow-sm"
+              className="p-3.5 rounded-2xl bg-white dark:bg-[#050505] border border-slate-200 dark:border-white/10 text-[11px] text-slate-600 dark:text-slate-400 flex flex-col gap-1 hover:border-cyan-500/40 transition-colors group cursor-pointer shadow-sm"
             >
               <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">

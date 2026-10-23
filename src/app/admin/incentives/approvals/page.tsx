@@ -356,7 +356,7 @@ export default function PayoutApprovalsPage() {
       {/* Confirmation & Remarks Modal */}
       {actionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="w-full max-w-md bg-white dark:bg-[#0c1220] rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-white/10 flex flex-col gap-4">
+          <div className="w-full max-w-md bg-white dark:bg-[#000000] rounded-2xl p-6 shadow-2xl border border-slate-200 dark:border-white/10 flex flex-col gap-4">
             <div className="flex items-center gap-3">
               <ShieldCheck
                 className={`w-6 h-6 flex-shrink-0 ${
