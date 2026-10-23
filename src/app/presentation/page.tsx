@@ -22,43 +22,112 @@ import { AlertTriangle, Wifi, WifiOff } from "lucide-react";
 
 export default function PresentationPage() {
   const { config } = useCrmConfig();
-  const rotationInterval = config.slideRotationInterval || 25;
 
+  // Database-backed presentation state (zero localStorage)
+  const [activeSlideIds, setActiveSlideIds] = useState<number[]>([1, 2, 3, 4, 5]);
   const [currentSlide, setCurrentSlide] = useState<number>(1);
   const [autoRotate, setAutoRotate] = useState<boolean>(true);
+  const [rotationInterval, setRotationInterval] = useState<number>(config.slideRotationInterval || 25);
   const [countdown, setCountdown] = useState<number>(rotationInterval);
   const [heatmapInterval, setHeatmapInterval] = useState<number>(config.heatmapGranularity || 10);
   const [isTvMode, setIsTvMode] = useState<boolean>(true);
+  const [displayScaling, setDisplayScaling] = useState<string>("tv-1080p");
+  const [isDbSynced, setIsDbSynced] = useState<boolean>(false);
 
-  useEffect(() => {
+  // Sync settings with MySQL database (authoritative source of truth)
+  const syncWithDatabase = useCallback(async () => {
     try {
-      const saved = localStorage.getItem("demandflow-heatmap-interval");
-      if (saved) {
-        const parsed = parseInt(saved, 10);
-        if ([5, 10, 15, 20, 30, 60].includes(parsed)) {
-          setHeatmapInterval(parsed);
+      const [presRes, prefRes] = await Promise.all([
+        fetch("/api/slides/presentations?slug=executive-presentation", { cache: "no-store" })
+          .then((r) => r.json())
+          .catch(() => null),
+        fetch("/api/slides/preferences", { cache: "no-store" })
+          .then((r) => r.json())
+          .catch(() => null),
+      ]);
+
+      if (presRes?.success && presRes.data) {
+        if (typeof presRes.data.defaultSlideSeconds === "number" && presRes.data.defaultSlideSeconds >= 5) {
+          setRotationInterval(presRes.data.defaultSlideSeconds);
+        }
+
+        if (Array.isArray(presRes.data.playlistItems) && presRes.data.playlistItems.length > 0) {
+          const sorted = [...presRes.data.playlistItems].sort((a, b) => a.displayOrder - b.displayOrder);
+          const enabled: number[] = [];
+          sorted.forEach((item: any) => {
+            if (item.isEnabled !== false) {
+              const id = Number(item.slideDefinitionId || item.displayOrder);
+              if (id >= 1 && id <= 5 && !enabled.includes(id)) {
+                enabled.push(id);
+              }
+            }
+          });
+
+          if (enabled.length > 0) {
+            setActiveSlideIds(enabled);
+            // If current slide was disabled by admin, move seamlessly to first active slide
+            setCurrentSlide((prev) => (enabled.includes(prev) ? prev : enabled[0]));
+          }
         }
       }
-      const savedTv = localStorage.getItem("demandflow-tv-mode");
-      if (savedTv !== null) {
-        setIsTvMode(savedTv === "true");
+
+      if (prefRes?.success && prefRes.data) {
+        if (typeof prefRes.data.heatmapIntervalMinutes === "number" && [5, 10, 15, 20, 30, 60].includes(prefRes.data.heatmapIntervalMinutes)) {
+          setHeatmapInterval(prefRes.data.heatmapIntervalMinutes);
+        }
+        if (typeof prefRes.data.tvModeEnabled === "boolean") {
+          setIsTvMode(prefRes.data.tvModeEnabled);
+        }
+        if (prefRes.data.displayScaling) {
+          setDisplayScaling(prefRes.data.displayScaling);
+        }
       }
-    } catch { }
+
+      setIsDbSynced(true);
+    } catch (e) {
+      console.warn("Presentation synchronization with MySQL encountered a transient issue:", e);
+    }
   }, []);
 
+  // Mount effect: One-time localStorage cleanup and initial MySQL fetch
+  useEffect(() => {
+    try {
+      localStorage.removeItem("demandflow-heatmap-interval");
+      localStorage.removeItem("demandflow-tv-mode");
+      localStorage.removeItem("demandflow-slide-interval");
+      localStorage.removeItem("demandflow-enabled-slides");
+      localStorage.removeItem("demandflow-display-scaling");
+    } catch {}
+
+    syncWithDatabase();
+
+    // Multi-screen live synchronization polling (every 10 seconds from MySQL)
+    const syncInterval = setInterval(() => {
+      syncWithDatabase();
+    }, 10000);
+
+    return () => clearInterval(syncInterval);
+  }, [syncWithDatabase]);
+
+  // Persist heatmap interval to MySQL on user change (zero localStorage)
   const handleHeatmapIntervalChange = useCallback((newInterval: number) => {
     setHeatmapInterval(newInterval);
-    try {
-      localStorage.setItem("demandflow-heatmap-interval", String(newInterval));
-    } catch { }
+    fetch("/api/slides/preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heatmapIntervalMinutes: newInterval }),
+    }).catch((e) => console.error("Error saving heatmap interval to MySQL:", e));
   }, []);
 
+  // Persist TV mode to MySQL on user change (zero localStorage)
   const handleToggleTvMode = useCallback(() => {
     setIsTvMode((prev) => {
       const next = !prev;
-      try {
-        localStorage.setItem("demandflow-tv-mode", String(next));
-      } catch { }
+      fetch("/api/slides/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tvModeEnabled: next }),
+      }).catch((e) => console.error("Error saving TV mode to MySQL:", e));
       return next;
     });
   }, []);
@@ -86,19 +155,27 @@ export default function PresentationPage() {
     s4Query.isFetching ||
     s5Query.isFetching;
 
-  // Next slide handler
+  // Next slide handler (iterating over active database-defined playlist)
   const nextSlide = useCallback(() => {
-    setCurrentSlide((prev) => (prev % 5) + 1);
+    setCurrentSlide((prev) => {
+      const idx = activeSlideIds.indexOf(prev);
+      if (idx === -1) return activeSlideIds[0] || 1;
+      return activeSlideIds[(idx + 1) % activeSlideIds.length];
+    });
     setCountdown(rotationInterval);
-  }, [rotationInterval]);
+  }, [activeSlideIds, rotationInterval]);
 
-  // Previous slide handler
+  // Previous slide handler (iterating backwards over active database-defined playlist)
   const prevSlide = useCallback(() => {
-    setCurrentSlide((prev) => (prev === 1 ? 5 : prev - 1));
+    setCurrentSlide((prev) => {
+      const idx = activeSlideIds.indexOf(prev);
+      if (idx === -1) return activeSlideIds[0] || 1;
+      return activeSlideIds[(idx - 1 + activeSlideIds.length) % activeSlideIds.length];
+    });
     setCountdown(rotationInterval);
-  }, [rotationInterval]);
+  }, [activeSlideIds, rotationInterval]);
 
-  // Slide rotation ticker
+  // Slide rotation countdown ticker
   useEffect(() => {
     if (!autoRotate) return;
 
@@ -115,7 +192,7 @@ export default function PresentationPage() {
     return () => clearInterval(timer);
   }, [autoRotate, nextSlide, rotationInterval]);
 
-  // Keyboard navigation
+  // Keyboard navigation aware of enabled playlist
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") {
@@ -126,14 +203,17 @@ export default function PresentationPage() {
         e.preventDefault();
         setAutoRotate((prev) => !prev);
       } else if (e.key >= "1" && e.key <= "5") {
-        setCurrentSlide(parseInt(e.key, 10));
-        setCountdown(rotationInterval);
+        const target = parseInt(e.key, 10);
+        if (activeSlideIds.includes(target)) {
+          setCurrentSlide(target);
+          setCountdown(rotationInterval);
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nextSlide, prevSlide, rotationInterval]);
+  }, [nextSlide, prevSlide, rotationInterval, activeSlideIds]);
 
   const handleManualRefresh = () => {
     s1Query.refetch();
@@ -142,10 +222,11 @@ export default function PresentationPage() {
     s4Query.refetch();
     s5Query.refetch();
     recogQuery.refetch();
+    syncWithDatabase();
   };
 
   return (
-    <div className={`min-h-screen bg-slate-100/70 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 transition-colors duration-200 floor-tv-display ${isTvMode ? "tv-mode-boost" : ""}`}>
+    <div className={`min-h-screen bg-slate-100/70 dark:bg-[#000000] text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 transition-colors duration-200 floor-tv-display ${isTvMode ? "tv-mode-boost" : ""} ${displayScaling === "tv-4k" ? "scale-[1.02] origin-top" : displayScaling === "desktop" ? "scale-95 origin-top" : ""}`}>
       {/* Background ambient lighting for large displays */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <div className="absolute -top-[20%] left-[10%] w-[600px] h-[600px] bg-cyan-500/10 dark:bg-cyan-600/10 rounded-full blur-[140px]" />
@@ -256,6 +337,11 @@ export default function PresentationPage() {
             {isTvMode && (
               <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-700 dark:text-cyan-300 text-[11px] font-black uppercase tracking-wider">
                 65″ Floor TV Mode Active
+              </span>
+            )}
+            {isDbSynced && (
+              <span className="hidden sm:inline px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
+                MySQL Synced
               </span>
             )}
             <span className="hidden md:inline text-slate-400">• 1920×1080 Ultra-Legible Distance Display</span>

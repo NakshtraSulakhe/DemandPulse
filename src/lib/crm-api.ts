@@ -219,8 +219,8 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
     res = await fetchFromCrm<unknown>(buildEndpointUrl("slides_analytics.php?action=slide1", { date: effectiveDate, status: "Live" }));
   }
 
-  // Retrieve saved allocations from SQLite database for this business date
-  const savedAllocationsMap = getAllocationsMapForDate(effectiveDate);
+  // Retrieve saved allocations from MySQL database for this business date
+  const savedAllocationsMap = await getAllocationsMapForDate(effectiveDate);
 
   // Also build map of positive targets from CRM's campaign_daily_targets.php
   const crmTargetsMap = new Map<number, number>();

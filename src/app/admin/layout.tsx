@@ -25,6 +25,7 @@ import {
   FileSpreadsheet,
   Clock,
   Sliders,
+  ShieldCheck,
 } from "lucide-react";
 
 import ThemeToggle from "@/components/theme/theme-toggle";
@@ -42,9 +43,18 @@ const NAV_ITEMS = [
   { href: "/admin/presentation-settings", label: "Display Settings", icon: Settings },
 ];
 
+const INCENTIVE_CONFIG_NAV_ITEMS = [
+  { href: "/admin/incentive-config", label: "Overview Dashboard", icon: LayoutDashboard },
+  { href: "/admin/incentive-config/policies", label: "Policies & Slabs", icon: Sliders },
+  { href: "/admin/incentive-config/policies/new", label: "New Policy Draft", icon: FileCheck2 },
+  { href: "/admin/incentive-config/assignments", label: "Scope Assignments", icon: UserCheck },
+  { href: "/admin/incentive-config/approvals", label: "Manager Approvals", icon: ShieldCheck },
+  { href: "/admin/incentive-config/history", label: "Configuration History", icon: History },
+];
+
 const INCENTIVE_NAV_ITEMS = [
   { href: "/admin/incentives", label: "Incentive Dashboard", icon: Coins },
-  { href: "/admin/incentives/config", label: "Incentive Configuration", icon: Sliders },
+  { href: "/admin/incentives/config", label: "Rule Overrides (Legacy)", icon: Sliders },
   { href: "/admin/incentives/daily", label: "Daily Incentive Audit", icon: FileCheck2 },
   { href: "/admin/incentives/settlements", label: "Settlement Management", icon: CalendarCheck2 },
   { href: "/admin/incentives/approvals", label: "Payout Approvals", icon: UserCheck },
@@ -65,9 +75,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [pathname]);
 
   return (
-    <div className="h-screen max-h-screen w-full bg-slate-100/90 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200 overflow-hidden">
+    <div className="h-screen max-h-screen w-full bg-slate-100/90 dark:bg-[#000000] text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200 overflow-hidden">
       {/* Top Navbar */}
-      <header className="glass-panel border-b border-slate-200/80 dark:border-white/10 px-4 sm:px-6 py-3 flex items-center justify-between flex-shrink-0 z-30 bg-white/80 dark:bg-[#070b14]/80 backdrop-blur-md">
+      <header className="glass-panel border-b border-slate-200/80 dark:border-white/10 px-4 sm:px-6 py-3 flex items-center justify-between flex-shrink-0 z-30 bg-white/80 dark:bg-[#000000]/80 backdrop-blur-md">
         <div className="flex items-center gap-3">
           {/* Mobile Menu Button */}
           <button
@@ -167,8 +177,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 );
               })}
 
+              <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-3 mt-4 mb-1 flex items-center justify-between">
+                <span>Incentive Configuration (Slides DB)</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+              {INCENTIVE_CONFIG_NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${isActive
+                      ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/40 dark:border-emerald-500/30 font-bold shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/5"
+                      }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </div>
+                    {isActive && <ChevronRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
+                  </Link>
+                );
+              })}
+
               <div className="text-[10px] font-bold text-amber-500 dark:text-amber-400 uppercase tracking-wider px-3 mt-4 mb-1 flex items-center justify-between">
-                <span>Incentive Automation</span>
+                <span>Incentive Automation (CRM Live)</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
               </div>
               {INCENTIVE_NAV_ITEMS.map((item) => {

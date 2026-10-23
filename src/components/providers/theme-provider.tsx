@@ -13,32 +13,74 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-const STORAGE_KEY = "demandflow-theme";
-
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Default to dark mode for TV command center aesthetics
   const [theme, setThemeState] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
 
-  // Initialize theme from localStorage on client mount
+  // Initialize theme from database preferences on mount (with automatic one-time cleanup of legacy localStorage)
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-      if (stored === "light" || stored === "dark") {
-        setThemeState(stored);
-        applyThemeClass(stored);
-      } else {
+    let active = true;
+
+    async function loadThemeFromDatabase() {
+      try {
+        // 1. One-time check for legacy localStorage key to migrate and permanently delete
+        let legacyTheme: string | null = null;
+        try {
+          legacyTheme = localStorage.getItem("demandflow-theme") || localStorage.getItem("theme");
+          if (legacyTheme) {
+            localStorage.removeItem("demandflow-theme");
+            localStorage.removeItem("theme");
+          }
+        } catch {}
+
+        // 2. Fetch authoritative preference from MySQL database
+        const res = await fetch("/api/slides/preferences");
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data?.theme) {
+            const dbTheme: Theme = json.data.theme === "light" ? "light" : "dark";
+            if (active) {
+              setThemeState(dbTheme);
+              applyThemeClass(dbTheme);
+            }
+            return;
+          }
+        }
+
+        // 3. If legacy theme was found and DB was default, persist legacy preference to DB once
+        if (legacyTheme === "light" || legacyTheme === "dark") {
+          const t = legacyTheme as Theme;
+          if (active) {
+            setThemeState(t);
+            applyThemeClass(t);
+          }
+          fetch("/api/slides/preferences", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ theme: t }),
+          }).catch(() => {});
+          return;
+        }
+
         // Default to dark mode
-        applyThemeClass("dark");
+        if (active) applyThemeClass("dark");
+      } catch {
+        if (active) applyThemeClass("dark");
+      } finally {
+        if (active) setMounted(true);
       }
-    } catch {
-      applyThemeClass("dark");
-    } finally {
-      setMounted(true);
     }
+
+    loadThemeFromDatabase();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const applyThemeClass = (newTheme: Theme) => {
+    if (typeof document === "undefined") return;
     const root = document.documentElement;
     if (newTheme === "dark") {
       root.classList.add("dark");
@@ -52,18 +94,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       root.style.colorScheme = "light";
     }
 
-    // Dispatch a custom event so non-React charts/widgets can update if needed
+    // Dispatch a custom event so non-React widgets update if needed
     window.dispatchEvent(new CustomEvent("demandflow-theme-change", { detail: { theme: newTheme } }));
   };
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
-    try {
-      localStorage.setItem(STORAGE_KEY, newTheme);
-    } catch {
-      // Storage unavailable or quota exceeded
-    }
     applyThemeClass(newTheme);
+
+    // Persist to MySQL database (zero localStorage)
+    fetch("/api/slides/preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: newTheme }),
+    }).catch((err) => console.error("Failed to save theme to MySQL database:", err));
   };
 
   const toggleTheme = () => {
@@ -80,30 +124,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeContext.Provider value={value}>
-      {/* Inline script to prevent theme flash before hydration */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            (function() {
-              try {
-                var stored = localStorage.getItem('${STORAGE_KEY}');
-                var root = document.documentElement;
-                if (stored === 'light') {
-                  root.classList.remove('dark');
-                  root.classList.add('light');
-                  root.setAttribute('data-theme', 'light');
-                  root.style.colorScheme = 'light';
-                } else {
-                  root.classList.remove('light');
-                  root.classList.add('dark');
-                  root.setAttribute('data-theme', 'dark');
-                  root.style.colorScheme = 'dark';
-                }
-              } catch (e) {}
-            })();
-          `,
-        }}
-      />
       {children}
     </ThemeContext.Provider>
   );
@@ -111,14 +131,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 export function useTheme(): ThemeContextType {
   const context = useContext(ThemeContext);
-  if (!context) {
-    // Graceful fallback if used outside provider
-    return {
-      theme: "dark",
-      isDark: true,
-      toggleTheme: () => {},
-      setTheme: () => {},
-    };
+  if (context === undefined) {
+    throw new Error("useTheme must be used within a ThemeProvider");
   }
   return context;
 }

@@ -39,8 +39,8 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // 2. Fetch permanently saved allocations from the database for this business date
-  const savedAllocationsMap = getAllocationsMapForDate(targetDate);
+  // 2. Fetch permanently saved allocations from MySQL database for this business date
+  const savedAllocationsMap = await getAllocationsMapForDate(targetDate);
 
   // 3. Extract distinct client codes from all live campaigns for the searchable dropdown filter
   const clientCodeSet = new Set<string>();
@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate",
-        "X-Data-Source": "demandpulse-sqlite-and-crm",
+        "X-Data-Source": "demandpulse-mysql-and-crm",
       },
     }
   );
@@ -159,8 +159,8 @@ export async function POST(req: NextRequest) {
     const { target_date, targets, user } = parsed.data;
     const changedBy = user || "Admin User";
 
-    // 1. Save allocations permanently in SQLite database within an atomic transaction
-    const dbResult = saveAllocationsBatch(target_date, targets, changedBy);
+    // 1. Save allocations permanently in MySQL database within an atomic transaction
+    const dbResult = await saveAllocationsBatch(target_date, targets, changedBy);
 
     // 2. Synchronize to upstream CRM API in parallel (non-blocking if upstream is temporarily slow)
     let crmSynced = false;

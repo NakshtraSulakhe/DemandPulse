@@ -1,0 +1,413 @@
+datasource db {
+  provider = "mysql"
+  url      = env("SLIDES_DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. PRESENTATION MODULE TABLES
+// ==========================================
+
+model SlidePresentation {
+  id                     BigInt                @id @default(autoincrement())
+  name                   String                @db.VarChar(150)
+  slug                   String                @unique @db.VarChar(120)
+  isActive               Boolean               @default(true) @map("is_active")
+  defaultSlideSeconds    Int                   @default(25) @map("default_slide_seconds")
+  refreshIntervalSeconds Int                   @default(30) @map("refresh_interval_seconds")
+  themeConfig            Json?                 @map("theme_config")
+  createdAt              DateTime              @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt              DateTime              @updatedAt @map("updated_at") @db.DateTime(6)
+  playlistItems          SlidePlaylistItem[]
+  displaySessions        SlideDisplaySession[]
+
+  @@map("slide_presentations")
+}
+
+model SlideDefinition {
+  id                  BigInt              @id @default(autoincrement())
+  slideKey            String              @unique @map("slide_key") @db.VarChar(100)
+  title               String              @db.VarChar(150)
+  description         String?             @db.Text
+  componentKey        String              @map("component_key") @db.VarChar(120)
+  configSchemaVersion Int                 @default(1) @map("config_schema_version")
+  isEnabled           Boolean             @default(true) @map("is_enabled")
+  createdAt           DateTime            @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.DateTime(6)
+  playlistItems       SlidePlaylistItem[]
+
+  @@map("slide_definitions")
+}
+
+model SlidePlaylistItem {
+  id                BigInt            @id @default(autoincrement())
+  presentationId    BigInt            @map("presentation_id")
+  slideDefinitionId BigInt            @map("slide_definition_id")
+  displayOrder      Int               @map("display_order")
+  durationSeconds   Int?              @map("duration_seconds")
+  isEnabled         Boolean           @default(true) @map("is_enabled")
+  configJson        Json?             @map("config_json")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.DateTime(6)
+  presentation      SlidePresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  slideDefinition   SlideDefinition   @relation(fields: [slideDefinitionId], references: [id], onDelete: Cascade)
+
+  @@index([presentationId, displayOrder])
+  @@map("slide_playlist_items")
+}
+
+model SlideDisplaySession {
+  id               BigInt            @id @default(autoincrement())
+  presentationId   BigInt            @map("presentation_id")
+  displayName      String            @map("display_name") @db.VarChar(150)
+  sessionTokenHash String            @map("session_token_hash") @db.VarChar(255)
+  startedAt        DateTime          @default(now()) @map("started_at") @db.DateTime(6)
+  lastSeenAt       DateTime          @default(now()) @map("last_seen_at") @db.DateTime(6)
+  endedAt          DateTime?         @map("ended_at") @db.DateTime(6)
+  presentation     SlidePresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+
+  @@index([presentationId])
+  @@map("slide_display_sessions")
+}
+
+model SlideSystemSetting {
+  settingKey   String   @id @map("setting_key") @db.VarChar(120)
+  settingValue Json     @map("setting_value")
+  updatedBy    BigInt?  @map("updated_by")
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@map("slide_system_settings")
+}
+
+// ==========================================
+// 2. CAMPAIGN TARGET MANAGEMENT TABLES
+// ==========================================
+
+model SlideCampaignTargetPlan {
+  id                BigInt                     @id @default(autoincrement())
+  crmCampaignId     BigInt                     @map("crm_campaign_id")
+  campaignName      String?                    @map("campaign_name") @db.VarChar(150)
+  clientCode        String?                    @map("client_code") @db.VarChar(50)
+  targetWorkDate    DateTime                   @map("target_work_date") @db.Date
+  proposedTarget    Int                        @map("proposed_target")
+  monthlyAllocation Int?                       @map("monthly_allocation")
+  planStatus        String                     @default("draft") @map("plan_status") @db.VarChar(30)
+  notes             String?                    @db.Text
+  createdBy         BigInt                     @default(1) @map("created_by")
+  submittedAt       DateTime?                  @map("submitted_at") @db.DateTime(6)
+  createdAt         DateTime                   @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt         DateTime                   @updatedAt @map("updated_at") @db.DateTime(6)
+  auditRecords      SlideCampaignTargetAudit[]
+
+  @@index([crmCampaignId, targetWorkDate])
+  @@map("slide_campaign_target_plans")
+}
+
+model SlideCampaignTargetAudit {
+  id                   BigInt                   @id @default(autoincrement())
+  planId               BigInt?                  @map("plan_id")
+  crmCampaignId        BigInt                   @map("crm_campaign_id")
+  campaignName         String?                  @map("campaign_name") @db.VarChar(150)
+  clientCode           String?                  @map("client_code") @db.VarChar(50)
+  targetWorkDate       DateTime                 @map("target_work_date") @db.Date
+  previousTarget       Int?                     @map("previous_target")
+  newTarget            Int                      @map("new_target")
+  crmResponseReference String?                  @map("crm_response_reference") @db.VarChar(150)
+  action               String                   @db.VarChar(50)
+  performedBy          BigInt                   @default(1) @map("performed_by")
+  notes                String?                  @db.Text
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.DateTime(6)
+  plan                 SlideCampaignTargetPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  @@index([crmCampaignId, targetWorkDate])
+  @@map("slide_campaign_target_audit")
+}
+
+// ==========================================
+// 3. INCENTIVE CONFIGURATION MODULE
+// ==========================================
+
+model IncentivePolicy {
+  id          BigInt                      @id @default(autoincrement())
+  policyCode  String                      @map("policy_code") @db.VarChar(80)
+  policyName  String                      @map("policy_name") @db.VarChar(150)
+  version     Int                         @default(1)
+  status      String                      @default("draft") @db.VarChar(30)
+  currency    String                      @default("INR") @db.Char(3)
+  validFrom   DateTime                    @map("valid_from") @db.Date
+  validTo     DateTime?                   @map("valid_to") @db.Date
+  createdBy   BigInt                      @map("created_by")
+  createdAt   DateTime                    @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt   DateTime                    @updatedAt @map("updated_at") @db.DateTime(6)
+  rules       IncentivePolicyRules?
+  slabs       IncentivePolicySlab[]
+  assignments IncentivePolicyAssignment[]
+  approvals   IncentivePolicyApproval[]
+
+  @@unique([policyCode, version])
+  @@map("incentive_policies")
+}
+
+model IncentivePolicyRules {
+  id                     BigInt          @id @default(autoincrement())
+  policyId               BigInt          @unique @map("policy_id")
+  minimumTargetPct       Decimal         @default(100.000) @map("minimum_target_pct") @db.Decimal(8, 3)
+  baseIncentiveAmount    Decimal         @default(500.00) @map("base_incentive_amount") @db.Decimal(12, 2)
+  attendanceRequired     Boolean         @default(true) @map("attendance_required")
+  qaEscalationAction     String          @default("zero_out") @map("qa_escalation_action") @db.VarChar(30)
+  penaltyAmount          Decimal         @default(0.00) @map("penalty_amount") @db.Decimal(12, 2)
+  maximumDailyIncentive  Decimal?        @map("maximum_daily_incentive") @db.Decimal(12, 2)
+  roundingMode           String          @default("standard") @map("rounding_mode") @db.VarChar(30)
+  createdAt              DateTime        @default(now()) @map("created_at") @db.DateTime(6)
+  policy                 IncentivePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@map("incentive_policy_rules")
+}
+
+model IncentivePolicySlab {
+  id                    BigInt          @id @default(autoincrement())
+  policyId              BigInt          @map("policy_id")
+  slabOrder             Int             @map("slab_order")
+  minimumCompletionPct  Decimal         @map("minimum_completion_pct") @db.Decimal(8, 3)
+  maximumCompletionPct  Decimal?        @map("maximum_completion_pct") @db.Decimal(8, 3)
+  amountPerExtraPoint   Decimal         @map("amount_per_extra_point") @db.Decimal(12, 2)
+  createdAt             DateTime        @default(now()) @map("created_at") @db.DateTime(6)
+  policy                IncentivePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId, slabOrder])
+  @@map("incentive_policy_slabs")
+}
+
+model IncentivePolicyAssignment {
+  id         BigInt          @id @default(autoincrement())
+  policyId   BigInt          @map("policy_id")
+  scopeType  String          @map("scope_type") @db.VarChar(30)
+  scopeCrmId BigInt?         @map("scope_crm_id")
+  priority   Int             @default(0)
+  validFrom  DateTime        @map("valid_from") @db.Date
+  validTo    DateTime?       @map("valid_to") @db.Date
+  createdBy  BigInt          @map("created_by")
+  createdAt  DateTime        @default(now()) @map("created_at") @db.DateTime(6)
+  policy     IncentivePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([scopeType, scopeCrmId, validFrom])
+  @@map("incentive_policy_assignments")
+}
+
+model IncentivePolicyApproval {
+  id         BigInt          @id @default(autoincrement())
+  policyId   BigInt          @map("policy_id")
+  action     String          @db.VarChar(30)
+  reviewedBy BigInt          @map("reviewed_by")
+  remarks    String?         @db.Text
+  reviewedAt DateTime        @default(now()) @map("reviewed_at") @db.DateTime(6)
+  policy     IncentivePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId])
+  @@map("incentive_policy_approvals")
+}
+
+// ==========================================
+// 4. INCENTIVE OPERATIONS TRACKING TABLES
+// ==========================================
+
+model IncentiveSettlementRun {
+  id               BigInt    @id @default(autoincrement())
+  crmRunReference  String?   @map("crm_run_reference") @db.VarChar(150)
+  workDate         DateTime  @map("work_date") @db.Date
+  runMode          String    @map("run_mode") @db.VarChar(30)
+  triggerSource    String    @map("trigger_source") @db.VarChar(30)
+  runStatus        String    @map("run_status") @db.VarChar(30)
+  agentsProcessed  Int?      @map("agents_processed")
+  totalAmount      Decimal?  @map("total_amount") @db.Decimal(14, 2)
+  startedAt        DateTime  @default(now()) @map("started_at") @db.DateTime(6)
+  finishedAt       DateTime? @map("finished_at") @db.DateTime(6)
+  errorSummary     String?   @map("error_summary") @db.Text
+
+  @@index([workDate, runStatus])
+  @@map("incentive_settlement_runs")
+}
+
+model IncentivePayoutActionLog {
+  id           BigInt   @id @default(autoincrement())
+  crmPayoutId  BigInt   @map("crm_payout_id")
+  actionType   String   @map("action_type") @db.VarChar(50)
+  actorId      BigInt   @map("actor_id")
+  requestId    String   @map("request_id") @db.VarChar(150)
+  resultStatus String   @map("result_status") @db.VarChar(30)
+  crmReference String?  @map("crm_reference") @db.VarChar(150)
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(6)
+
+  @@index([crmPayoutId, actionType])
+  @@map("incentive_payout_action_log")
+}
+
+model IncentiveReconciliationCheck {
+  id             BigInt    @id @default(autoincrement())
+  crmPayoutId    BigInt    @map("crm_payout_id")
+  workDate       DateTime  @map("work_date") @db.Date
+  checkType      String    @map("check_type") @db.VarChar(50)
+  expectedStatus String    @map("expected_status") @db.VarChar(30)
+  observedStatus String    @map("observed_status") @db.VarChar(30)
+  result         String    @db.VarChar(30)
+  checkedAt      DateTime  @default(now()) @map("checked_at") @db.DateTime(6)
+  resolvedAt     DateTime? @map("resolved_at") @db.DateTime(6)
+
+  @@index([crmPayoutId, workDate])
+  @@map("incentive_reconciliation_checks")
+}
+
+// ==========================================
+// 5. APP USERS, SECURITY AND AUDIT TABLES
+// ==========================================
+
+model SlideAppUser {
+  id          BigInt          @id @default(autoincrement())
+  crmUserId   BigInt?         @map("crm_user_id")
+  email       String          @unique @db.VarChar(191)
+  displayName String          @map("display_name") @db.VarChar(150)
+  isActive    Boolean         @default(true) @map("is_active")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.DateTime(6)
+  roles       SlideUserRole[]
+
+  @@map("slide_app_users")
+}
+
+model SlideRole {
+  id        BigInt          @id @default(autoincrement())
+  roleKey   String          @unique @map("role_key") @db.VarChar(60)
+  roleName  String          @map("role_name") @db.VarChar(100)
+  createdAt DateTime        @default(now()) @map("created_at") @db.DateTime(6)
+  users     SlideUserRole[]
+
+  @@map("slide_roles")
+}
+
+model SlideUserRole {
+  userId     BigInt       @map("user_id")
+  roleId     BigInt       @map("role_id")
+  assignedAt DateTime     @default(now()) @map("assigned_at") @db.DateTime(6)
+  user       SlideAppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       SlideRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("slide_user_roles")
+}
+
+model SlideAuditLog {
+  id           BigInt   @id @default(autoincrement())
+  actorId      BigInt?  @map("actor_id")
+  action       String   @db.VarChar(100)
+  resourceType String   @map("resource_type") @db.VarChar(80)
+  resourceId   String?  @map("resource_id") @db.VarChar(100)
+  detailsJson  Json?    @map("details_json")
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(6)
+
+  @@index([resourceType, resourceId])
+  @@index([actorId, createdAt])
+  @@map("slide_audit_logs")
+}
+
+model SlideIntegrationLog {
+  id           BigInt   @id @default(autoincrement())
+  service      String   @db.VarChar(80)
+  endpointName String   @map("endpoint_name") @db.VarChar(120)
+  requestId    String   @map("request_id") @db.VarChar(150)
+  httpStatus   Int?     @map("http_status")
+  durationMs   Int?     @map("duration_ms")
+  resultStatus String   @map("result_status") @db.VarChar(30)
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(6)
+
+  @@index([service, endpointName])
+  @@map("slide_integration_logs")
+}
+
+// ==========================================
+// 6. BUSINESS CALENDAR TABLE
+// ==========================================
+
+model SlideBusinessCalendar {
+  id                     BigInt   @id @default(autoincrement())
+  calendarName           String   @map("calendar_name") @db.VarChar(100)
+  shiftCode              String   @default("US_SHIFT") @map("shift_code") @db.VarChar(50)
+  businessTimezone       String   @default("America/New_York") @map("business_timezone") @db.VarChar(64)
+  displayTimezone        String   @default("Asia/Kolkata") @map("display_timezone") @db.VarChar(64)
+  shiftStartLocal        String   @default("17:30:00") @map("shift_start_local") @db.VarChar(16)
+  shiftEndLocal          String   @default("02:30:00") @map("shift_end_local") @db.VarChar(16)
+  shiftTimezone          String   @default("Asia/Kolkata") @map("shift_timezone") @db.VarChar(64)
+  qaCutoffMinutes        Int      @default(30) @map("qa_cutoff_minutes")
+  settlementDelayMinutes Int      @default(5) @map("settlement_delay_minutes")
+  scheduleMode           String   @default("cross_midnight") @map("schedule_mode") @db.VarChar(30)
+  workingDaysJson        Json?    @map("working_days_json")
+  gracePeriodMinutes     Int      @default(0) @map("grace_period_minutes")
+  version                Int      @default(1)
+  isActive               Boolean  @default(true) @map("is_active")
+  createdAt              DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@map("slide_business_calendars")
+}
+
+// ==========================================
+// 7. PREFERENCES & DYNAMIC CONFIG TABLES
+// ==========================================
+
+model SlideUserPreference {
+  id                     BigInt   @id @default(autoincrement())
+  userId                 BigInt   @unique @map("user_id")
+  theme                  String   @default("dark") @db.VarChar(20)
+  headerDrawerOpen       Boolean  @default(false) @map("header_drawer_open")
+  tvModeEnabled          Boolean  @default(false) @map("tv_mode_enabled")
+  displayScaling         String   @default("normal") @map("display_scaling") @db.VarChar(30)
+  heatmapIntervalMinutes Int      @default(10) @map("heatmap_interval_minutes")
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@map("slide_user_preferences")
+}
+
+model SlideDisplayPreference {
+  id                     BigInt   @id @default(autoincrement())
+  displayIdentifier      String   @unique @map("display_identifier") @db.VarChar(150)
+  presentationId         BigInt?  @map("presentation_id")
+  tvModeEnabled          Boolean  @default(true) @map("tv_mode_enabled")
+  displayScaling         String   @default("normal") @map("display_scaling") @db.VarChar(30)
+  heatmapIntervalMinutes Int      @default(10) @map("heatmap_interval_minutes")
+  slideIntervalSeconds   Int      @default(30) @map("slide_interval_seconds")
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@map("slide_display_preferences")
+}
+
+model SlideCrmConnectionSetting {
+  id                     BigInt   @id @default(autoincrement())
+  connectionName         String   @default("default") @map("connection_name") @db.VarChar(100)
+  baseUrl                String   @map("base_url") @db.VarChar(500)
+  pollingIntervalSeconds Int      @default(30) @map("polling_interval_seconds")
+  timeoutSeconds         Int      @default(60) @map("timeout_seconds")
+  mockFallback           Boolean  @default(false) @map("mock_fallback")
+  autoSyncEnabled        Boolean  @default(true) @map("auto_sync_enabled")
+  isActive               Boolean  @default(true) @map("is_active")
+  updatedBy              BigInt?  @map("updated_by")
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@map("slide_crm_connection_settings")
+}
+
+model SlideSettingsChangeEvent {
+  id           BigInt   @id @default(autoincrement())
+  settingScope String   @map("setting_scope") @db.VarChar(30)
+  settingKey   String   @map("setting_key") @db.VarChar(120)
+  entityId     BigInt?  @map("entity_id")
+  changedBy    BigInt   @map("changed_by")
+  previousValue Json?   @map("previous_value")
+  newValue     Json?    @map("new_value")
+  changedAt    DateTime @default(now()) @map("changed_at") @db.DateTime(6)
+
+  @@index([settingScope, settingKey])
+  @@index([changedAt])
+  @@map("slide_settings_change_events")
+}

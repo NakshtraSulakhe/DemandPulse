@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const limit = parseInt(limitStr, 10) || 100;
 
   try {
-    const history = getAllocationAuditHistory({
+    const history = await getAllocationAuditHistory({
       business_date: businessDate,
       campaign_id: campaignId,
       client_code: clientCode,

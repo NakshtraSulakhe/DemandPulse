@@ -37,7 +37,9 @@ export default function PresentationSettingsPage() {
   const { theme, setTheme, isDark } = useTheme();
   const { config, updateConfig } = useCrmConfig();
 
-  // Local state
+  // Local state backed by MySQL database (zero localStorage)
+  const [presentationId, setPresentationId] = useState<string>("1");
+  const [playlistItems, setPlaylistItems] = useState<any[]>([]);
   const [slideInterval, setSlideInterval] = useState<number>(25);
   const [heatmapInterval, setHeatmapInterval] = useState<number>(10);
   const [enabledSlides, setEnabledSlides] = useState<Record<number, boolean>>({
@@ -58,49 +60,61 @@ export default function PresentationSettingsPage() {
   const [unit, setUnit] = useState<"sec" | "min">("sec");
   const [customInputValue, setCustomInputValue] = useState<string>("25");
 
-  // Load saved preferences
+  // Load authoritative settings from MySQL database on mount
   useEffect(() => {
+    // 1. One-time cleanup of any legacy localStorage keys in admin browser
     try {
-      const savedHeatmap = localStorage.getItem("demandflow-heatmap-interval");
-      if (savedHeatmap) {
-        const parsed = parseInt(savedHeatmap, 10);
-        if ([5, 10, 15, 20, 30, 60].includes(parsed)) {
-          setHeatmapInterval(parsed);
-        }
-      }
-
-      const savedSlideInterval = localStorage.getItem("demandflow-slide-interval");
-      if (savedSlideInterval) {
-        const parsed = parseInt(savedSlideInterval, 10);
-        if (parsed > 0) {
-          setSlideInterval(parsed);
-          setCustomInputValue(String(parsed));
-        }
-      } else if (config?.slideRotationInterval) {
-        setSlideInterval(config.slideRotationInterval);
-        setCustomInputValue(String(config.slideRotationInterval));
-      }
-
-      const savedSlides = localStorage.getItem("demandflow-enabled-slides");
-      if (savedSlides) {
-        setEnabledSlides(JSON.parse(savedSlides));
-      }
-
-      const savedScaling = localStorage.getItem("demandflow-display-scaling");
-      if (savedScaling) {
-        setDisplayScaling(savedScaling);
-      }
+      localStorage.removeItem("demandflow-heatmap-interval");
+      localStorage.removeItem("demandflow-slide-interval");
+      localStorage.removeItem("demandflow-enabled-slides");
+      localStorage.removeItem("demandflow-display-scaling");
+      localStorage.removeItem("demandflow-tv-mode");
     } catch {}
-  }, [config]);
+
+    // 2. Fetch presentation profile and playlist items from MySQL
+    fetch("/api/slides/presentations?slug=executive-presentation")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          setPresentationId(res.data.id?.toString() || "1");
+          if (res.data.defaultSlideSeconds) {
+            setSlideInterval(res.data.defaultSlideSeconds);
+            setCustomInputValue(String(res.data.defaultSlideSeconds));
+          }
+
+          if (Array.isArray(res.data.playlistItems) && res.data.playlistItems.length > 0) {
+            setPlaylistItems(res.data.playlistItems);
+            const slideMap: Record<number, boolean> = {};
+            res.data.playlistItems.forEach((item: any, idx: number) => {
+              slideMap[idx + 1] = item.isEnabled !== false;
+            });
+            setEnabledSlides(slideMap);
+          }
+        }
+      })
+      .catch((e) => console.error("Error loading presentation from MySQL:", e));
+
+    // 3. Fetch display preferences from MySQL
+    fetch("/api/slides/preferences")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          if (res.data.heatmapIntervalMinutes) {
+            setHeatmapInterval(res.data.heatmapIntervalMinutes);
+          }
+          if (res.data.displayScaling) {
+            setDisplayScaling(res.data.displayScaling);
+          }
+        }
+      })
+      .catch((e) => console.error("Error loading display preferences from MySQL:", e));
+  }, []);
 
   const toggleSlide = (id: number) => {
-    setEnabledSlides((prev) => {
-      const updated = { ...prev, [id]: !prev[id] };
-      try {
-        localStorage.setItem("demandflow-enabled-slides", JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
+    setEnabledSlides((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
   };
 
   const handleSlideIntervalChange = (valSec: number) => {
@@ -133,22 +147,65 @@ export default function PresentationSettingsPage() {
 
   const handleSave = async () => {
     try {
-      localStorage.setItem("demandflow-heatmap-interval", String(heatmapInterval));
-      localStorage.setItem("demandflow-slide-interval", String(slideInterval));
-      localStorage.setItem("demandflow-enabled-slides", JSON.stringify(enabledSlides));
-      localStorage.setItem("demandflow-display-scaling", displayScaling);
+      // 1. Save presentation rotation interval in MySQL
+      await fetch("/api/slides/presentations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: presentationId,
+          defaultSlideSeconds: slideInterval,
+        }),
+      });
 
-      // Sync with upstream CRM config if available
+      // 2. Save playlist items (enabled/disabled states) in MySQL
+      if (playlistItems.length > 0) {
+        const updatedPlaylist = playlistItems.map((item, idx) => ({
+          id: item.id,
+          displayOrder: idx + 1,
+          durationSeconds: slideInterval,
+          isEnabled: enabledSlides[idx + 1] !== false,
+        }));
+
+        await fetch("/api/slides/playlists", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updatedPlaylist),
+        });
+      }
+
+      // 3. Save display preferences (scaling, heatmap interval) in MySQL
+      await fetch("/api/slides/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          heatmapIntervalMinutes: heatmapInterval,
+          displayScaling: displayScaling,
+          slideIntervalSeconds: slideInterval,
+        }),
+      });
+
+      // 4. Update CRM sync config in MySQL
       if (updateConfig) {
         await updateConfig({
           slideRotationInterval: slideInterval,
           heatmapGranularity: heatmapInterval,
         });
       }
-    } catch {}
 
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3500);
+      // 5. Ensure any legacy localStorage remnants are permanently cleared
+      try {
+        localStorage.removeItem("demandflow-heatmap-interval");
+        localStorage.removeItem("demandflow-slide-interval");
+        localStorage.removeItem("demandflow-enabled-slides");
+        localStorage.removeItem("demandflow-display-scaling");
+      } catch {}
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3500);
+    } catch (err) {
+      console.error("Failed to persist presentation settings to MySQL:", err);
+      alert("Error saving settings to database. Please check server logs.");
+    }
   };
 
   const handleReset = () => {
@@ -333,13 +390,13 @@ export default function PresentationSettingsPage() {
                 <div>
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-lg bg-[#070b14] text-cyan-400 border border-cyan-400/30 shadow-inner">
+                      <div className="p-2 rounded-lg bg-[#000000] text-cyan-400 border border-cyan-400/30 shadow-inner">
                         <Moon className="w-5 h-5" />
                       </div>
                       <div>
-                        <div className="font-bold text-sm text-slate-900 dark:text-white">Dark Mode (Command Center)</div>
+                        <div className="font-bold text-sm text-slate-900 dark:text-white">Dark Mode (True Black)</div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          Deep navy background with neon cyan & blue glow
+                          Pure black #000000 background with high-contrast cyan & blue accents
                         </div>
                       </div>
                     </div>
@@ -353,10 +410,10 @@ export default function PresentationSettingsPage() {
                   </div>
 
                   <div className="mt-3 flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-[#070b14] border border-cyan-500/50" />
+                    <span className="w-3 h-3 rounded-full bg-[#000000] border border-cyan-500/50" />
                     <span className="w-3 h-3 rounded-full bg-cyan-500" />
                     <span className="w-3 h-3 rounded-full bg-blue-600" />
-                    <span className="text-[10px] text-slate-400 font-mono ml-1">#070b14 • Neon Glow</span>
+                    <span className="text-[10px] text-slate-400 font-mono ml-1">#000000 • True OLED Black</span>
                   </div>
                 </div>
 

@@ -1,5 +1,3 @@
-import fs from "fs/promises";
-import path from "path";
 import {
   CrmConfig,
   CrmConnectionTestReport,
@@ -7,10 +5,15 @@ import {
   CrmCustomEndpoint,
   DEFAULT_CRM_ENDPOINTS,
 } from "@/types/crm-config";
-
-const CONFIG_FILE_PATH = path.join(process.cwd(), "data", "crm-config.json");
+import { prisma, serializeDbData } from "@/lib/db";
+import { recordSettingChangeEvent } from "@/lib/db/preferences-repository";
 
 export { DEFAULT_CRM_ENDPOINTS };
+
+// Fast in-memory cache to prevent database saturation on rapid polling
+let cachedConfig: CrmConfig | null = null;
+let lastCacheFetchTime = 0;
+const CACHE_TTL_MS = 5000;
 
 export function getDefaultCrmConfig(): CrmConfig {
   const envRefreshMs = parseInt(process.env.NEXT_PUBLIC_REFRESH_INTERVAL || "30000", 10);
@@ -41,17 +44,30 @@ export function getDefaultCrmConfig(): CrmConfig {
 }
 
 /**
- * Loads current CRM and sync configuration from persistent JSON store,
- * falling back to .env environment variables.
+ * Loads current CRM and sync configuration directly from MySQL (demandflow_slides),
+ * falling back to .env environment variables. (Zero local file access)
  */
 export async function getCrmConfig(): Promise<CrmConfig> {
+  const now = Date.now();
+  if (cachedConfig && now - lastCacheFetchTime < CACHE_TTL_MS) {
+    return cachedConfig;
+  }
+
   const defaults = getDefaultCrmConfig();
 
   try {
-    const raw = await fs.readFile(CONFIG_FILE_PATH, "utf-8");
-    const parsed = JSON.parse(raw);
+    const settingRecord = await prisma.slideSystemSetting.findUnique({
+      where: { settingKey: "crm_connection_config" },
+    });
 
-    // Merge customEndpoints with default built-ins to ensure all required endpoints exist
+    const parsed: any = settingRecord ? serializeDbData(settingRecord.settingValue) : null;
+
+    if (!parsed) {
+      cachedConfig = defaults;
+      lastCacheFetchTime = now;
+      return defaults;
+    }
+
     const savedCustom: CrmCustomEndpoint[] = Array.isArray(parsed.customEndpoints) ? parsed.customEndpoints : [];
     const mergedEndpointsMap: Record<string, string> = { ...defaults.endpoints, ...(parsed.endpoints || {}) };
 
@@ -65,12 +81,11 @@ export async function getCrmConfig(): Promise<CrmConfig> {
       }
     });
 
-    return {
+    const resolved: CrmConfig = {
       ...defaults,
       ...parsed,
       endpoints: mergedEndpointsMap,
       customEndpoints: mergedCustomEndpoints,
-      // Ensure positive integers for intervals
       analyticsSyncInterval: Number(parsed.analyticsSyncInterval) || defaults.analyticsSyncInterval,
       recognitionSyncInterval: Number(parsed.recognitionSyncInterval) || defaults.recognitionSyncInterval,
       campaignTargetsSyncInterval: Number(parsed.campaignTargetsSyncInterval) || defaults.campaignTargetsSyncInterval,
@@ -82,19 +97,25 @@ export async function getCrmConfig(): Promise<CrmConfig> {
       crmApiTimeoutMs: Number(parsed.crmApiTimeoutMs) || defaults.crmApiTimeoutMs,
       crmMockFallback: typeof parsed.crmMockFallback === "boolean" ? parsed.crmMockFallback : defaults.crmMockFallback,
       autoSyncEnabled: typeof parsed.autoSyncEnabled === "boolean" ? parsed.autoSyncEnabled : defaults.autoSyncEnabled,
+      // Enforce token from environment variable if present for security
+      crmApiToken: process.env.CRM_API_TOKEN || parsed.crmApiToken || defaults.crmApiToken,
     };
-  } catch {
+
+    cachedConfig = resolved;
+    lastCacheFetchTime = now;
+    return resolved;
+  } catch (err) {
+    console.error("Error reading CRM config from MySQL:", err);
     return defaults;
   }
 }
 
 /**
- * Persists updated CRM and sync settings to disk
+ * Persists updated CRM and sync settings directly to MySQL (zero filesystem writes)
  */
 export async function saveCrmConfig(updates: Partial<CrmConfig>, updatedBy = "Admin Console"): Promise<CrmConfig> {
   const current = await getCrmConfig();
 
-  // If customEndpoints was updated, synchronize endpoints mapping
   let updatedEndpoints = updates.endpoints || current.endpoints || {};
   if (updates.customEndpoints && Array.isArray(updates.customEndpoints)) {
     updatedEndpoints = { ...updatedEndpoints };
@@ -111,22 +132,64 @@ export async function saveCrmConfig(updates: Partial<CrmConfig>, updatedBy = "Ad
     updatedBy,
   };
 
-  // Ensure data/ directory exists
-  const dir = path.dirname(CONFIG_FILE_PATH);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(CONFIG_FILE_PATH, JSON.stringify(merged, null, 2), "utf-8");
+  // 1. Update slide_system_settings in MySQL
+  await prisma.slideSystemSetting.upsert({
+    where: { settingKey: "crm_connection_config" },
+    update: {
+      settingValue: merged as any,
+      updatedAt: new Date(),
+    },
+    create: {
+      settingKey: "crm_connection_config",
+      settingValue: merged as any,
+    },
+  });
+
+  // 2. Update slide_crm_connection_settings in MySQL
+  await prisma.slideCrmConnectionSetting.upsert({
+    where: { id: BigInt(1) },
+    update: {
+      baseUrl: merged.crmApiBaseUrl,
+      pollingIntervalSeconds: merged.analyticsSyncInterval,
+      timeoutSeconds: Math.round(merged.crmApiTimeoutMs / 1000),
+      mockFallback: merged.crmMockFallback,
+      autoSyncEnabled: merged.autoSyncEnabled,
+      updatedAt: new Date(),
+    },
+    create: {
+      id: BigInt(1),
+      connectionName: "Production Bridge CRM",
+      baseUrl: merged.crmApiBaseUrl,
+      pollingIntervalSeconds: merged.analyticsSyncInterval,
+      timeoutSeconds: Math.round(merged.crmApiTimeoutMs / 1000),
+      mockFallback: merged.crmMockFallback,
+      autoSyncEnabled: merged.autoSyncEnabled,
+      isActive: true,
+    },
+  });
+
+  // 3. Record configuration modification event
+  await recordSettingChangeEvent(
+    "CRM_CONFIG",
+    "crm_connection_config",
+    current,
+    merged,
+    BigInt(1)
+  );
+
+  // Invalidate in-memory cache
+  cachedConfig = merged;
+  lastCacheFetchTime = Date.now();
 
   return merged;
 }
 
 /**
- * Resets CRM settings back to defaults
+ * Resets CRM settings back to defaults in MySQL
  */
 export async function resetCrmConfig(): Promise<CrmConfig> {
   const defaults = getDefaultCrmConfig();
-  const dir = path.dirname(CONFIG_FILE_PATH);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(CONFIG_FILE_PATH, JSON.stringify(defaults, null, 2), "utf-8");
+  await saveCrmConfig(defaults, "Admin Reset to Default");
   return defaults;
 }
 
@@ -143,9 +206,10 @@ export async function testCrmConnection(
   const baseUrl = (customBaseUrl || activeConfig.crmApiBaseUrl).trim().replace(/\/+$/, "");
   const token = customToken !== undefined ? customToken.trim() : activeConfig.crmApiToken;
 
-  const endpointsList = endpointsToProbe && endpointsToProbe.length > 0
-    ? endpointsToProbe
-    : activeConfig.customEndpoints || DEFAULT_CRM_ENDPOINTS;
+  const endpointsList =
+    endpointsToProbe && endpointsToProbe.length > 0
+      ? endpointsToProbe
+      : activeConfig.customEndpoints || DEFAULT_CRM_ENDPOINTS;
 
   const results: CrmEndpointTestResult[] = [];
 
@@ -156,7 +220,6 @@ export async function testCrmConnection(
       ? ep.path
       : `${baseUrl}/${ep.path.replace(/^\/+/, "")}`;
 
-    // Attach token query param if token exists and not already present
     if (token) {
       try {
         const u = new URL(fullUrl);
@@ -215,9 +278,7 @@ export async function testCrmConnection(
 
   const okCount = results.filter((r) => r.ok).length;
   const avgLatency =
-    results.length > 0
-      ? Math.round(results.reduce((acc, r) => acc + r.latencyMs, 0) / results.length)
-      : 0;
+    results.length > 0 ? Math.round(results.reduce((acc, r) => acc + r.latencyMs, 0) / results.length) : 0;
 
   let overallStatus: "healthy" | "degraded" | "unreachable" = "unreachable";
   let message = "";

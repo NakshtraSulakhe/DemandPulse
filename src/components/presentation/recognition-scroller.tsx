@@ -212,8 +212,8 @@ export default function RecognitionScroller({
           onMouseLeave={() => setIsPaused(false)}
         >
           {/* Subtle edge fade overlays for light & dark mode */}
-          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white dark:from-[#070b14] to-transparent z-10 pointer-events-none" />
-          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white dark:from-[#070b14] to-transparent z-10 pointer-events-none" />
+          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white dark:from-[#000000] to-transparent z-10 pointer-events-none" />
+          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white dark:from-[#000000] to-transparent z-10 pointer-events-none" />
 
           <div
             className={speedClass}

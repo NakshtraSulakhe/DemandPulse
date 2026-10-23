@@ -62,26 +62,41 @@ export default function PresentationHeader({
   isTvMode = true,
   onToggleTvMode,
 }: PresentationHeaderProps) {
-  // Drawer open/closed state with localStorage persistence
+  // Drawer open/closed state backed by MySQL database (zero localStorage)
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(true);
   const [clock, setClock] = useState<string>("");
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const shift = useShiftEngine(5000);
 
   useEffect(() => {
+    // 1. One-time cleanup of legacy localStorage key
     try {
-      const savedDrawerState = localStorage.getItem("demandflow-header-drawer-open");
-      if (savedDrawerState !== null) {
-        setIsDrawerOpen(savedDrawerState === "true");
+      const saved = localStorage.getItem("demandflow-header-drawer-open");
+      if (saved !== null) {
+        setIsDrawerOpen(saved === "true");
+        localStorage.removeItem("demandflow-header-drawer-open");
       }
-    } catch { }
+    } catch {}
+
+    // 2. Fetch authoritative setting from MySQL database
+    fetch("/api/slides/preferences")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && typeof res.data?.headerDrawerOpen === "boolean") {
+          setIsDrawerOpen(res.data.headerDrawerOpen);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleToggleDrawer = (open: boolean) => {
     setIsDrawerOpen(open);
-    try {
-      localStorage.setItem("demandflow-header-drawer-open", String(open));
-    } catch { }
+    // Persist to MySQL database (zero localStorage)
+    fetch("/api/slides/preferences", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ headerDrawerOpen: open }),
+    }).catch(() => {});
   };
 
   const activeSlideInfo = SLIDE_TITLES.find((s) => s.id === currentSlide) || SLIDE_TITLES[0];
