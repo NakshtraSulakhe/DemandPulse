@@ -247,7 +247,8 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
       // Find all live active campaigns for today
       const allLiveCampaigns = parsed.data.slide1.campaigns.filter((c: any) => {
         if (c.active !== undefined && c.active !== null && Number(c.active) === 0) return false;
-        const st = (c.campaign_status || c.status || "").trim().toLowerCase();
+        const rawStatus = String((c as any).campaign_status || (c as any).status || "");
+        const st = rawStatus.trim().toLowerCase();
         if (st && st !== "live") return false;
         return true;
       });
@@ -264,7 +265,8 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
           for (const tc of parsedTargets.data.campaigns) {
             const existing = liveCampaignMap.get(tc.campaign_id);
             if (!existing) {
-              const st = (tc.campaign_status || tc.status || "").trim().toLowerCase();
+              const rawStatus = String((tc as any).campaign_status || (tc as any).status || "");
+              const st = rawStatus.trim().toLowerCase();
               if (!st || st === "live") {
                 liveCampaignMap.set(tc.campaign_id, { ...tc });
               }
@@ -819,7 +821,8 @@ export async function getCrmCampaignTargets(
       if (status === "Live") {
         filteredCampaigns = filteredCampaigns.filter((c: any) => {
           if (c.active !== undefined && c.active !== null && Number(c.active) === 0) return false;
-          const st = (c.campaign_status || c.status || "").trim();
+          const rawStatus = String((c as any).campaign_status || (c as any).status || "");
+          const st = rawStatus.trim();
           if (!st) return true; // (d.status IS NULL)
           return st.toLowerCase() === "live";
         });
