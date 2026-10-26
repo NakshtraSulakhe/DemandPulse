@@ -1,5 +1,33 @@
 import { PrismaClient } from "@prisma/client";
 
+function resolveDatabaseUrl(): string | undefined {
+  if (process.env.SLIDES_DATABASE_URL && process.env.SLIDES_DATABASE_URL.trim() !== "") {
+    return process.env.SLIDES_DATABASE_URL;
+  }
+
+  const host = process.env.DB_HOST;
+  const user = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD ?? "";
+  const database = process.env.DB_NAME;
+  const port = process.env.DB_PORT || "3306";
+
+  if (host && user && database) {
+    const encodedUser = encodeURIComponent(user);
+    const encodedPassword = encodeURIComponent(password);
+    const url = `mysql://${encodedUser}:${encodedPassword}@${host}:${port}/${database}?connect_timeout=30`;
+    // Ensure environment variable is available for Prisma engine lookup
+    process.env.SLIDES_DATABASE_URL = url;
+    return url;
+  }
+
+  return undefined;
+}
+
+const activeDbUrl = resolveDatabaseUrl();
+if (activeDbUrl && !process.env.SLIDES_DATABASE_URL) {
+  process.env.SLIDES_DATABASE_URL = activeDbUrl;
+}
+
 // Global singleton pattern for PrismaClient in Next.js development
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -8,6 +36,7 @@ const globalForPrisma = globalThis as unknown as {
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
+    datasources: activeDbUrl ? { db: { url: activeDbUrl } } : undefined,
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
 
