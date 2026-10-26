@@ -36,7 +36,8 @@ export async function GET(
         const page = parseInt(searchParams.get("page") || "1", 10);
         const limitParam = searchParams.get("limit") || "10";
         const limit = limitParam === "all" ? 100 : parseInt(limitParam, 10);
-        const result = await getCrmSlide2(date, page, limit);
+        const dataset = searchParams.get("dataset") || undefined;
+        const result = await getCrmSlide2(date, page, limit, dataset);
         return NextResponse.json(result, {
           status: result.success ? 200 : 502,
           headers: {

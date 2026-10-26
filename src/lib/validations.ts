@@ -66,6 +66,34 @@ export const AgentSlide2Schema = z.object({
   remaining_points: z.number().default(0),
   completion_percentage: z.number().default(0),
   is_target_met: z.boolean().default(false),
+  attendance_status: z.string().optional(),
+  is_present: z.boolean().optional(),
+});
+
+export const CampaignPointBreakdownItemSchema = z.object({
+  campaign_id: z.number(),
+  campaign_name: z.string(),
+  campaign_code: z.string().optional().nullable(),
+  campaign_type: z.string().default("General"),
+  daily_target: z.number().default(0),
+  point_factor: z.number().default(1),
+  target_points: z.number().default(0),
+});
+
+export const CampaignTargetPointsSummarySchema = z.object({
+  total_target_points: z.number().default(0),
+  total_campaigns: z.number().default(0),
+  campaigns: z.array(CampaignPointBreakdownItemSchema).default([]),
+});
+
+export const FloorCapacitySummarySchema = z.object({
+  total_capacity_points: z.number().default(0),
+  total_agents: z.number().default(0),
+  present_agents_count: z.number().default(0),
+  absent_agents_count: z.number().default(0),
+  capacity_gap: z.number().default(0),
+  capacity_gap_label: z.string().default(""),
+  capacity_gap_status: z.enum(["shortfall", "surplus", "balanced"]).default("balanced"),
 });
 
 export const Slide2ResponseSchema = z.object({
@@ -78,6 +106,9 @@ export const Slide2ResponseSchema = z.object({
     total_pages: z.number().default(1),
     agents: z.array(AgentSlide2Schema),
     sliders: z.any().optional(),
+    campaign_target_points: CampaignTargetPointsSummarySchema.optional(),
+    floor_capacity: FloorCapacitySummarySchema.optional(),
+    query_date: z.string().optional(),
   }).passthrough(),
 }).passthrough();
 

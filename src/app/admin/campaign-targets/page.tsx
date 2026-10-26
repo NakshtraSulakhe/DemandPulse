@@ -18,6 +18,7 @@ import {
   Filter,
   X,
   ChevronDown,
+  Tv,
 } from "lucide-react";
 
 /**
@@ -39,6 +40,7 @@ function getTodayUSEastern(): string {
 export default function CampaignTargetsPage() {
   const [selectedDate, setSelectedDate] = useState<string>(getTodayUSEastern);
   const [statusFilter, setStatusFilter] = useState<"Live" | "all">("Live");
+  const [allocationFilter, setAllocationFilter] = useState<"all" | "allocated" | "unallocated">("all");
   const [clientFilter, setClientFilter] = useState<string>("ALL");
   const [clientDropdownOpen, setClientDropdownOpen] = useState<boolean>(false);
   const [clientSearchText, setClientSearchText] = useState<string>("");
@@ -71,13 +73,21 @@ export default function CampaignTargetsPage() {
   const { data: targetsData, isLoading, isFetching, refetch } = useCampaignTargets(selectedDate, statusFilter);
   const saveMutation = useSaveCampaignTargets();
 
-  const campaigns: AdminCampaignTargetItem[] = useMemo(() => targetsData?.data?.campaigns || [], [targetsData?.data?.campaigns]);
+  // Robustly extract all live campaigns from API (checking both targetsData.data.campaigns and targetsData.campaigns)
+  const campaigns: AdminCampaignTargetItem[] = useMemo(() => {
+    return (
+      targetsData?.data?.campaigns ||
+      (targetsData as any)?.campaigns ||
+      []
+    );
+  }, [targetsData]);
 
   // Extract unique sorted client codes from API response and visible campaigns
   const clientCodes = useMemo(() => {
     const set = new Set<string>();
-    if (targetsData?.data?.client_codes) {
-      targetsData.data.client_codes.forEach((c) => {
+    const rawCodes = targetsData?.data?.client_codes || (targetsData as any)?.client_codes;
+    if (Array.isArray(rawCodes)) {
+      rawCodes.forEach((c: string) => {
         if (c && c.trim()) set.add(c.trim());
       });
     }
@@ -87,7 +97,22 @@ export default function CampaignTargetsPage() {
       }
     });
     return Array.from(set).sort();
-  }, [targetsData?.data?.client_codes, campaigns]);
+  }, [targetsData, campaigns]);
+
+  // Count allocated (daily_target > 0) vs unallocated (daily_target === 0) campaigns
+  const allocatedCount = useMemo(() => {
+    return campaigns.filter((c) => {
+      const t = targetDrafts[c.campaign_id]?.target ?? c.daily_target ?? 0;
+      return t > 0;
+    }).length;
+  }, [campaigns, targetDrafts]);
+
+  const unallocatedCount = useMemo(() => {
+    return campaigns.filter((c) => {
+      const t = targetDrafts[c.campaign_id]?.target ?? c.daily_target ?? 0;
+      return t <= 0;
+    }).length;
+  }, [campaigns, targetDrafts]);
 
   // Filtered client codes for the searchable dropdown
   const filteredClientCodes = useMemo(() => {
@@ -178,9 +203,14 @@ export default function CampaignTargetsPage() {
     return changed;
   }, [campaigns, originalTargets, targetDrafts]);
 
-  // Filter campaigns by Client Code and Open Search
+  // Filter campaigns by Allocation Status, Client Code and Open Search
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((camp) => {
+      // 0. Allocation Filter: all, allocated (target > 0), unallocated (target === 0)
+      const currentTarget = targetDrafts[camp.campaign_id]?.target ?? camp.daily_target ?? 0;
+      if (allocationFilter === "allocated" && currentTarget <= 0) return false;
+      if (allocationFilter === "unallocated" && currentTarget > 0) return false;
+
       // 1. Client Code filter
       if (clientFilter && clientFilter !== "ALL") {
         const campClient = (camp.client_code || "").trim().toLowerCase();
@@ -203,7 +233,7 @@ export default function CampaignTargetsPage() {
 
       return true;
     });
-  }, [campaigns, clientFilter, searchTerm]);
+  }, [campaigns, allocationFilter, clientFilter, searchTerm, targetDrafts]);
 
   // Calculate totals strictly from visible/filtered campaigns
   const visibleTotals = useMemo(() => {
@@ -487,21 +517,80 @@ export default function CampaignTargetsPage() {
         </div>
       </div>
 
+      {/* Guidance Banner for TV Presentation Integration */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-slate-700 dark:text-cyan-200 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <Tv className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+          <span>
+            <strong>TV Presentation Sync:</strong> All <strong>{campaigns.length} live CRM campaigns</strong> are listed below. Assign a daily target (&gt; 0) to project specific campaigns onto <strong>Slide 1 of the TV Presentation</strong>.
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            {allocatedCount} Active on Slide 1
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium text-[11px]">
+            {unallocatedCount} Unallocated
+          </span>
+        </div>
+      </div>
+
       {/* Target Allocation Table Panel */}
       <div className="glass-panel rounded-2xl p-5 border border-slate-200/80 dark:border-white/10 shadow-2xl flex flex-col">
         {/* Controls Bar: Section 3.1 Client Filter & Section 3.2 Open Search */}
         <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200/80 dark:border-white/10 mb-4">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-              <span>{statusFilter === "Live" ? "Live CRM Campaigns" : "All CRM Campaigns"}</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                {filteredCampaigns.length} of {campaigns.length} Visible
-              </span>
-            </h2>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+                <span>{statusFilter === "Live" ? "Live CRM Campaigns" : "All CRM Campaigns"}</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                  {filteredCampaigns.length} of {campaigns.length} Visible
+                </span>
+              </h2>
+
+              {/* Quick Allocation Tabs: All, Slide 1 Projected, Unallocated */}
+              <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-200/70 dark:bg-slate-800/80 text-[11px] border border-slate-300/60 dark:border-white/10 ml-2">
+                <button
+                  type="button"
+                  onClick={() => setAllocationFilter("all")}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                    allocationFilter === "all"
+                      ? "bg-cyan-600 text-white shadow-xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  All ({campaigns.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllocationFilter("allocated")}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    allocationFilter === "allocated"
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Slide 1 Projected ({allocatedCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllocationFilter("unallocated")}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                    allocationFilter === "unallocated"
+                      ? "bg-slate-700 text-white shadow-xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  Unallocated ({unallocatedCount})
+                </button>
+              </div>
+            </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {statusFilter === "Live"
-                ? "Active live campaigns synchronized from DemandFlow Bridge CRM."
+                ? "Active live campaigns synchronized from DemandFlow Bridge CRM. Assign positive daily targets to project them onto Slide 1."
                 : "All active campaigns in DemandFlow Bridge CRM (including draft/paused)."}
             </p>
           </div>
@@ -708,13 +797,25 @@ export default function CampaignTargetsPage() {
                             : "hover:bg-slate-100/60 dark:hover:bg-white/[0.02]"
                         }`}
                       >
-                        {/* 1. Campaign Column: Display ONLY Campaign Name and Client Code */}
+                        {/* 1. Campaign Column: Display Campaign Name, Client Code, and TV Projection Badge */}
                         <td className="py-3.5 px-3">
                           <div className="font-semibold text-slate-900 dark:text-white">
                             {camp.campaign_name}
                           </div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
-                            {camp.client_code || camp.campaign_code}
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {targetVal > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
+                                <Tv className="w-2.5 h-2.5 text-emerald-500" />
+                                Slide 1 TV
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-medium text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-white/5">
+                                Off Display (0)
+                              </span>
+                            )}
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                              {camp.client_code || camp.campaign_code}
+                            </span>
                           </div>
                         </td>
 

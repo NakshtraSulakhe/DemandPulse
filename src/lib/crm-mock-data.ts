@@ -7,6 +7,7 @@ import {
   RecognitionData,
   AdminCampaignTargetItem,
 } from "@/types";
+import { getExampleBenchmarkDataset } from "@/lib/productivity/points-capacity";
 
 export function getMockSlide1Data(dateStr?: string): Slide1Data {
   return {
@@ -108,95 +109,16 @@ export function getMockSlide1Data(dateStr?: string): Slide1Data {
 }
 
 export function getMockSlide2Data(page = 1, limit: number | string = 10): Slide2Data {
-  const agents = [
-    {
-      agent_id: 1,
-      agent_name: "Sarah Jenkins",
-      role: "Senior SDR",
-      daily_target_points: 100,
-      working_days: 22,
-      monthly_target_points: 2200,
-      generated_leads: 18,
-      qualified_leads: 15,
-      disqualified_leads: 1,
-      pending_qa: 2,
-      achieved_points: 112,
-      remaining_points: 0,
-      completion_percentage: 112,
-      is_target_met: true,
-    },
-    {
-      agent_id: 2,
-      agent_name: "Devon Brooks",
-      role: "Outbound Lead Gen",
-      daily_target_points: 100,
-      working_days: 22,
-      monthly_target_points: 2200,
-      generated_leads: 16,
-      qualified_leads: 13,
-      disqualified_leads: 1,
-      pending_qa: 2,
-      achieved_points: 98,
-      remaining_points: 2,
-      completion_percentage: 98,
-      is_target_met: false,
-    },
-    {
-      agent_id: 3,
-      agent_name: "Priya Sharma",
-      role: "Enterprise Hunter",
-      daily_target_points: 100,
-      working_days: 22,
-      monthly_target_points: 2200,
-      generated_leads: 17,
-      qualified_leads: 14,
-      disqualified_leads: 2,
-      pending_qa: 1,
-      achieved_points: 105,
-      remaining_points: 0,
-      completion_percentage: 105,
-      is_target_met: true,
-    },
-    {
-      agent_id: 4,
-      agent_name: "Lucas Miller",
-      role: "SDR Specialist",
-      daily_target_points: 100,
-      working_days: 22,
-      monthly_target_points: 2200,
-      generated_leads: 14,
-      qualified_leads: 11,
-      disqualified_leads: 2,
-      pending_qa: 1,
-      achieved_points: 88,
-      remaining_points: 12,
-      completion_percentage: 88,
-      is_target_met: false,
-    },
-    {
-      agent_id: 5,
-      agent_name: "Elena Rostova",
-      role: "Growth Specialist",
-      daily_target_points: 100,
-      working_days: 22,
-      monthly_target_points: 2200,
-      generated_leads: 15,
-      qualified_leads: 12,
-      disqualified_leads: 1,
-      pending_qa: 2,
-      achieved_points: 92,
-      remaining_points: 8,
-      completion_percentage: 92,
-      is_target_met: false,
-    },
-  ];
-
+  const example = getExampleBenchmarkDataset();
   return {
-    total_agents: agents.length,
+    total_agents: example.agents.length,
     page: 1,
-    limit: 10,
+    limit: limit === "all" ? 100 : Number(limit) || 10,
     total_pages: 1,
-    agents,
+    agents: example.agents,
+    campaign_target_points: example.campaign_target_points,
+    floor_capacity: example.floor_capacity,
+    query_date: "2026-10-26",
   };
 }
 

@@ -55,7 +55,8 @@ export function useSlide2(
   date?: string,
   page = 1,
   limit: number | string = 10,
-  customPollInterval?: number | false
+  customPollInterval?: number | false,
+  dataset?: string
 ) {
   const { config } = useCrmConfig();
   const refetchInterval =
@@ -66,12 +67,13 @@ export function useSlide2(
       : false;
 
   return useQuery<ApiResponse<Slide2Data>>({
-    queryKey: ["slide2", date || "today", page, limit],
+    queryKey: ["slide2", date || "today", page, limit, dataset || "live"],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (date) params.set("date", date);
       params.set("page", String(page));
       params.set("limit", String(limit));
+      if (dataset) params.set("dataset", dataset);
       const res = await fetch(`/api/analytics/slide2?${params.toString()}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
@@ -199,10 +201,22 @@ export function useCampaignTargets(date?: string, status: string = "Live", custo
         { cache: "no-store" }
       );
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json.success) {
+      if (!res.ok || (!json.success && !json.ok)) {
         throw new Error(json.error || `CRM API error ${res.status}`);
       }
-      return json;
+      if (json.data && Array.isArray(json.data.campaigns)) {
+        return json;
+      }
+      return {
+        success: true,
+        ...json,
+        data: {
+          target_date: json.target_date || targetDate,
+          total_campaigns: json.total_campaigns || (Array.isArray(json.campaigns) ? json.campaigns.length : 0),
+          campaigns: json.campaigns || [],
+          client_codes: json.client_codes || [],
+        },
+      };
     },
     refetchInterval,
     placeholderData: (prev) => prev,

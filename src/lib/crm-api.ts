@@ -30,6 +30,12 @@ import {
   getMockRecognitionData,
   getMockCampaignTargets,
 } from "@/lib/crm-mock-data";
+import {
+  calculateCampaignTargetPoints,
+  calculateFloorCapacityPoints,
+  calculateCapacityGap,
+  getExampleBenchmarkDataset,
+} from "@/lib/productivity/points-capacity";
 
 export interface CrmFetchResult<T> {
   success: boolean;
@@ -246,24 +252,45 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
         return true;
       });
 
-      const totalLiveCampaignsCount = allLiveCampaigns.length;
+      // Build unified live campaigns index across slide1 and campaign_daily_targets endpoints
+      const liveCampaignMap = new Map<number, any>();
+      for (const c of allLiveCampaigns) {
+        liveCampaignMap.set(c.campaign_id, { ...c });
+      }
 
-      // Filter: Show ONLY campaigns for which an allocation was entered for that day with daily_target > 0
-      const allocatedLiveCampaigns = allLiveCampaigns
-        .filter((c: any) => {
-          // Check SQLite database first
-          const savedInDb = savedAllocationsMap.get(c.campaign_id);
-          if (savedInDb !== undefined) {
-            return savedInDb.daily_target > 0;
+      if (targetsRes.ok && targetsRes.data) {
+        const parsedTargets = CampaignDailyTargetsResponseSchema.safeParse(targetsRes.data);
+        if (parsedTargets.success) {
+          for (const tc of parsedTargets.data.campaigns) {
+            const existing = liveCampaignMap.get(tc.campaign_id);
+            if (!existing) {
+              const st = (tc.campaign_status || tc.status || "").trim().toLowerCase();
+              if (!st || st === "live") {
+                liveCampaignMap.set(tc.campaign_id, { ...tc });
+              }
+            } else if (tc.daily_target && tc.daily_target > 0 && (!existing.daily_target || existing.daily_target === 0)) {
+              existing.daily_target = tc.daily_target;
+            }
           }
-          // Fallback to CRM saved targets (e.g. on Vercel stateless instances)
-          const targetInCrm = crmTargetsMap.get(c.campaign_id);
-          return Boolean(targetInCrm && targetInCrm > 0);
+        }
+      }
+
+      const combinedLiveCampaigns = Array.from(liveCampaignMap.values());
+      const totalLiveCampaignsCount = combinedLiveCampaigns.length;
+
+      // Filter: Show ONLY campaigns for which a positive daily target (> 0) is entered for today
+      const allocatedLiveCampaigns = combinedLiveCampaigns
+        .filter((c: any) => {
+          const targetInDb = savedAllocationsMap.get(c.campaign_id)?.daily_target || 0;
+          const targetInCrm = crmTargetsMap.get(c.campaign_id) || c.daily_target || 0;
+          const effectiveDailyTarget = targetInDb > 0 ? targetInDb : targetInCrm;
+          return effectiveDailyTarget > 0;
         })
         .map((c: any) => {
-          // Use daily target from SQLite if present, else from CRM targets
-          const savedInDb = savedAllocationsMap.get(c.campaign_id);
-          const dailyTarget = savedInDb ? savedInDb.daily_target : (crmTargetsMap.get(c.campaign_id) || 0);
+          const targetInDb = savedAllocationsMap.get(c.campaign_id)?.daily_target || 0;
+          const targetInCrm = crmTargetsMap.get(c.campaign_id) || c.daily_target || 0;
+          const dailyTarget = targetInDb > 0 ? targetInDb : targetInCrm;
+
           const qualifiedLeads = Number(c.qualified_leads) || 0;
           const remaining = Math.max(0, dailyTarget - qualifiedLeads);
           const completionPct = dailyTarget > 0 ? Math.round((qualifiedLeads / dailyTarget) * 100 * 10) / 10 : 0;
@@ -341,16 +368,46 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
 export async function getCrmSlide2(
   dateStr?: string,
   page: number = 1,
-  limit: number | string = 10
+  limit: number | string = 10,
+  dataset?: string
 ): Promise<CrmFetchResult<Slide2Data>> {
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();
   const effectiveDate = dateStr || getShiftBusinessDate();
 
+  if (dataset === "example") {
+    return {
+      success: true,
+      data: getMockSlide2Data(page, limit),
+      sourceUrl: "[Example Benchmark Dataset]",
+      timestamp,
+      isMockFallback: true,
+    };
+  }
+
   const configuredPath = config.endpoints?.slide2 || "slides/slide2.php";
-  let res = await fetchFromCrm<unknown>(
+  const slide2Promise = fetchFromCrm<unknown>(
     buildEndpointUrl(configuredPath, { date: effectiveDate, page, limit })
   );
+
+  // Concurrently fetch daily campaign targets from CRM
+  const targetsPath = config.endpoints?.campaign_targets || "campaign_daily_targets.php";
+  const targetsPromise = fetchFromCrm<unknown>(
+    buildEndpointUrl(targetsPath, { date: effectiveDate, status: "Live" })
+  );
+
+  // Concurrently retrieve saved daily allocations from MySQL
+  const savedAllocationsPromise = getAllocationsMapForDate(effectiveDate).catch(() => new Map());
+
+  // Concurrently retrieve attendance from CRM incentives preview
+  const incentivePreviewPromise = fetchIncentivePreview(effectiveDate).catch(() => null);
+
+  let [res, targetsRes, savedAllocationsMap, incentiveRes] = await Promise.all([
+    slide2Promise,
+    targetsPromise,
+    savedAllocationsPromise,
+    incentivePreviewPromise,
+  ]);
 
   if (!res.ok) {
     const fallbackPath =
@@ -370,13 +427,54 @@ export async function getCrmSlide2(
   if (res.ok && res.data) {
     const parsed = Slide2ResponseSchema.safeParse(res.data);
     if (parsed.success) {
+      // 1. Process Campaign Daily Target Points:
+      // SUM(Daily Campaign Lead Target * Campaign Type Point Factor)
+      let rawCampaigns: any[] = [];
+      if (targetsRes.ok && targetsRes.data) {
+        const parsedTargets = CampaignDailyTargetsResponseSchema.safeParse(targetsRes.data);
+        if (parsedTargets.success && Array.isArray(parsedTargets.data.campaigns)) {
+          rawCampaigns = parsedTargets.data.campaigns;
+        }
+      }
+
+      const campaignTargetPoints = calculateCampaignTargetPoints(
+        rawCampaigns,
+        savedAllocationsMap
+      );
+
+      // 2. Process Floor Capacity Points:
+      // SUM(Daily Target Points of Present Agents)
+      const attendanceMap = new Map<number, { attendance_status: string; is_present: boolean }>();
+      if (incentiveRes?.success && Array.isArray(incentiveRes.data?.agents)) {
+        for (const ag of incentiveRes.data.agents) {
+          if (ag.agent_id != null) {
+            attendanceMap.set(Number(ag.agent_id), {
+              attendance_status: ag.attendance_status || (ag.is_present ? "Present" : "Absent"),
+              is_present: ag.is_present ?? true,
+            });
+          }
+        }
+      }
+
+      const floorCapacityResult = calculateFloorCapacityPoints(
+        parsed.data.slide2.agents,
+        attendanceMap
+      );
+
+      // 3. Process Capacity Gap:
+      // Capacity Gap = Floor Capacity Points - Campaign Target Points
+      const capacityGapResult = calculateCapacityGap(
+        floorCapacityResult.total_capacity_points,
+        campaignTargetPoints.total_target_points
+      );
+
       // Sort agents by lead generated count descending (highest lead generators on top)
-      const sortedAgents = [...parsed.data.slide2.agents].sort((a, b) => {
+      const sortedAgents = [...floorCapacityResult.annotated_agents].sort((a, b) => {
         const diff = (b.generated_leads ?? 0) - (a.generated_leads ?? 0);
         if (diff !== 0) return diff;
         const ptsDiff = (b.achieved_points ?? 0) - (a.achieved_points ?? 0);
         if (ptsDiff !== 0) return ptsDiff;
-        return a.agent_name.localeCompare(b.agent_name);
+        return (a.agent_name || "").localeCompare(b.agent_name || "");
       });
 
       return {
@@ -384,6 +482,17 @@ export async function getCrmSlide2(
         data: {
           ...parsed.data.slide2,
           agents: sortedAgents,
+          campaign_target_points: campaignTargetPoints,
+          floor_capacity: {
+            total_capacity_points: floorCapacityResult.total_capacity_points,
+            total_agents: floorCapacityResult.total_agents,
+            present_agents_count: floorCapacityResult.present_agents_count,
+            absent_agents_count: floorCapacityResult.absent_agents_count,
+            capacity_gap: capacityGapResult.capacity_gap,
+            capacity_gap_label: capacityGapResult.capacity_gap_label,
+            capacity_gap_status: capacityGapResult.capacity_gap_status,
+          },
+          query_date: effectiveDate,
         },
         sourceUrl: res.effectiveUrl,
         timestamp,

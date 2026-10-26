@@ -62,6 +62,34 @@ export interface AgentSlide2 {
   remaining_points: number;
   completion_percentage: number;
   is_target_met: boolean;
+  attendance_status?: string;
+  is_present?: boolean;
+}
+
+export interface CampaignPointBreakdownItem {
+  campaign_id: number;
+  campaign_name: string;
+  campaign_code?: string;
+  campaign_type: string;
+  daily_target: number;
+  point_factor: number;
+  target_points: number;
+}
+
+export interface CampaignTargetPointsSummary {
+  total_target_points: number;
+  total_campaigns: number;
+  campaigns: CampaignPointBreakdownItem[];
+}
+
+export interface FloorCapacitySummary {
+  total_capacity_points: number;
+  total_agents: number;
+  present_agents_count: number;
+  absent_agents_count: number;
+  capacity_gap: number;
+  capacity_gap_label: string;
+  capacity_gap_status: "shortfall" | "surplus" | "balanced";
 }
 
 export interface Slide2Data {
@@ -71,6 +99,9 @@ export interface Slide2Data {
   total_pages: number;
   agents: AgentSlide2[];
   sliders?: RecognitionData;
+  campaign_target_points?: CampaignTargetPointsSummary;
+  floor_capacity?: FloorCapacitySummary;
+  query_date?: string;
 }
 
 export interface QaHeatmapInterval {
