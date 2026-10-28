@@ -277,20 +277,79 @@ function RecognitionCard({
   item: RecognitionTickerItem;
   isSlider?: boolean;
 }) {
+  const isTargetAchiever =
+    item.type === "top_lead_scorer" ||
+    (Number(item.incentive_amount) || 0) > 0 ||
+    item.is_target_met === true;
   const earnedIncentive = Number(item.incentive_amount) || 0;
 
   return (
     <div
-      className={`relative mx-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#070707] hover:border-cyan-400/50 dark:hover:border-cyan-400/50 shadow-2xs flex items-center gap-2.5 whitespace-nowrap shrink-0 transition-all ${
+      className={`relative mx-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#070707] hover:border-amber-400/50 dark:hover:border-amber-400/50 shadow-2xs flex items-center gap-2.5 whitespace-nowrap shrink-0 transition-all ${
         isSlider ? "w-full justify-between" : "max-w-none"
       }`}
     >
-      {/* 1. Name */}
+      {/* 1. Profile Photo with Trophy Badge for Target Achievers */}
+      {isTargetAchiever ? (
+        <div className="relative shrink-0 flex items-center">
+          {item.profile_pic ? (
+            <div className="relative">
+              <img
+                src={item.profile_pic}
+                alt={item.title}
+                className="w-7 h-7 sm:w-8 h-8 rounded-full object-cover ring-2 ring-amber-400/70 shadow-xs bg-slate-100 dark:bg-[#111111]"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = "none";
+                  const fallback = (e.target as HTMLElement).nextElementSibling as HTMLElement;
+                  if (fallback) fallback.style.display = "flex";
+                }}
+              />
+              <div
+                style={{ display: "none" }}
+                className="w-7 h-7 sm:w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500/25 to-yellow-400/25 border border-amber-400/50 text-amber-500 items-center justify-center font-bold shadow-xs"
+              >
+                <Trophy className="w-4 h-4 text-amber-500" />
+              </div>
+              <div
+                className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shadow-xs border border-white dark:border-black"
+                title="Target Achiever"
+              >
+                <Trophy className="w-2.5 h-2.5 fill-current" />
+              </div>
+            </div>
+          ) : (
+            <div
+              className="w-7 h-7 sm:w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500/20 to-yellow-400/25 border border-amber-400/50 text-amber-500 dark:text-amber-400 flex items-center justify-center font-bold shadow-xs"
+              title="Target Achiever"
+            >
+              <Trophy className="w-4 h-4 fill-amber-400/30" />
+            </div>
+          )}
+        </div>
+      ) : item.profile_pic ? (
+        <img
+          src={item.profile_pic}
+          alt={item.title}
+          className="w-7 h-7 sm:w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 dark:ring-white/20 shadow-xs bg-slate-100 dark:bg-[#111111] shrink-0"
+        />
+      ) : null}
+
+      {/* 2. Trophy Tag */}
+      {isTargetAchiever && (
+        <span
+          className="p-1 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30 flex items-center justify-center shrink-0"
+          title="Daily Target Achiever"
+        >
+          <Trophy className="w-3.5 h-3.5 fill-amber-400/40" />
+        </span>
+      )}
+
+      {/* 3. Name */}
       <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-[13.5px] tracking-tight shrink-0">
         {item.title}
       </span>
 
-      {/* 2. Amount Only (or celebratory badge if birthday/anniversary without amount) */}
+      {/* 4. Amount Only (or celebratory badge if birthday/anniversary without amount) */}
       {earnedIncentive > 0 ? (
         <span className="font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200/90 dark:border-emerald-500/30 px-2 py-0.5 rounded-md text-xs sm:text-[13px] shrink-0 font-mono flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
