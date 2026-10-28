@@ -19,6 +19,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import ThemeToggle from "@/components/theme/theme-toggle";
 import HeatmapIntervalSelector from "@/components/presentation/heatmap-interval-selector";
+import SlideDateFilter from "@/components/presentation/slide-date-filter";
 import { useShiftEngine } from "@/hooks/useShiftEngine";
 
 interface PresentationHeaderProps {
@@ -36,6 +37,9 @@ interface PresentationHeaderProps {
   onHeatmapIntervalChange?: (interval: number) => void;
   isTvMode?: boolean;
   onToggleTvMode?: () => void;
+  selectedDate?: string;
+  onDateChange?: (date: string | undefined) => void;
+  onApplyDateToAll?: (date: string) => void;
 }
 
 const SLIDE_TITLES = [
@@ -61,6 +65,9 @@ export default function PresentationHeader({
   onHeatmapIntervalChange,
   isTvMode = true,
   onToggleTvMode,
+  selectedDate,
+  onDateChange,
+  onApplyDateToAll,
 }: PresentationHeaderProps) {
   // Drawer open/closed state backed by MySQL database (zero localStorage)
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(true);
@@ -342,21 +349,30 @@ export default function PresentationHeader({
 
               {/* Row 2: Secondary Controls Strip (Heatmap Granularity, Refresh, TV Mode, Theme, Fullscreen, Admin, Clock) */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60 dark:border-white/5 text-xs">
-                {/* Left: Granularity Selector (for slide 3 and 4) */}
-                <div className="flex items-center gap-2">
-                  {(currentSlide === 3 || currentSlide === 4) && onHeatmapIntervalChange ? (
+                {/* Left: Active Slide Date Filter & Granularity Selector */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {onDateChange && (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-slate-400 font-medium">Heatmap Interval:</span>
+                      <span className="text-[10px] text-slate-400 font-medium hidden md:inline">Shift Date:</span>
+                      <SlideDateFilter
+                        selectedDate={selectedDate}
+                        onDateChange={onDateChange}
+                        onApplyToAll={onApplyDateToAll}
+                        showApplyToAll={!!onApplyDateToAll}
+                        compact
+                      />
+                    </div>
+                  )}
+
+                  {(currentSlide === 3 || currentSlide === 4) && onHeatmapIntervalChange && (
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-slate-300 dark:border-white/10">
+                      <span className="text-[10px] text-slate-400 font-medium">Interval:</span>
                       <HeatmapIntervalSelector
                         value={heatmapInterval || 10}
                         onChange={onHeatmapIntervalChange}
                         compact
                       />
                     </div>
-                  ) : (
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-                      Auto-rotating every 25s • Use [Space] to pause • [← / →] to navigate
-                    </span>
                   )}
                 </div>
 

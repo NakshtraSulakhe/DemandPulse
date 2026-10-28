@@ -256,7 +256,7 @@ export async function getAgentSnapshotsForDate(
     expected_points_at_snapshot: Number(r.expectedPointsAtSnapshot),
     productivity_pace_pct:
       r.productivityPacePct !== null ? Number(r.productivityPacePct) : null,
-    paceStatus: r.paceStatus as any,
+    pace_status: (r.paceStatus as any) ?? null,
     source_updated_at: r.sourceUpdatedAt ? r.sourceUpdatedAt.toISOString() : null,
     synced_at: r.syncedAt.toISOString(),
     snapshot_version: r.snapshotVersion,

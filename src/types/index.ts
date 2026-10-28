@@ -45,12 +45,15 @@ export interface Slide1Data {
   sliders?: RecognitionData;
   total_live_campaigns?: number;
   total_allocated_campaigns?: number;
+  query_date?: string;
 }
 
 export interface AgentSlide2 {
   agent_id: number;
   agent_name: string;
   role: string;
+  profile_pic?: string | null;
+  avatar?: string | null;
   daily_target_points: number;
   working_days: number;
   monthly_target_points: number;
@@ -137,6 +140,7 @@ export interface Slide3Data {
   today_qualified?: number;
   today_disqualified?: number;
   today_pending_qa?: number;
+  query_date?: string;
 }
 
 export interface AgentHeatmapInterval {
@@ -161,6 +165,7 @@ export interface Slide4Data {
   total_agents: number;
   agent_heatmap: AgentHeatmapItem[];
   sliders?: RecognitionData;
+  query_date?: string;
 }
 
 export interface Slide5Summary {
@@ -190,6 +195,7 @@ export interface Slide5Data {
   summary: Slide5Summary;
   comparison_timeline: Slide5ComparisonSlot[];
   sliders?: RecognitionData;
+  query_date?: string;
 }
 
 export interface AllSlidesData {

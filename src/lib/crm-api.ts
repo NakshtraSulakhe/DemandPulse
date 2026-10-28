@@ -999,8 +999,9 @@ export async function getCrmRecognition(
     const parsedS2 = Slide2ResponseSchema.safeParse(slide2Res.data);
     if (parsedS2.success && Array.isArray(parsedS2.data.slide2?.agents)) {
       for (const s2 of parsedS2.data.slide2.agents) {
-        if (s2.profile_pic) {
-          const pic = fixAvatar(s2.profile_pic);
+        const picRaw = s2.profile_pic || (s2 as any).avatar;
+        if (picRaw) {
+          const pic = fixAvatar(picRaw);
           if (pic) {
             avatarMap.set(s2.agent_id, pic);
             if (s2.agent_name) avatarMap.set(s2.agent_name.toLowerCase().trim(), pic);

@@ -47,6 +47,7 @@ export const Slide1ResponseSchema = z.object({
     campaigns: z.array(CampaignSlide1Schema),
     late_comers: z.array(LateComerSchema),
     sliders: z.any().optional(),
+    query_date: z.string().optional(),
   }).passthrough(),
 }).passthrough();
 
@@ -55,6 +56,8 @@ export const AgentSlide2Schema = z.object({
   agent_id: z.number(),
   agent_name: z.string(),
   role: z.string().default("agent"),
+  profile_pic: z.string().optional().nullable(),
+  avatar: z.string().optional().nullable(),
   daily_target_points: z.number().default(0),
   working_days: z.number().default(22),
   monthly_target_points: z.number().default(0),
@@ -140,6 +143,7 @@ export const Slide3ResponseSchema = z.object({
     total_qa_analysts: z.number().default(0),
     qa_heatmap: z.array(QaHeatmapAnalystSchema),
     sliders: z.any().optional(),
+    query_date: z.string().optional(),
   }).passthrough(),
 }).passthrough();
 
@@ -169,6 +173,7 @@ export const Slide4ResponseSchema = z.object({
     total_agents: z.number().default(0),
     agent_heatmap: z.array(AgentHeatmapItemSchema),
     sliders: z.any().optional(),
+    query_date: z.string().optional(),
   }).passthrough(),
 }).passthrough();
 
@@ -203,6 +208,7 @@ export const Slide5ResponseSchema = z.object({
     summary: Slide5SummarySchema,
     comparison_timeline: z.array(Slide5ComparisonSlotSchema),
     sliders: z.any().optional(),
+    query_date: z.string().optional(),
   }).passthrough(),
 }).passthrough();
 

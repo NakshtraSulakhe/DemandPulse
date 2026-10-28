@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getExampleBenchmarkDataset } from "@/lib/productivity/points-capacity";
+import SlideDateFilter from "@/components/presentation/slide-date-filter";
 
 interface SlideAgentProductivityProps {
   data?: Slide2Data;
@@ -30,6 +31,9 @@ interface SlideAgentProductivityProps {
   error?: Error | null;
   onRetry?: () => void;
   rowsPerPage?: number;
+  selectedDate?: string;
+  onDateChange?: (date: string | undefined) => void;
+  onApplyDateToAll?: (date: string) => void;
 }
 
 export default function SlideAgentProductivity({
@@ -38,6 +42,9 @@ export default function SlideAgentProductivity({
   error,
   onRetry,
   rowsPerPage = 8,
+  selectedDate,
+  onDateChange,
+  onApplyDateToAll,
 }: SlideAgentProductivityProps) {
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
   const [showBreakdownModal, setShowBreakdownModal] = useState<boolean>(false);
@@ -205,8 +212,18 @@ export default function SlideAgentProductivity({
           )}
         </div>
 
-        {/* Toggle between Live CRM and Benchmark Example Dataset */}
-        <div className="flex items-center gap-1.5 bg-slate-200 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-300 dark:border-white/10">
+        <div className="flex flex-wrap items-center gap-2">
+          {onDateChange && (
+            <SlideDateFilter
+              selectedDate={selectedDate}
+              onDateChange={onDateChange}
+              onApplyToAll={onApplyDateToAll}
+              showApplyToAll={!!onApplyDateToAll}
+            />
+          )}
+
+          {/* Toggle between Live CRM and Benchmark Example Dataset */}
+          <div className="flex items-center gap-1.5 bg-slate-200 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-300 dark:border-white/10">
           <button
             onClick={() => setDatasetMode("live")}
             className={`px-2.5 py-1 rounded-md text-[10.5px] font-semibold transition-all ${
@@ -228,6 +245,7 @@ export default function SlideAgentProductivity({
           >
             Benchmark Example (50 / 15 pts)
           </button>
+        </div>
         </div>
       </div>
 

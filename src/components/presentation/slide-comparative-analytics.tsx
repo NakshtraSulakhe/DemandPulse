@@ -25,12 +25,16 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useTheme } from "@/components/providers/theme-provider";
+import SlideDateFilter from "@/components/presentation/slide-date-filter";
 
 interface SlideComparativeAnalyticsProps {
   data?: Slide5Data;
   isLoading?: boolean;
   error?: Error | null;
   onRetry?: () => void;
+  selectedDate?: string;
+  onDateChange?: (date: string | undefined) => void;
+  onApplyDateToAll?: (date: string) => void;
 }
 
 export default function SlideComparativeAnalytics({
@@ -38,6 +42,9 @@ export default function SlideComparativeAnalytics({
   isLoading,
   error,
   onRetry,
+  selectedDate,
+  onDateChange,
+  onApplyDateToAll,
 }: SlideComparativeAnalyticsProps) {
   const { isDark } = useTheme();
 
@@ -107,6 +114,29 @@ export default function SlideComparativeAnalytics({
 
   return (
     <div className="w-full flex flex-col gap-3.5 p-1 animate-fadeIn">
+      {/* Top Banner with Slide Title and Date Filter */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-slate-400">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-slate-700 dark:text-slate-300">
+            Slide 5 • Comparative Velocity & Audit Analytics
+          </span>
+          {data?.query_date && (
+            <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-white/10 font-mono text-[10px] text-cyan-700 dark:text-cyan-400">
+              Shift Date: {data.query_date}
+            </span>
+          )}
+        </div>
+
+        {onDateChange && (
+          <SlideDateFilter
+            selectedDate={selectedDate}
+            onDateChange={onDateChange}
+            onApplyToAll={onApplyDateToAll}
+            showApplyToAll={!!onApplyDateToAll}
+          />
+        )}
+      </div>
+
       {/* 6 Key Comparative Metric Cards - Reduced compact sizing */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 lg:gap-3">
         {/* Total Generated */}

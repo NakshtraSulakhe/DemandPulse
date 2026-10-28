@@ -34,6 +34,26 @@ export default function PresentationPage() {
   const [displayScaling, setDisplayScaling] = useState<string>("tv-1080p");
   const [isDbSynced, setIsDbSynced] = useState<boolean>(false);
 
+  // Per-slide date filters for backdated dashboard snapshots (YYYY-MM-DD)
+  const [slideDates, setSlideDates] = useState<Record<number, string | undefined>>({});
+
+  const handleSlideDateChange = useCallback((slideId: number, date: string | undefined) => {
+    setSlideDates((prev) => ({
+      ...prev,
+      [slideId]: date,
+    }));
+  }, []);
+
+  const handleApplyDateToAll = useCallback((date: string | undefined) => {
+    setSlideDates({
+      1: date,
+      2: date,
+      3: date,
+      4: date,
+      5: date,
+    });
+  }, []);
+
   // Sync settings with MySQL database (authoritative source of truth)
   const syncWithDatabase = useCallback(async () => {
     try {
@@ -132,12 +152,12 @@ export default function PresentationPage() {
     });
   }, []);
 
-  // Queries for each slide with automatic polling
-  const s1Query = useSlide1();
-  const s2Query = useSlide2(undefined, 1, "all");
-  const s3Query = useSlide3(undefined, heatmapInterval);
-  const s4Query = useSlide4(undefined, heatmapInterval);
-  const s5Query = useSlide5();
+  // Queries for each slide with automatic polling (supports per-slide backdated historical dates)
+  const s1Query = useSlide1(slideDates[1]);
+  const s2Query = useSlide2(slideDates[2], 1, "all");
+  const s3Query = useSlide3(slideDates[3], heatmapInterval);
+  const s4Query = useSlide4(slideDates[4], heatmapInterval);
+  const s5Query = useSlide5(slideDates[5]);
   const recogQuery = useRecognitionFeed();
 
   const hasError = !!(s1Query.error || s2Query.error || s3Query.error || s4Query.error || s5Query.error);
@@ -254,6 +274,9 @@ export default function PresentationPage() {
         onHeatmapIntervalChange={handleHeatmapIntervalChange}
         isTvMode={isTvMode}
         onToggleTvMode={handleToggleTvMode}
+        selectedDate={slideDates[currentSlide]}
+        onDateChange={(d) => handleSlideDateChange(currentSlide, d)}
+        onApplyDateToAll={handleApplyDateToAll}
       />
 
       {/* Live Daily Floor Recognition Ticker (Top Leads Scored, Birthdays, Anniversaries) */}
@@ -283,6 +306,9 @@ export default function PresentationPage() {
                 isLoading={s1Query.isLoading}
                 error={s1Query.error as Error | null}
                 onRetry={() => s1Query.refetch()}
+                selectedDate={slideDates[1]}
+                onDateChange={(d) => handleSlideDateChange(1, d)}
+                onApplyDateToAll={handleApplyDateToAll}
               />
             )}
 
@@ -292,6 +318,9 @@ export default function PresentationPage() {
                 isLoading={s2Query.isLoading}
                 error={s2Query.error as Error | null}
                 onRetry={() => s2Query.refetch()}
+                selectedDate={slideDates[2]}
+                onDateChange={(d) => handleSlideDateChange(2, d)}
+                onApplyDateToAll={handleApplyDateToAll}
               />
             )}
 
@@ -304,6 +333,9 @@ export default function PresentationPage() {
                 interval={heatmapInterval}
                 onIntervalChange={handleHeatmapIntervalChange}
                 campaignsData={s1Query.data?.data?.campaigns}
+                selectedDate={slideDates[3]}
+                onDateChange={(d) => handleSlideDateChange(3, d)}
+                onApplyDateToAll={handleApplyDateToAll}
               />
             )}
 
@@ -315,6 +347,9 @@ export default function PresentationPage() {
                 onRetry={() => s4Query.refetch()}
                 interval={heatmapInterval}
                 onIntervalChange={handleHeatmapIntervalChange}
+                selectedDate={slideDates[4]}
+                onDateChange={(d) => handleSlideDateChange(4, d)}
+                onApplyDateToAll={handleApplyDateToAll}
               />
             )}
 
@@ -324,6 +359,9 @@ export default function PresentationPage() {
                 isLoading={s5Query.isLoading}
                 error={s5Query.error as Error | null}
                 onRetry={() => s5Query.refetch()}
+                selectedDate={slideDates[5]}
+                onDateChange={(d) => handleSlideDateChange(5, d)}
+                onApplyDateToAll={handleApplyDateToAll}
               />
             )}
           </motion.div>

@@ -16,6 +16,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import SlideDateFilter from "@/components/presentation/slide-date-filter";
 
 interface SlideOperationsOverviewProps {
   data?: Slide1Data;
@@ -23,6 +24,9 @@ interface SlideOperationsOverviewProps {
   error?: Error | null;
   onRetry?: () => void;
   campaignsPerPage?: number;
+  selectedDate?: string;
+  onDateChange?: (date: string | undefined) => void;
+  onApplyDateToAll?: (date: string) => void;
 }
 
 export default function SlideOperationsOverview({
@@ -31,6 +35,9 @@ export default function SlideOperationsOverview({
   error,
   onRetry,
   campaignsPerPage = 6,
+  selectedDate,
+  onDateChange,
+  onApplyDateToAll,
 }: SlideOperationsOverviewProps) {
   if (error && !data) {
     return (
@@ -112,6 +119,29 @@ export default function SlideOperationsOverview({
 
   return (
     <div className="w-full flex flex-col gap-3.5 p-1 animate-fadeIn">
+      {/* Top Banner with Slide Title and Date Filter */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-slate-400">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-slate-700 dark:text-slate-300">
+            Slide 1 • Operations Overview
+          </span>
+          {data?.query_date && (
+            <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-white/10 font-mono text-[10px] text-cyan-700 dark:text-cyan-400">
+              Shift Date: {data.query_date}
+            </span>
+          )}
+        </div>
+
+        {onDateChange && (
+          <SlideDateFilter
+            selectedDate={selectedDate}
+            onDateChange={onDateChange}
+            onApplyToAll={onApplyDateToAll}
+            showApplyToAll={!!onApplyDateToAll}
+          />
+        )}
+      </div>
+
       {/* 4 Attendance KPI Cards - Reduced compact sizing */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Total Agents */}
