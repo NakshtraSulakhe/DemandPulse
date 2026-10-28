@@ -29,7 +29,7 @@ export default function PresentationPage() {
   const [autoRotate, setAutoRotate] = useState<boolean>(true);
   const [rotationInterval, setRotationInterval] = useState<number>(config.slideRotationInterval || 25);
   const [countdown, setCountdown] = useState<number>(rotationInterval);
-  const [heatmapInterval, setHeatmapInterval] = useState<number>(config.heatmapGranularity || 10);
+  const [heatmapInterval, setHeatmapInterval] = useState<number>(config.heatmapGranularity || 30);
   const [isTvMode, setIsTvMode] = useState<boolean>(true);
   const [displayScaling, setDisplayScaling] = useState<string>("tv-1080p");
   const [isDbSynced, setIsDbSynced] = useState<boolean>(false);

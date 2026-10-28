@@ -34,7 +34,7 @@ export function getDefaultCrmConfig(): CrmConfig {
     recognitionSyncInterval: 20,
     campaignTargetsSyncInterval: 30,
     slideRotationInterval: 25,
-    heatmapGranularity: 10,
+    heatmapGranularity: 30,
     recognitionDisplayScope: "daily",
     endpoints: defaultEndpointsMap,
     customEndpoints: DEFAULT_CRM_ENDPOINTS,

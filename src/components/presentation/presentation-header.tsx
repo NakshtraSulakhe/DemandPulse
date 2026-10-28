@@ -368,7 +368,7 @@ export default function PresentationHeader({
                     <div className="flex items-center gap-1.5 pl-2 border-l border-slate-300 dark:border-white/10">
                       <span className="text-[10px] text-slate-400 font-medium">Interval:</span>
                       <HeatmapIntervalSelector
-                        value={heatmapInterval || 10}
+                        value={heatmapInterval || 30}
                         onChange={onHeatmapIntervalChange}
                         compact
                       />

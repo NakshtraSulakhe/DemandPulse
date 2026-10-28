@@ -13,7 +13,7 @@ const DEFAULT_CONFIG: CrmConfig = {
   recognitionSyncInterval: 20,
   campaignTargetsSyncInterval: 30,
   slideRotationInterval: 25,
-  heatmapGranularity: 10,
+  heatmapGranularity: 30,
   lastUpdated: "",
   updatedBy: "Default",
 };

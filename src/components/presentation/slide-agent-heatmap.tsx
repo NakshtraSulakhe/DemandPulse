@@ -35,14 +35,14 @@ export default function SlideAgentHeatmap({
   isLoading,
   error,
   onRetry,
-  interval = 10,
+  interval = 30,
   onIntervalChange,
   selectedDate,
   onDateChange,
   onApplyDateToAll,
 }: SlideAgentHeatmapProps) {
   const { isDark } = useTheme();
-  const [viewMode, setViewMode] = useState<"echarts" | "matrix">("echarts");
+  const [viewMode, setViewMode] = useState<"echarts" | "matrix">("matrix");
 
   const agents: AgentHeatmapItem[] = useMemo(() => {
     const raw = data?.agent_heatmap || [];

@@ -38,7 +38,7 @@ export default function SlideQaHeatmap({
   isLoading,
   error,
   onRetry,
-  interval = 10,
+  interval = 30,
   onIntervalChange,
   campaignsData,
   selectedDate,
@@ -46,7 +46,7 @@ export default function SlideQaHeatmap({
   onApplyDateToAll,
 }: SlideQaHeatmapProps) {
   const { isDark } = useTheme();
-  const [viewMode, setViewMode] = useState<"echarts" | "matrix">("echarts");
+  const [viewMode, setViewMode] = useState<"echarts" | "matrix">("matrix");
 
   // Sort analysts by total audited descending, strictly filtering out zero-audit unnecessary names
   const analysts: QaHeatmapAnalyst[] = useMemo(() => {

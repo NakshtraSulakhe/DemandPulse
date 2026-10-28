@@ -5,9 +5,9 @@ import { Clock } from "lucide-react";
 
 export const HEATMAP_INTERVAL_OPTIONS = [
   { value: 5, label: "5m", slots: 108, description: "5-minute slots (108 intervals)" },
-  { value: 10, label: "10m", slots: 54, description: "10-minute slots (Default, 54 intervals)" },
+  { value: 10, label: "10m", slots: 54, description: "10-minute slots (54 intervals)" },
   { value: 15, label: "15m", slots: 36, description: "15-minute slots (36 intervals)" },
-  { value: 30, label: "30m", slots: 18, description: "30-minute slots (18 intervals)" },
+  { value: 30, label: "30m", slots: 18, description: "30-minute slots (Default, 18 intervals)" },
   { value: 60, label: "60m", slots: 9, description: "60-minute / 1-hour slots (9 intervals)" },
 ];
 
@@ -19,7 +19,7 @@ interface HeatmapIntervalSelectorProps {
 }
 
 export default function HeatmapIntervalSelector({
-  value = 10,
+  value = 30,
   onChange,
   compact = false,
   className = "",

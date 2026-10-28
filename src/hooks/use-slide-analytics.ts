@@ -94,7 +94,7 @@ export function useSlide3(
   customPollInterval?: number | false
 ) {
   const { config } = useCrmConfig();
-  const bucketInterval = interval || config.heatmapGranularity || 10;
+  const bucketInterval = interval || config.heatmapGranularity || 30;
   const refetchInterval =
     customPollInterval !== undefined
       ? customPollInterval
@@ -128,7 +128,7 @@ export function useSlide4(
   customPollInterval?: number | false
 ) {
   const { config } = useCrmConfig();
-  const bucketInterval = interval || config.heatmapGranularity || 10;
+  const bucketInterval = interval || config.heatmapGranularity || 30;
   const refetchInterval =
     customPollInterval !== undefined
       ? customPollInterval
