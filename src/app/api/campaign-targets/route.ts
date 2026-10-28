@@ -171,10 +171,12 @@ export async function POST(req: NextRequest) {
       allocations: [],
       message: "",
     };
+    let dbErrorMessage = "";
     try {
       dbResult = await saveAllocationsBatch(target_date, targets, changedBy);
-    } catch (dbErr) {
-      console.warn("MySQL allocation save skipped/failed (will sync to CRM API):", dbErr);
+    } catch (dbErr: any) {
+      dbErrorMessage = dbErr?.message || String(dbErr);
+      console.error("MySQL allocation save failed:", dbErr);
     }
 
     // 2. Synchronize to upstream CRM API (authoritative bridge across stateless serverless instances)
@@ -200,6 +202,7 @@ export async function POST(req: NextRequest) {
         {
           ok: false,
           error: "Failed to persist daily campaign allocations to both database and CRM API",
+          details: dbErrorMessage,
         },
         { status: 500 }
       );
@@ -209,10 +212,14 @@ export async function POST(req: NextRequest) {
       {
         ok: true,
         success: true,
-        message: "Daily campaign allocations saved successfully.",
+        message: dbResult.ok
+          ? "Daily campaign allocations saved successfully."
+          : `Allocations synced to CRM API (Database notice: ${dbErrorMessage})`,
         target_date,
         saved_count: dbResult.saved_count || targets.length,
         allocations: dbResult.allocations,
+        db_persisted: dbResult.ok,
+        db_error: dbResult.ok ? null : dbErrorMessage,
         crm_synced: crmSynced,
         crm_message: crmMessage,
       },

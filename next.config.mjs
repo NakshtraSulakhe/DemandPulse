@@ -11,7 +11,7 @@ function setupDatabaseEnv() {
   if (host && user && database) {
     const encodedUser = encodeURIComponent(user);
     const encodedPassword = encodeURIComponent(password);
-    process.env.SLIDES_DATABASE_URL = `mysql://${encodedUser}:${encodedPassword}@${host}:${port}/${database}?connect_timeout=30`;
+    process.env.SLIDES_DATABASE_URL = `mysql://${encodedUser}:${encodedPassword}@${host}:${port}/${database}?connect_timeout=15&connection_limit=1&pool_timeout=10`;
   }
 }
 

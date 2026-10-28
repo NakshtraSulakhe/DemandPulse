@@ -411,3 +411,303 @@ model SlideSettingsChangeEvent {
   @@index([changedAt])
   @@map("slide_settings_change_events")
 }
+
+// ==========================================
+// 8. DAILY CAMPAIGN PERFORMANCE PERSISTENCE
+// ==========================================
+
+model CampaignDailySnapshot {
+  id                         BigInt    @id @default(autoincrement())
+  crmCampaignId              BigInt    @map("crm_campaign_id")
+  crmCampaignCode            String?   @map("crm_campaign_code") @db.VarChar(50)
+  campaignNameSnapshot       String    @map("campaign_name_snapshot") @db.VarChar(150)
+  clientCodeSnapshot         String?   @map("client_code_snapshot") @db.VarChar(50)
+  campaignTypeSnapshot       String?   @default("General") @map("campaign_type_snapshot") @db.VarChar(50)
+  workDate                   DateTime  @map("work_date") @db.Date
+  monthlyAllocationSnapshot  Int?      @default(0) @map("monthly_allocation_snapshot")
+  dailyTargetLeads           Int       @default(0) @map("daily_target_leads")
+  campaignPointFactor        Decimal   @default(1.000) @map("campaign_point_factor") @db.Decimal(8, 3)
+  dailyTargetPoints          Decimal   @default(0.000) @map("daily_target_points") @db.Decimal(12, 3)
+  generatedLeads             Int       @default(0) @map("generated_leads")
+  qualifiedLeads             Int       @default(0) @map("qualified_leads")
+  disqualifiedLeads          Int       @default(0) @map("disqualified_leads")
+  pendingQaLeads             Int       @default(0) @map("pending_qa_leads")
+  remainingTargetLeads       Int       @default(0) @map("remaining_target_leads")
+  completionPercentage       Decimal   @default(0.000) @map("completion_percentage") @db.Decimal(8, 3)
+  targetAchieved             Boolean   @default(false) @map("target_achieved")
+  sourceUpdatedAt            DateTime? @map("source_updated_at") @db.DateTime(6)
+  syncedAt                   DateTime  @default(now()) @map("synced_at") @db.DateTime(6)
+  snapshotVersion            Int       @default(1) @map("snapshot_version")
+  isFinal                    Boolean   @default(false) @map("is_final")
+  createdAt                  DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt                  DateTime  @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([crmCampaignId, workDate, snapshotVersion])
+  @@index([workDate, targetAchieved])
+  @@index([clientCodeSnapshot, workDate])
+  @@map("campaign_daily_snapshots")
+}
+
+// ==========================================
+// 9. AGENT DAILY PRODUCTIVITY PERSISTENCE
+// ==========================================
+
+model AgentDailySnapshot {
+  id                       BigInt    @id @default(autoincrement())
+  crmAgentId               BigInt    @map("crm_agent_id")
+  agentNameSnapshot        String    @map("agent_name_snapshot") @db.VarChar(150)
+  workDate                 DateTime  @map("work_date") @db.Date
+  dailyTargetPoints        Decimal   @default(0.000) @map("daily_target_points") @db.Decimal(12, 3)
+  achievedPoints           Decimal   @default(0.000) @map("achieved_points") @db.Decimal(12, 3)
+  qualifiedLeads           Int       @default(0) @map("qualified_leads")
+  disqualifiedLeads        Int       @default(0) @map("disqualified_leads")
+  generatedLeads           Int       @default(0) @map("generated_leads")
+  pendingQaLeads           Int       @default(0) @map("pending_qa_leads")
+  remainingTargetPoints    Decimal   @default(0.000) @map("remaining_target_points") @db.Decimal(12, 3)
+  targetCompletionPct      Decimal   @default(0.000) @map("target_completion_pct") @db.Decimal(8, 3)
+  attendanceStatusSnapshot String    @default("Present") @map("attendance_status_snapshot") @db.VarChar(50)
+  effectiveWorkMinutes     Int       @default(465) @map("effective_work_minutes")
+  elapsedWorkMinutes       Int       @default(0) @map("elapsed_work_minutes")
+  expectedPointsAtSnapshot Decimal   @default(0.000) @map("expected_points_at_snapshot") @db.Decimal(12, 3)
+  productivityPacePct      Decimal?  @map("productivity_pace_pct") @db.Decimal(8, 3)
+  paceStatus               String?   @map("pace_status") @db.VarChar(30)
+  sourceUpdatedAt          DateTime? @map("source_updated_at") @db.DateTime(6)
+  syncedAt                 DateTime  @default(now()) @map("synced_at") @db.DateTime(6)
+  snapshotVersion          Int       @default(1) @map("snapshot_version")
+  isFinal                  Boolean   @default(false) @map("is_final")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([crmAgentId, workDate, snapshotVersion])
+  @@index([workDate, targetCompletionPct])
+  @@index([crmAgentId, workDate])
+  @@map("agent_daily_snapshots")
+}
+
+// ==========================================
+// 10. FLOOR CAPACITY DAILY PERSISTENCE
+// ==========================================
+
+model FloorDailySnapshot {
+  id                   BigInt   @id @default(autoincrement())
+  workDate             DateTime @map("work_date") @db.Date
+  totalAgents          Int      @default(0) @map("total_agents")
+  presentAgents        Int      @default(0) @map("present_agents")
+  absentAgents         Int      @default(0) @map("absent_agents")
+  lateAgents           Int      @default(0) @map("late_agents")
+  campaignTargetPoints Decimal  @default(0.000) @map("campaign_target_points") @db.Decimal(14, 3)
+  floorCapacityPoints  Decimal  @default(0.000) @map("floor_capacity_points") @db.Decimal(14, 3)
+  capacityGapPoints    Decimal  @default(0.000) @map("capacity_gap_points") @db.Decimal(14, 3)
+  totalAchievedPoints  Decimal  @default(0.000) @map("total_achieved_points") @db.Decimal(14, 3)
+  syncedAt             DateTime @default(now()) @map("synced_at") @db.DateTime(6)
+  snapshotVersion      Int      @default(1) @map("snapshot_version")
+  createdAt            DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([workDate, snapshotVersion])
+  @@map("floor_daily_snapshots")
+}
+
+// ==========================================
+// 11. QA DEPARTMENT ANALYTICS PERSISTENCE
+// ==========================================
+
+model QaDailySnapshot {
+  id                       BigInt   @id @default(autoincrement())
+  crmQaAgentId             BigInt   @map("crm_qa_agent_id")
+  qaAgentNameSnapshot      String?  @map("qa_agent_name_snapshot") @db.VarChar(150)
+  workDate                 DateTime @map("work_date") @db.Date
+  totalAudits              Int      @default(0) @map("total_audits")
+  uniqueLeadsAudited       Int      @default(0) @map("unique_leads_audited")
+  qualifiedLeads           Int      @default(0) @map("qualified_leads")
+  disqualifiedLeads        Int      @default(0) @map("disqualified_leads")
+  reworkLeads              Int      @default(0) @map("rework_leads")
+  otherQaStatusCountsJson  Json?    @map("other_qa_status_counts_json")
+  syncedAt                 DateTime @default(now()) @map("synced_at") @db.DateTime(6)
+  snapshotVersion          Int      @default(1) @map("snapshot_version")
+  createdAt                DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt                DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([crmQaAgentId, workDate, snapshotVersion])
+  @@index([workDate])
+  @@map("qa_daily_snapshots")
+}
+
+model QaIntervalMetric {
+  id                   BigInt   @id @default(autoincrement())
+  crmQaAgentId         BigInt   @map("crm_qa_agent_id")
+  qaAgentNameSnapshot  String?  @map("qa_agent_name_snapshot") @db.VarChar(150)
+  workDate             DateTime @map("work_date") @db.Date
+  intervalStartAt      DateTime @map("interval_start_at") @db.DateTime(6)
+  intervalEndAt        DateTime @map("interval_end_at") @db.DateTime(6)
+  auditedEvents        Int      @default(0) @map("audited_events")
+  qualifiedEvents      Int      @default(0) @map("qualified_events")
+  disqualifiedEvents   Int      @default(0) @map("disqualified_events")
+  uniqueLeadsQualified Int      @default(0) @map("unique_leads_qualified")
+  syncedAt             DateTime @default(now()) @map("synced_at") @db.DateTime(6)
+  createdAt            DateTime @default(now()) @map("created_at") @db.DateTime(6)
+
+  @@unique([crmQaAgentId, intervalStartAt])
+  @@index([workDate, intervalStartAt])
+  @@map("qa_interval_metrics")
+}
+
+// ==========================================
+// 12. AGENT GENERATION INTERVAL METRICS
+// ==========================================
+
+model AgentIntervalMetric {
+  id                BigInt   @id @default(autoincrement())
+  crmAgentId        BigInt   @map("crm_agent_id")
+  agentNameSnapshot String?  @map("agent_name_snapshot") @db.VarChar(150)
+  workDate          DateTime @map("work_date") @db.Date
+  intervalStartAt   DateTime @map("interval_start_at") @db.DateTime(6)
+  intervalEndAt     DateTime @map("interval_end_at") @db.DateTime(6)
+  generatedLeads    Int      @default(0) @map("generated_leads")
+  syncedAt          DateTime @default(now()) @map("synced_at") @db.DateTime(6)
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(6)
+
+  @@unique([crmAgentId, intervalStartAt])
+  @@index([workDate, intervalStartAt])
+  @@map("agent_interval_metrics")
+}
+
+// ==========================================
+// 13. ATTENDANCE ANALYTICS PERSISTENCE
+// ==========================================
+
+model AttendanceDailySnapshot {
+  id                    BigInt   @id @default(autoincrement())
+  workDate              DateTime @map("work_date") @db.Date
+  totalAgents           Int      @default(0) @map("total_agents")
+  presentCount          Int      @default(0) @map("present_count")
+  absentCount           Int      @default(0) @map("absent_count")
+  lateCount             Int      @default(0) @map("late_count")
+  leaveCount            Int      @default(0) @map("leave_count")
+  otherStatusCountsJson Json?    @map("other_status_counts_json")
+  syncedAt              DateTime @default(now()) @map("synced_at") @db.DateTime(6)
+  snapshotVersion       Int      @default(1) @map("snapshot_version")
+  createdAt             DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([workDate, snapshotVersion])
+  @@map("attendance_daily_snapshots")
+}
+
+model AgentAttendanceSnapshot {
+  id                   BigInt    @id @default(autoincrement())
+  crmAgentId           BigInt    @map("crm_agent_id")
+  agentNameSnapshot    String?   @map("agent_name_snapshot") @db.VarChar(150)
+  workDate             DateTime  @map("work_date") @db.Date
+  attendanceStatus     String    @map("attendance_status") @db.VarChar(50)
+  punchInAt            DateTime? @map("punch_in_at") @db.DateTime(6)
+  punchOutAt           DateTime? @map("punch_out_at") @db.DateTime(6)
+  lateMinutes          Int       @default(0) @map("late_minutes")
+  effectiveWorkMinutes Int       @default(465) @map("effective_work_minutes")
+  syncedAt             DateTime  @default(now()) @map("synced_at") @db.DateTime(6)
+  snapshotVersion      Int       @default(1) @map("snapshot_version")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([crmAgentId, workDate, snapshotVersion])
+  @@index([workDate, attendanceStatus])
+  @@map("agent_attendance_snapshots")
+}
+
+// ==========================================
+// 14. INCENTIVE REPORTING PERSISTENCE
+// ==========================================
+
+model IncentiveDailySnapshot {
+  id                     BigInt    @id @default(autoincrement())
+  crmPayoutId            BigInt?   @map("crm_payout_id")
+  crmAgentId             BigInt    @map("crm_agent_id")
+  agentNameSnapshot      String?   @map("agent_name_snapshot") @db.VarChar(150)
+  workDate               DateTime  @map("work_date") @db.Date
+  targetPoints           Decimal   @default(0.000) @map("target_points") @db.Decimal(12, 3)
+  achievedPoints         Decimal   @default(0.000) @map("achieved_points") @db.Decimal(12, 3)
+  qualifiedLeads         Int       @default(0) @map("qualified_leads")
+  baseIncentive          Decimal   @default(0.00) @map("base_incentive") @db.Decimal(12, 2)
+  slabIncentive          Decimal   @default(0.00) @map("slab_incentive") @db.Decimal(12, 2)
+  totalIncentive         Decimal   @default(0.00) @map("total_incentive") @db.Decimal(12, 2)
+  eligibilityStatus      String    @default("ineligible") @map("eligibility_status") @db.VarChar(30)
+  approvalStatus         String    @default("pending_approval") @map("approval_status") @db.VarChar(30)
+  paymentStatus          String    @default("unpaid") @map("payment_status") @db.VarChar(30)
+  policyVersionReference Int?      @map("policy_version_reference")
+  crmPaymentReference    String?   @map("crm_payment_reference") @db.VarChar(150)
+  sourceUpdatedAt        DateTime? @map("source_updated_at") @db.DateTime(6)
+  syncedAt               DateTime  @default(now()) @map("synced_at") @db.DateTime(6)
+  snapshotVersion        Int       @default(1) @map("snapshot_version")
+  isFinal                Boolean   @default(false) @map("is_final")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([crmAgentId, workDate, snapshotVersion])
+  @@index([workDate, paymentStatus])
+  @@index([crmPayoutId])
+  @@map("incentive_daily_snapshots")
+}
+
+// ==========================================
+// 15. SYNCHRONIZATION EXECUTION LOGS
+// ==========================================
+
+model AnalyticsSyncRun {
+  id                   BigInt    @id @default(autoincrement())
+  jobName              String    @map("job_name") @db.VarChar(100)
+  workDate             DateTime  @map("work_date") @db.Date
+  startedAt            DateTime  @default(now()) @map("started_at") @db.DateTime(6)
+  finishedAt           DateTime? @map("finished_at") @db.DateTime(6)
+  status               String    @default("running") @db.VarChar(30)
+  sourceRecordCount    Int       @default(0) @map("source_record_count")
+  processedRecordCount Int       @default(0) @map("processed_record_count")
+  failedRecordCount    Int       @default(0) @map("failed_record_count")
+  errorSummary         String?   @map("error_summary") @db.Text
+  sourceWatermark      String?   @map("source_watermark") @db.VarChar(150)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+
+  @@index([jobName, workDate])
+  @@index([startedAt])
+  @@map("analytics_sync_runs")
+}
+
+// ==========================================
+// 16. FINALIZED DAILY REPORTS
+// ==========================================
+
+model AnalyticsDailyFinalization {
+  id                 BigInt    @id @default(autoincrement())
+  workDate           DateTime  @unique @map("work_date") @db.Date
+  finalizationStatus String    @default("provisional") @map("finalization_status") @db.VarChar(40)
+  finalizedAt        DateTime? @map("finalized_at") @db.DateTime(6)
+  finalizedBy        BigInt?   @map("finalized_by")
+  sourceWatermark    String?   @map("source_watermark") @db.VarChar(150)
+  revisionNumber     Int       @default(1) @map("revision_number")
+  lastReconciledAt   DateTime? @map("last_reconciled_at") @db.DateTime(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@index([finalizationStatus, workDate])
+  @@map("analytics_daily_finalizations")
+}
+
+// ==========================================
+// 17. METRIC DEFINITIONS METADATA
+// ==========================================
+
+model AnalyticsMetricDefinition {
+  id                     BigInt    @id @default(autoincrement())
+  metricKey              String    @unique @map("metric_key") @db.VarChar(100)
+  metricVersion          Int       @default(1) @map("metric_version")
+  displayName            String    @map("display_name") @db.VarChar(150)
+  sourceSystem           String    @default("crm") @map("source_system") @db.VarChar(80)
+  sourceFieldMapping     String?   @map("source_field_mapping") @db.VarChar(255)
+  aggregationDescription String?   @map("aggregation_description") @db.Text
+  eligibilityDescription String?   @map("eligibility_description") @db.Text
+  effectiveFrom          DateTime  @map("effective_from") @db.Date
+  effectiveTo            DateTime? @map("effective_to") @db.Date
+  createdAt              DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@map("analytics_metric_definitions")
+}

@@ -62,6 +62,14 @@ export default function HomePage() {
           </Link>
 
           <Link
+            href="/admin/analytics/history"
+            className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-xl shadow-indigo-600/30 border border-indigo-400/30 transition-all hover:scale-[1.02] cursor-pointer"
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Historical Analytics Archive</span>
+          </Link>
+
+          <Link
             href="/admin/campaign-targets"
             className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl glass-panel hover:bg-slate-100 dark:hover:bg-white/10 text-slate-800 dark:text-slate-200 font-semibold text-sm border border-slate-300 dark:border-white/10 transition-all hover:scale-[1.02] cursor-pointer"
           >

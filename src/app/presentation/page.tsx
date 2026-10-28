@@ -257,7 +257,7 @@ export default function PresentationPage() {
       />
 
       {/* Live Daily Floor Recognition Ticker (Top Leads Scored, Birthdays, Anniversaries) */}
-      <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-5 pt-1.5 z-10">
+      <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-5 empty:hidden z-10">
         <RecognitionScroller
           data={recogQuery.data?.data}
           isLoading={recogQuery.isLoading}

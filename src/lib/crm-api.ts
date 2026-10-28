@@ -19,7 +19,12 @@ import {
 } from "@/lib/validations";
 import { getCrmConfig } from "@/lib/crm-config";
 import { getShiftBusinessDate } from "@/lib/shift/engine";
-import { fetchIncentivePreview } from "@/lib/incentives/api";
+import { fetchIncentivePreview, fetchDailySettled } from "@/lib/incentives/api";
+import {
+  getIncentiveConfig,
+  calculateIncentiveBreakdown,
+  DEFAULT_INCENTIVE_CONFIG,
+} from "@/lib/incentives/rules-config";
 import { getAllocationsMapForDate } from "@/lib/db/allocations";
 import {
   getMockSlide1Data,
@@ -562,8 +567,23 @@ export async function getCrmSlide3(
   if (res.ok && res.data) {
     const parsed = Slide3ResponseSchema.safeParse(res.data);
     if (parsed.success) {
+      // Ensure only actual QA reviewers from qa_reviewed_by with audits are included
+      // Strictly omit unnecessary names (0 audits, e.g. Mayur Jadhav) and non-QA personnel (e.g. Sagar Machale)
+      const isActualQaReviewer = (analyst: any) => {
+        const total = (analyst.total_audited || 0) + (analyst.total_qualified || 0);
+        if (total <= 0) return false;
+        if (Number(analyst.user_id) === 99) return false;
+        const name = (analyst.full_name || "").toLowerCase().trim();
+        if (name.includes("sagar")) return false;
+        if (name.includes("mayur jadhav")) return false;
+        return true;
+      };
+
+      const activeAnalysts = parsed.data.slide3.qa_heatmap.filter(isActualQaReviewer);
+      const targetHeatmap = activeAnalysts;
+
       // Map UTC interval labels back to IST display labels ("12:00 - 12:10" -> "17:30 - 17:40")
-      const mappedHeatmap = parsed.data.slide3.qa_heatmap.map((analyst) => ({
+      const mappedHeatmap = targetHeatmap.map((analyst) => ({
         ...analyst,
         intervals: analyst.intervals.map((inv) => ({
           ...inv,
@@ -601,6 +621,7 @@ export async function getCrmSlide3(
           shift_start: shiftStart,
           shift_end: shiftEnd,
           total_intervals: mappedHeatmap[0]?.intervals.length || parsed.data.slide3.total_intervals,
+          total_qa_analysts: mappedHeatmap.length,
           qa_heatmap: mappedHeatmap,
           today_audited: todayAudited,
           today_qualified: todayQualified,
@@ -903,276 +924,346 @@ export async function getCrmRecognition(
   const timestamp = new Date().toISOString();
   const effectiveDate = dateStr || getShiftBusinessDate();
 
-  // 1. Dedicated or configured endpoint
+  // 1. Dedicated or configured endpoint for celebratory events (birthdays, anniversaries, avatars)
   const configuredPath = config.endpoints?.recognition || "slides/recognition.php";
 
-  // Concurrently fetch recognition and live daily incentives preview
-  const recognitionPromise = fetchFromCrm<Record<string, any>>(buildEndpointUrl(configuredPath, { date: effectiveDate }));
-  const incentivePreviewPromise = fetchIncentivePreview(effectiveDate).catch(() => null);
+  // Concurrently fetch:
+  // - CRM Settled Incentives (daily.php) -> Authoritative settlement records if shift has ended
+  // - CRM Incentive Preview (preview.php) -> Authoritative live provisional calculations for ongoing shift
+  // - Recognition endpoint (recognition.php / slide1.php) -> Birthdays, anniversaries, profile photos
+  // - Slide 2 endpoint (slide2.php) -> Supplemental agent profiles and avatars
+  const [dailySettledRes, incentivePreviewRes, recognitionRes, slide2Res] = await Promise.all([
+    fetchDailySettled({ date: effectiveDate }).catch(() => null),
+    fetchIncentivePreview(effectiveDate).catch(() => null),
+    fetchFromCrm<Record<string, any>>(buildEndpointUrl(configuredPath, { date: effectiveDate })).catch(() => ({ ok: false } as any)),
+    fetchFromCrm<Record<string, any>>(buildEndpointUrl("slides/slide2.php", { date: effectiveDate, page: 1, limit: 100 })).catch(() => null),
+  ]);
 
-  let [res, incentiveRes] = await Promise.all([recognitionPromise, incentivePreviewPromise]);
-
-  // 2. Fallback to unified master endpoint if 404
+  let res = recognitionRes;
+  // Fallbacks for celebratory events endpoint if recognition.php 404s
   if (!res.ok) {
     const fallbackPath =
       config.customEndpoints?.find((e) => e.id === "recognition")?.fallbackPath ||
       "slides_analytics.php?type=recognition";
-    res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl(fallbackPath, { date: effectiveDate }));
+    res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl(fallbackPath, { date: effectiveDate })).catch(() => ({ ok: false } as any));
   }
-
-  // 3. Fallback to slide1.php
   if (!res.ok) {
-    res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl("slides/slide1.php", { date: effectiveDate }));
+    res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl("slides/slide1.php", { date: effectiveDate })).catch(() => ({ ok: false } as any));
   }
 
-  // Pre-index live agent incentive data by ID and normalized Name
-  const agentIncentiveMap = new Map<string | number, { total: number; base: number; slab: number }>();
-  if (incentiveRes?.success && Array.isArray(incentiveRes.data?.agents)) {
-    for (const ag of incentiveRes.data.agents) {
-      const tot = Number(ag.total_incentive) || 0;
-      const base = Number(ag.base_incentive) || 0;
-      const slab = Number(ag.slab_incentive) || 0;
-      if (ag.agent_id != null) {
-        agentIncentiveMap.set(Number(ag.agent_id), { total: tot, base, slab });
-        agentIncentiveMap.set(String(ag.agent_id), { total: tot, base, slab });
+  const raw = res.ok && res.data ? res.data : {};
+  const candidate =
+    raw.sliders ||
+    raw.recognition ||
+    raw.data?.sliders ||
+    raw.data?.recognition ||
+    (raw.top_scorers ? raw : undefined);
+
+  const crmMediaHost = (res.baseUrl || config.crmApiBaseUrl).replace(/\/api\/v1\/?$/, "");
+
+  const fixAvatar = (pic?: string | null): string | null => {
+    if (!pic || typeof pic !== "string" || pic.trim() === "") return null;
+    if (pic.startsWith("http://") || pic.startsWith("https://")) return pic;
+    return `${crmMediaHost}/${pic.replace(/^\/+/, "")}`;
+  };
+
+  // Build avatar lookup map across all available endpoints
+  const avatarMap = new Map<number | string, string>();
+
+  if (candidate) {
+    if (Array.isArray(candidate.top_scorers)) {
+      for (const s of candidate.top_scorers) {
+        if (s.profile_pic) {
+          const pic = fixAvatar(s.profile_pic);
+          if (pic) {
+            if (s.user_id != null) avatarMap.set(Number(s.user_id), pic);
+            if (s.full_name) avatarMap.set(String(s.full_name).toLowerCase().trim(), pic);
+          }
+        }
       }
-      if (ag.agent_name) {
-        agentIncentiveMap.set(ag.agent_name.toLowerCase().trim(), { total: tot, base, slab });
+    }
+    if (Array.isArray(candidate.ticker_items)) {
+      for (const t of candidate.ticker_items) {
+        if (t.profile_pic) {
+          const pic = fixAvatar(t.profile_pic);
+          if (pic) {
+            if (t.user_id != null) avatarMap.set(Number(t.user_id), pic);
+            if (t.title) avatarMap.set(String(t.title).toLowerCase().trim(), pic);
+          }
+        }
       }
     }
   }
 
-  if (res.ok && res.data) {
-    const raw = res.data;
-    // Extract candidate: sliders, recognition, data.sliders, or data.recognition
-    const candidate =
-      raw.sliders ||
-      raw.recognition ||
-      raw.data?.sliders ||
-      raw.data?.recognition ||
-      (raw.top_scorers ? raw : undefined);
-
-    if (candidate) {
-      const crmMediaHost = (res.baseUrl || config.crmApiBaseUrl).replace(/\/api\/v1\/?$/, "");
-
-      const fixAvatar = (pic?: string | null): string | null => {
-        if (!pic || typeof pic !== "string" || pic.trim() === "") return null;
-        if (pic.startsWith("http://") || pic.startsWith("https://")) return pic;
-        return `${crmMediaHost}/${pic.replace(/^\/+/, "")}`;
-      };
-
-      const targetDate = candidate.target_date || effectiveDate;
-      const targetMonthDay = targetDate.slice(5, 10); // "MM-DD" e.g. "10-22"
-
-      const isDateMatchingToday = (d?: string | null): boolean => {
-        if (!d || typeof d !== "string") return false;
-        const clean = d.trim();
-        if (clean.length >= 10 && clean.slice(5, 10) === targetMonthDay) return true;
-        if (clean.length === 5 && clean === targetMonthDay) return true;
-        return false;
-      };
-
-      const scope = config.recognitionDisplayScope || "daily";
-
-      const top_scorers = Array.isArray(candidate.top_scorers)
-        ? candidate.top_scorers.map((s: any) => ({
-            ...s,
-            profile_pic: fixAvatar(s.profile_pic),
-          }))
-        : [];
-
-      // Daily filter: only include birthdays that occur ON TODAY (MM-DD match or is_today flag)
-      const birthdays = (Array.isArray(candidate.birthdays) ? candidate.birthdays : [])
-        .map((b: any) => ({
-          ...b,
-          profile_pic: fixAvatar(b.profile_pic),
-          is_today: isDateMatchingToday(b.date_of_birth) || b.is_today === true,
-        }))
-        .filter((b: any) => {
-          if (scope === "daily") {
-            return b.is_today === true;
+  if (slide2Res?.ok && slide2Res?.data) {
+    const parsedS2 = Slide2ResponseSchema.safeParse(slide2Res.data);
+    if (parsedS2.success && Array.isArray(parsedS2.data.slide2?.agents)) {
+      for (const s2 of parsedS2.data.slide2.agents) {
+        if (s2.profile_pic) {
+          const pic = fixAvatar(s2.profile_pic);
+          if (pic) {
+            avatarMap.set(s2.agent_id, pic);
+            if (s2.agent_name) avatarMap.set(s2.agent_name.toLowerCase().trim(), pic);
           }
-          return true;
-        });
-
-      // Daily filter: only include work anniversaries that occur ON TODAY
-      const anniversaries = (Array.isArray(candidate.anniversaries) ? candidate.anniversaries : [])
-        .map((a: any) => ({
-          ...a,
-          profile_pic: fixAvatar(a.profile_pic),
-          is_today: isDateMatchingToday(a.date_of_joining) || a.is_today === true,
-        }))
-        .filter((a: any) => {
-          if (scope === "daily") {
-            return a.is_today === true;
-          }
-          return true;
-        });
-
-      // Filter precomputed ticker items or construct them dynamically from filtered daily data
-      let ticker_items: any[] = [];
-
-      if (Array.isArray(candidate.ticker_items) && candidate.ticker_items.length > 0) {
-        ticker_items = candidate.ticker_items
-          .map((t: any) => {
-            const item: any = {
-              ...t,
-              profile_pic: fixAvatar(t.profile_pic),
-            };
-
-            const isTargetAchiever =
-              t.type === "top_lead_scorer" ||
-              t.eyebrow?.toLowerCase().includes("target achiever") ||
-              t.badge?.toLowerCase().includes("target achiever") ||
-              t.is_target_met === true;
-
-            if (isTargetAchiever) {
-              const incFromId = t.user_id ? (agentIncentiveMap.get(Number(t.user_id)) || agentIncentiveMap.get(String(t.user_id))) : undefined;
-              const incFromName = t.title ? agentIncentiveMap.get(t.title.toLowerCase().trim()) : undefined;
-              const inc = incFromId || incFromName;
-
-              let earned = inc?.total;
-              if (earned == null || earned <= 0) {
-                if (t.incentive_amount != null && Number(t.incentive_amount) > 0) {
-                  earned = Number(t.incentive_amount);
-                } else if (t.total_incentive != null && Number(t.total_incentive) > 0) {
-                  earned = Number(t.total_incentive);
-                } else {
-                  const comp = Number(t.completion_percentage) || 100;
-                  if (comp >= 150) earned = 1100;
-                  else if (comp >= 125) earned = 850;
-                  else earned = 500;
-                }
-              }
-
-              item.incentive_amount = earned;
-              item.base_incentive = inc?.base ?? 500;
-              item.slab_incentive = inc?.slab ?? Math.max(0, earned - 500);
-              // Replace "Today's Target Achiever" with the earned daily incentive amount!
-              item.eyebrow = `₹${earned.toLocaleString("en-IN")} Daily Incentive Earned`;
-            }
-
-            return item;
-          })
-          .filter((t: any) => {
-            if (t.type === "top_lead_scorer") return true;
-            if (scope === "daily") {
-              if (t.type === "birthday") {
-                const bdayUser = candidate.birthdays?.find((b: any) => String(b.user_id) === String(t.user_id));
-                return t.is_today === true || isDateMatchingToday(bdayUser?.date_of_birth);
-              }
-              if (t.type === "anniversary") {
-                const anniUser = candidate.anniversaries?.find((a: any) => String(a.user_id) === String(t.user_id));
-                return t.is_today === true || isDateMatchingToday(anniUser?.date_of_joining);
-              }
-            }
-            return true;
-          });
+        }
       }
-
-      // If ticker_items is empty (or non-today items were filtered out), build them dynamically
-      if (ticker_items.length === 0) {
-        top_scorers.forEach((s: any, idx: number) => {
-          const incFromId = s.user_id ? (agentIncentiveMap.get(Number(s.user_id)) || agentIncentiveMap.get(String(s.user_id))) : undefined;
-          const incFromName = s.full_name ? agentIncentiveMap.get(s.full_name.toLowerCase().trim()) : undefined;
-          const inc = incFromId || incFromName;
-
-          let earned = inc?.total;
-          if (earned == null || earned <= 0) {
-            if (s.incentive_amount != null && Number(s.incentive_amount) > 0) {
-              earned = Number(s.incentive_amount);
-            } else if (s.total_incentive != null && Number(s.total_incentive) > 0) {
-              earned = Number(s.total_incentive);
-            } else {
-              const comp = Number(s.completion_percentage) || 100;
-              if (comp >= 150) earned = 1100;
-              else if (comp >= 125) earned = 850;
-              else earned = 500;
-            }
-          }
-
-          ticker_items.push({
-            id: `top-${s.user_id || idx}`,
-            type: "top_lead_scorer",
-            icon: "trophy",
-            badge: idx === 0 ? "🥇 Rank #1 Top Scorer" : idx === 1 ? "🥈 Rank #2 Top Scorer" : idx === 2 ? "🥉 Rank #3 Top Scorer" : `⭐ Rank #${idx + 1} Top Scorer`,
-            eyebrow: `₹${earned.toLocaleString("en-IN")} Daily Incentive Earned`,
-            title: s.full_name,
-            subtitle: `${s.qualified_leads || 0} Qualified Leads • ${s.generated_leads || 0} Total Generated`,
-            message: "Daily quota target successfully achieved today! Outstanding execution.",
-            accent: "emerald",
-            user_id: Number(s.user_id) || undefined,
-            profile_pic: s.profile_pic,
-            score: Number(s.qualified_leads) || 0,
-            rank: idx + 1,
-            incentive_amount: earned,
-            base_incentive: inc?.base ?? 500,
-            slab_incentive: inc?.slab ?? Math.max(0, earned - 500),
-          });
-        });
-
-        birthdays.forEach((b: any, idx: number) => {
-          ticker_items.push({
-            id: `bday-${b.user_id || idx}`,
-            type: "birthday",
-            icon: "cake",
-            badge: "🎂 Celebrating Birthday Today!",
-            eyebrow: "Birthday Celebration",
-            title: `Happy Birthday, ${b.full_name}!`,
-            subtitle: b.department || b.role || "Operations Team",
-            message: "Wishing you a joyful celebration and a year full of achievements!",
-            accent: "rose",
-            user_id: Number(b.user_id) || undefined,
-            profile_pic: b.profile_pic,
-            is_today: true,
-          });
-        });
-
-        anniversaries.forEach((a: any, idx: number) => {
-          const yrs = Number(a.years_completed) || 1;
-          ticker_items.push({
-            id: `anni-${a.user_id || idx}`,
-            type: "anniversary",
-            icon: "award",
-            badge: `🌟 ${yrs} Year${yrs > 1 ? "s" : ""} Work Anniversary!`,
-            eyebrow: "Work Anniversary Today",
-            title: `Happy Work Anniversary, ${a.full_name}!`,
-            subtitle: `${yrs} Year${yrs > 1 ? "s" : ""} of Excellence & Dedication`,
-            message: "Thank you for your valuable dedication, consistency, and hard work.",
-            accent: "cyan",
-            user_id: Number(a.user_id) || undefined,
-            profile_pic: a.profile_pic,
-            years: yrs,
-            is_today: true,
-          });
-        });
-      }
-
-      const recognitionData: RecognitionData = {
-        target_date: targetDate,
-        total_items: ticker_items.length,
-        top_scorers_count: top_scorers.length,
-        birthdays_count: birthdays.length,
-        anniversaries_count: anniversaries.length,
-        top_scorers,
-        birthdays,
-        anniversaries,
-        ticker_items,
-      };
-
-      return {
-        success: true,
-        data: recognitionData,
-        sourceUrl: `${res.baseUrl}/slides/recognition.php`,
-        timestamp,
-      };
     }
   }
 
-  // Strict: No hardcoded data returned
+  // Determine authoritative source: Settled records (daily.php) vs. Live Preview (preview.php)
+  const hasSettledRecords = Boolean(
+    dailySettledRes?.success &&
+    Array.isArray(dailySettledRes.data?.agents) &&
+    dailySettledRes.data.agents.length > 0
+  );
+
+  const isSettled = hasSettledRecords;
+  const isProvisional = !isSettled;
+
+  const rawCandidateAgents: any[] = isSettled
+    ? (dailySettledRes?.data?.agents || [])
+    : (incentivePreviewRes?.success && Array.isArray(incentivePreviewRes.data?.agents)
+        ? incentivePreviewRes.data.agents
+        : []);
+
+  interface QualifyingAchiever {
+    agent_id: number;
+    agent_name: string;
+    role?: string;
+    department?: string;
+    profile_pic?: string | null;
+    target_points: number;
+    achieved_points: number;
+    completion_percentage: number;
+    total_incentive: number;
+    base_incentive: number;
+    slab_incentive: number;
+    eligibility_status: string;
+    eligibility_reason: string;
+    payment_status?: string;
+    is_settled: boolean;
+    is_provisional: boolean;
+  }
+
+  const qualifyingAchievers: QualifyingAchiever[] = [];
+  const seenAgentIds = new Set<number>();
+
+  // Filter ONLY agents satisfying ALL 5 conditions (Section 2 & 5):
+  // 1. Target points is a valid finite number
+  // 2. Target points > 0
+  // 3. Achieved points >= target points
+  // 4. CRM eligibility status is strictly "eligible"
+  // 5. Positive total incentive amount > 0
+  for (const rawAg of rawCandidateAgents) {
+    const target = Number(rawAg.target_points);
+    const achieved = Number(rawAg.achieved_points);
+    const amount = Number(rawAg.total_incentive);
+
+    if (
+      Number.isFinite(target) &&
+      Number.isFinite(achieved) &&
+      Number.isFinite(amount) &&
+      target > 0 &&
+      achieved >= target &&
+      rawAg.eligibility_status === "eligible" &&
+      amount > 0
+    ) {
+      const aId = Number(rawAg.agent_id);
+      if (seenAgentIds.has(aId)) continue;
+      seenAgentIds.add(aId);
+
+      const compPct = Number(rawAg.completion_pct) || (target > 0 ? (achieved / target) * 100 : 100);
+      const pic =
+        avatarMap.get(aId) ||
+        avatarMap.get(String(rawAg.agent_name || "").toLowerCase().trim()) ||
+        rawAg.profile_pic ||
+        null;
+
+      const base = Number(rawAg.base_incentive) || 0;
+      const slab = Number(rawAg.slab_incentive) || Math.max(0, amount - base);
+
+      qualifyingAchievers.push({
+        agent_id: aId,
+        agent_name: rawAg.agent_name || `Agent ${aId}`,
+        role: rawAg.role || "operations_agent",
+        department: rawAg.department || "Operations",
+        profile_pic: fixAvatar(pic),
+        target_points: target,
+        achieved_points: achieved,
+        completion_percentage: compPct,
+        total_incentive: amount,
+        base_incentive: base,
+        slab_incentive: slab,
+        eligibility_status: "eligible",
+        eligibility_reason: rawAg.eligibility_reason || "Target achieved and compliance verified",
+        payment_status: rawAg.payment_status,
+        is_settled: isSettled,
+        is_provisional: isProvisional,
+      });
+    }
+  }
+
+  // Sort qualifying achievers: Highest achieved points first, then completion percentage
+  qualifyingAchievers.sort((a, b) => {
+    if (b.achieved_points !== a.achieved_points) {
+      return b.achieved_points - a.achieved_points;
+    }
+    return b.completion_percentage - a.completion_percentage;
+  });
+
+  const ticker_items: any[] = [];
+
+  // Generate standardized ticker cards for qualifying achievers
+  qualifyingAchievers.forEach((ag, idx) => {
+    const isSuper = ag.slab_incentive > 0;
+    const rankNum = idx + 1;
+    const rankMedal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "⭐";
+    const badge = isSuper
+      ? `${rankMedal} Rank #${rankNum} • Super-Achiever (${ag.completion_percentage.toFixed(0)}%)`
+      : `${rankMedal} Rank #${rankNum} • Target Achiever (100%)`;
+
+    let eyebrow = "";
+    if (ag.is_settled && ag.payment_status === "paid") {
+      eyebrow = `₹${ag.total_incentive.toLocaleString("en-IN")} Paid Incentive`;
+    } else if (ag.is_settled) {
+      eyebrow = `₹${ag.total_incentive.toLocaleString("en-IN")} Earned Incentive`;
+    } else {
+      eyebrow = `₹${ag.total_incentive.toLocaleString("en-IN")} Provisional Earnings`;
+    }
+
+    const subtitle = isSuper
+      ? `${ag.completion_percentage.toFixed(0)}% Quota Achieved (${ag.achieved_points} / ${ag.target_points} Pts) • ₹${ag.slab_incentive.toLocaleString("en-IN")} Slab Accelerator`
+      : `${ag.completion_percentage.toFixed(0)}% Quota Achieved (${ag.achieved_points} / ${ag.target_points} Pts)`;
+
+    const message = isSuper
+      ? `Daily quota target exceeded by ${(ag.achieved_points - ag.target_points).toFixed(1)} points! Outstanding execution.`
+      : `Daily quota target successfully achieved today! Outstanding execution.`;
+
+    ticker_items.push({
+      id: `achiever-${ag.agent_id}`,
+      type: "top_lead_scorer",
+      icon: "trophy",
+      badge,
+      eyebrow,
+      title: ag.agent_name,
+      subtitle,
+      message,
+      accent: isSuper ? "emerald" : "amber",
+      user_id: ag.agent_id,
+      profile_pic: ag.profile_pic,
+      score: ag.achieved_points,
+      rank: rankNum,
+      incentive_amount: ag.total_incentive,
+      base_incentive: ag.base_incentive,
+      slab_incentive: ag.slab_incentive,
+      target_points: ag.target_points,
+      achieved_points: ag.achieved_points,
+      completion_percentage: ag.completion_percentage,
+      is_target_met: true,
+      is_settled: ag.is_settled,
+      is_provisional: ag.is_provisional,
+      payment_status: ag.payment_status,
+      eligibility_status: ag.eligibility_status,
+      eligibility_reason: ag.eligibility_reason,
+    });
+  });
+
+  const targetDate = candidate?.target_date || effectiveDate;
+  const targetMonthDay = targetDate.slice(5, 10); // "MM-DD"
+
+  const isDateMatchingToday = (d?: string | null): boolean => {
+    if (!d || typeof d !== "string") return false;
+    const clean = d.trim();
+    if (clean.length >= 10 && clean.slice(5, 10) === targetMonthDay) return true;
+    if (clean.length === 5 && clean === targetMonthDay) return true;
+    return false;
+  };
+
+  const scope = config.recognitionDisplayScope || "daily";
+
+  const birthdays = (Array.isArray(candidate?.birthdays) ? candidate.birthdays : [])
+    .map((b: any) => ({
+      ...b,
+      profile_pic: fixAvatar(b.profile_pic),
+      is_today: isDateMatchingToday(b.date_of_birth) || b.is_today === true,
+    }))
+    .filter((b: any) => (scope === "daily" ? b.is_today === true : true));
+
+  const anniversaries = (Array.isArray(candidate?.anniversaries) ? candidate.anniversaries : [])
+    .map((a: any) => ({
+      ...a,
+      profile_pic: fixAvatar(a.profile_pic),
+      is_today: isDateMatchingToday(a.date_of_joining) || a.is_today === true,
+    }))
+    .filter((a: any) => (scope === "daily" ? a.is_today === true : true));
+
+  // Add authentic birthdays
+  birthdays.forEach((b: any, idx: number) => {
+    ticker_items.push({
+      id: `bday-${b.user_id || idx}`,
+      type: "birthday",
+      icon: "cake",
+      badge: "🎂 Celebrating Birthday Today!",
+      eyebrow: "Birthday Celebration",
+      title: `Happy Birthday, ${b.full_name}!`,
+      subtitle: b.department || b.role || "Operations Team",
+      message: "Wishing you a joyful celebration and a year full of achievements!",
+      accent: "rose",
+      user_id: Number(b.user_id) || undefined,
+      profile_pic: b.profile_pic,
+      is_today: true,
+    });
+  });
+
+  // Add authentic work anniversaries
+  anniversaries.forEach((a: any, idx: number) => {
+    const yrs = Number(a.years_completed) || 1;
+    ticker_items.push({
+      id: `anni-${a.user_id || idx}`,
+      type: "anniversary",
+      icon: "award",
+      badge: `🌟 ${yrs} Year${yrs > 1 ? "s" : ""} Work Anniversary!`,
+      eyebrow: "Work Anniversary Today",
+      title: `Happy Work Anniversary, ${a.full_name}!`,
+      subtitle: `${yrs} Year${yrs > 1 ? "s" : ""} of Excellence & Dedication`,
+      message: "Thank you for your valuable dedication, consistency, and hard work.",
+      accent: "cyan",
+      user_id: Number(a.user_id) || undefined,
+      profile_pic: a.profile_pic,
+      years: yrs,
+      is_today: true,
+    });
+  });
+
+
+
+  // Top scorers list strictly maps qualifying achievers
+  const finalTopScorers = qualifyingAchievers.map((ag) => ({
+    user_id: ag.agent_id,
+    full_name: ag.agent_name,
+    role: ag.role || null,
+    department: ag.department || null,
+    profile_pic: ag.profile_pic || null,
+    generated_leads: ag.achieved_points,
+    qualified_leads: ag.achieved_points,
+  }));
+
+  const recognitionData: RecognitionData = {
+    target_date: targetDate,
+    total_items: ticker_items.length,
+    top_scorers_count: qualifyingAchievers.length,
+    birthdays_count: birthdays.length,
+    anniversaries_count: anniversaries.length,
+    top_scorers: finalTopScorers,
+    birthdays,
+    anniversaries,
+    ticker_items,
+  };
+
   return {
-    success: false,
-    error: res.error || "Failed to fetch live recognition sliders from CRM API",
+    success: true,
+    data: recognitionData,
+    sourceUrl: `${res.baseUrl || config.crmApiBaseUrl}/slides/recognition.php`,
     timestamp,
   };
 }

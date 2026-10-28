@@ -43,6 +43,16 @@ const NAV_ITEMS = [
   { href: "/admin/presentation-settings", label: "Display Settings", icon: Settings },
 ];
 
+const HISTORICAL_ANALYTICS_NAV_ITEMS = [
+  { href: "/admin/analytics/history", label: "Daily History & Finalization", icon: History },
+  { href: "/admin/analytics/campaigns", label: "Campaign Snapshots", icon: Target },
+  { href: "/admin/analytics/agents", label: "Agent Productivity", icon: UserCheck },
+  { href: "/admin/analytics/qa", label: "QA Department Audits", icon: FileCheck2 },
+  { href: "/admin/analytics/floor-capacity", label: "Floor Capacity & Trends", icon: Building },
+  { href: "/admin/analytics/incentives", label: "Incentive Archive", icon: Coins },
+  { href: "/admin/analytics/sync-status", label: "Sync Engine & Backfill", icon: Server },
+];
+
 const INCENTIVE_CONFIG_NAV_ITEMS = [
   { href: "/admin/incentive-config", label: "Overview Dashboard", icon: LayoutDashboard },
   { href: "/admin/incentive-config/policies", label: "Policies & Slabs", icon: Sliders },
@@ -173,6 +183,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       <span>{item.label}</span>
                     </div>
                     {isActive && <ChevronRight className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />}
+                  </Link>
+                );
+              })}
+
+              <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider px-3 mt-4 mb-1 flex items-center justify-between">
+                <span>Historical Analytics (DB-Backed)</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+              </div>
+              {HISTORICAL_ANALYTICS_NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${isActive
+                      ? "bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border border-indigo-500/40 dark:border-indigo-500/30 font-bold shadow-sm"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/5"
+                      }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </div>
+                    {isActive && <ChevronRight className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />}
                   </Link>
                 );
               })}

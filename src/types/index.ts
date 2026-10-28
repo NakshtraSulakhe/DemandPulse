@@ -64,6 +64,11 @@ export interface AgentSlide2 {
   is_target_met: boolean;
   attendance_status?: string;
   is_present?: boolean;
+  // Time-based productivity pace
+  elapsed_work_minutes?: number;
+  expected_points_at_snapshot?: number;
+  productivity_pace_pct?: number | null;
+  pace_status?: "slow" | "steady" | "ahead" | "pre_shift" | null;
 }
 
 export interface CampaignPointBreakdownItem {
@@ -277,6 +282,14 @@ export interface RecognitionTickerItem {
   incentive_amount?: number;
   base_incentive?: number;
   slab_incentive?: number;
+  target_points?: number;
+  achieved_points?: number;
+  is_target_met?: boolean;
+  is_settled?: boolean;
+  is_provisional?: boolean;
+  payment_status?: string;
+  eligibility_status?: string;
+  eligibility_reason?: string;
 }
 
 export interface RecognitionData {

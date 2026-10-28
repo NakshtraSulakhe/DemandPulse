@@ -36,16 +36,49 @@ export default function RecognitionScroller({
   >("all");
   const [sliderIndex, setSliderIndex] = useState<number>(0);
 
-  const rawItems = data?.ticker_items || [];
-
-  const filteredItems = rawItems.filter((item) => {
-    if (activeFilter === "all") return true;
-    return item.type === activeFilter;
+  const rawItems = (data?.ticker_items || []).filter((item) => {
+    if (item.type === "top_lead_scorer") {
+      // Strictly only display agents who actually achieved their daily target & have positive incentive!
+      const target = Number(item.target_points);
+      const achieved = Number(item.achieved_points ?? item.score);
+      const amount = Number(item.incentive_amount);
+      if (!Number.isFinite(target) || target <= 0) return false;
+      if (!Number.isFinite(achieved) || achieved < target) return false;
+      if (!Number.isFinite(amount) || amount <= 0) return false;
+      if (item.is_target_met === false) return false;
+      if (item.completion_percentage != null && item.completion_percentage < 100) return false;
+      if (item.eligibility_status && item.eligibility_status !== "eligible") return false;
+      return true;
+    }
+    // Authentic celebratory events (birthdays & anniversaries)
+    if (item.type === "birthday" || item.type === "anniversary") {
+      return true;
+    }
+    return false;
   });
 
-  const topScorersCount = data?.top_scorers_count || 0;
-  const birthdaysCount = data?.birthdays_count || 0;
-  const anniversariesCount = data?.anniversaries_count || 0;
+  const topScorersCount = rawItems.filter((i) => i.type === "top_lead_scorer").length;
+  const birthdaysCount = rawItems.filter((i) => i.type === "birthday").length;
+  const anniversariesCount = rawItems.filter((i) => i.type === "anniversary").length;
+
+  // Fall back to "all" if active category has 0 items
+  const effectiveFilter =
+    (activeFilter === "top_lead_scorer" && topScorersCount === 0) ||
+    (activeFilter === "birthday" && birthdaysCount === 0) ||
+    (activeFilter === "anniversary" && anniversariesCount === 0)
+      ? "all"
+      : activeFilter;
+
+  const filteredItems = rawItems.filter((item) => {
+    if (effectiveFilter === "all") return true;
+    return item.type === effectiveFilter;
+  });
+
+  // Distinct category count
+  const distinctCategoryCount =
+    (topScorersCount > 0 ? 1 : 0) +
+    (birthdaysCount > 0 ? 1 : 0) +
+    (anniversariesCount > 0 ? 1 : 0);
 
   // Pagination for slider mode
   const sliderPageSize = 3;
@@ -62,34 +95,12 @@ export default function RecognitionScroller({
         ? "animate-ticker-slow"
         : "animate-ticker";
 
-  if (error && !data) {
-    return (
-      <div className="w-full px-3.5 py-2 rounded-2xl border border-rose-500/30 bg-rose-50/70 dark:bg-rose-950/30 flex items-center justify-between text-xs text-rose-700 dark:text-rose-300 shadow-xs">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-rose-500" />
-          <span className="text-[11px] font-medium">Daily Recognition: Offline ({error.message})</span>
-        </div>
-        {onRetry && (
-          <button
-            onClick={onRetry}
-            className="px-2.5 py-0.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-semibold text-[10px] cursor-pointer"
-          >
-            Retry
-          </button>
-        )}
-      </div>
-    );
+  // Hide recognition bar if offline or loading with no data
+  if ((error || isLoading) && !data) {
+    return null;
   }
 
-  if (isLoading && !data) {
-    return (
-      <div className="w-full px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-[#000000] flex items-center gap-2.5 text-xs text-slate-500 dark:text-slate-400 shadow-xs">
-        <div className="w-3.5 h-3.5 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />
-        <span className="text-[11px] font-medium">Syncing live celebrations & top scorers...</span>
-      </div>
-    );
-  }
-
+  // Until and unless any agent has achieved target (or there are birthdays/anniversaries), show nothing
   if (rawItems.length === 0) {
     return null;
   }
@@ -97,7 +108,7 @@ export default function RecognitionScroller({
   const loopedItems = filteredItems.length > 0 ? [...filteredItems, ...filteredItems] : [];
 
   return (
-    <div className="w-full rounded-2xl border border-slate-200/90 dark:border-white/10 border-t-[3px] border-t-cyan-400 bg-white/95 dark:bg-[#000000] shadow-sm overflow-hidden backdrop-blur-md transition-all">
+    <div className="w-full mt-1.5 rounded-2xl border border-slate-200/90 dark:border-white/10 border-t-[3px] border-t-cyan-400 bg-white/95 dark:bg-[#000000] shadow-sm overflow-hidden backdrop-blur-md transition-all">
       {/* Top Header Row matching the exact screenshot layout */}
       <div className="px-4 py-2 border-b border-slate-100 dark:border-white/10 flex flex-wrap items-center justify-between gap-2 select-none bg-slate-50/70 dark:bg-[#050505]">
         {/* Left: Section Header Title */}
@@ -108,68 +119,72 @@ export default function RecognitionScroller({
 
         {/* Right: Quick Category Filter Pills & Mode Pill Controls */}
         <div className="flex items-center gap-1.5 text-[10.5px]">
-          {/* Quick Filter Pill Buttons */}
-          <div className="hidden sm:flex items-center gap-1">
-            <button
-              onClick={() => {
-                setActiveFilter("all");
-                setSliderIndex(0);
-              }}
-              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all cursor-pointer ${
-                activeFilter === "all"
-                  ? "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-400/40"
-                  : "bg-white dark:bg-[#0a0a0a] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
-              }`}
-            >
-              All ({rawItems.length})
-            </button>
-            <button
-              onClick={() => {
-                setActiveFilter("top_lead_scorer");
-                setSliderIndex(0);
-              }}
-              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
-                activeFilter === "top_lead_scorer"
-                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-400/40"
-                  : "bg-white dark:bg-[#0a0a0a] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
-              }`}
-            >
-              <Trophy className="w-2.5 h-2.5 text-amber-500" />
-              <span>Top ({topScorersCount})</span>
-            </button>
-            {birthdaysCount > 0 && (
+          {/* Quick Filter Pill Buttons (rendered only when multiple categories exist) */}
+          {distinctCategoryCount > 1 && (
+            <div className="hidden sm:flex items-center gap-1">
               <button
                 onClick={() => {
-                  setActiveFilter("birthday");
+                  setActiveFilter("all");
                   setSliderIndex(0);
                 }}
-                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
-                  activeFilter === "birthday"
-                    ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-400/40"
+                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all cursor-pointer ${
+                  effectiveFilter === "all"
+                    ? "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-400/40"
                     : "bg-white dark:bg-[#0a0a0a] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
                 }`}
               >
-                <Cake className="w-2.5 h-2.5 text-rose-500" />
-                <span>Birthdays ({birthdaysCount})</span>
+                All ({rawItems.length})
               </button>
-            )}
-            {anniversariesCount > 0 && (
-              <button
-                onClick={() => {
-                  setActiveFilter("anniversary");
-                  setSliderIndex(0);
-                }}
-                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
-                  activeFilter === "anniversary"
-                    ? "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-400/40"
-                    : "bg-white dark:bg-[#0a0a0a] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                <Award className="w-2.5 h-2.5 text-purple-500" />
-                <span>Anniv ({anniversariesCount})</span>
-              </button>
-            )}
-          </div>
+              {topScorersCount > 0 && (
+                <button
+                  onClick={() => {
+                    setActiveFilter("top_lead_scorer");
+                    setSliderIndex(0);
+                  }}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
+                    effectiveFilter === "top_lead_scorer"
+                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-400/40"
+                      : "bg-white dark:bg-[#0a0a0a] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  <Trophy className="w-2.5 h-2.5 text-amber-500" />
+                  <span>Top ({topScorersCount})</span>
+                </button>
+              )}
+              {birthdaysCount > 0 && (
+                <button
+                  onClick={() => {
+                    setActiveFilter("birthday");
+                    setSliderIndex(0);
+                  }}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
+                    effectiveFilter === "birthday"
+                      ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-400/40"
+                      : "bg-white dark:bg-[#0a0a0a] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  <Cake className="w-2.5 h-2.5 text-rose-500" />
+                  <span>Birthdays ({birthdaysCount})</span>
+                </button>
+              )}
+              {anniversariesCount > 0 && (
+                <button
+                  onClick={() => {
+                    setActiveFilter("anniversary");
+                    setSliderIndex(0);
+                  }}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
+                    effectiveFilter === "anniversary"
+                      ? "bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-400/40"
+                      : "bg-white dark:bg-[#0a0a0a] text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+                >
+                  <Award className="w-2.5 h-2.5 text-purple-500" />
+                  <span>Anniv ({anniversariesCount})</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Active Cards Pill - matches screenshot */}
           <span className="px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-white/15 bg-white dark:bg-[#0a0a0a] text-slate-600 dark:text-slate-300 text-[10.5px] font-medium shadow-2xs">
@@ -187,22 +202,25 @@ export default function RecognitionScroller({
         </div>
       </div>
 
+
       {/* Main Content Area: Single-line Horizontal Flow */}
       {filteredItems.length === 0 ? (
         <div className="py-2.5 px-4 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-1.5 text-[11px]">
-            {activeFilter === "birthday" && <Cake className="w-3.5 h-3.5 text-rose-500" />}
-            {activeFilter === "anniversary" && <Award className="w-3.5 h-3.5 text-purple-500" />}
-            {activeFilter === "top_lead_scorer" && <Trophy className="w-3.5 h-3.5 text-amber-500" />}
+            {effectiveFilter === "birthday" && <Cake className="w-3.5 h-3.5 text-rose-500" />}
+            {effectiveFilter === "anniversary" && <Award className="w-3.5 h-3.5 text-purple-500" />}
+            {effectiveFilter === "top_lead_scorer" && <Trophy className="w-3.5 h-3.5 text-amber-500" />}
             <span>
-              No {activeFilter === "birthday" ? "birthdays" : activeFilter === "anniversary" ? "work anniversaries" : "records"} celebrating today ({data?.target_date || "Today"}).
+              {effectiveFilter === "top_lead_scorer"
+                ? `No agents have achieved their daily incentive target yet (${data?.target_date || "Today"}).`
+                : `No ${effectiveFilter === "birthday" ? "birthdays" : "work anniversaries"} celebrating today (${data?.target_date || "Today"}).`}
             </span>
           </div>
           <button
             onClick={() => setActiveFilter("all")}
             className="text-cyan-600 dark:text-cyan-400 hover:underline font-semibold cursor-pointer text-[10.5px]"
           >
-            Show Top Scorers Today ({topScorersCount}) →
+            {topScorersCount > 0 ? `Show Target Achievers Today (${topScorersCount}) →` : "Show All Cards →"}
           </button>
         </div>
       ) : displayMode === "marquee" ? (
@@ -262,58 +280,55 @@ function RecognitionCard({
   const isTopScorer = item.type === "top_lead_scorer";
   const isBirthday = item.type === "birthday";
   const isAnniversary = item.type === "anniversary";
+  const isAnnouncement = item.type === "announcement";
 
-  // Check if item is a target achiever (top lead scorer or explicitly labelled target achiever)
-  const isTargetAchiever =
-    isTopScorer ||
-    item.eyebrow?.toLowerCase().includes("target achiever") ||
-    item.badge?.toLowerCase().includes("target achiever");
+  const isTargetAchiever = isTopScorer;
 
   // Category Badge Pill Styling with high contrast in both Light & Dark modes
   const badgeClasses = isTopScorer
     ? "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-300 border border-sky-200/90 dark:border-sky-500/30"
     : isBirthday
     ? "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300 border border-rose-200/90 dark:border-rose-500/30"
-    : "bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200/90 dark:border-purple-500/30";
+    : isAnniversary
+    ? "bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300 border border-purple-200/90 dark:border-purple-500/30"
+    : "bg-cyan-100 text-cyan-800 dark:bg-cyan-500/20 dark:text-cyan-300 border border-cyan-200/90 dark:border-cyan-500/30";
 
   // Avatar Icon fallback background
   const iconBg = isTopScorer
     ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
     : isBirthday
     ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
-    : "bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300";
+    : isAnniversary
+    ? "bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300"
+    : "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300";
 
-  // Resolve earned daily incentive amount
-  let earnedIncentive = item.incentive_amount;
-  if (!earnedIncentive && isTargetAchiever) {
-    const textPool = `${item.eyebrow || ""} ${item.message || ""} ${item.subtitle || ""}`;
-    const match = textPool.match(/(?:₹|INR\s*|Rs\.?\s*)(\d+[\d,]*)/i);
-    if (match) {
-      earnedIncentive = parseInt(match[1].replace(/,/g, ""), 10);
-    } else if (item.completion_percentage && item.completion_percentage >= 150) {
-      earnedIncentive = 1100;
-    } else if (item.completion_percentage && item.completion_percentage >= 125) {
-      earnedIncentive = 850;
-    } else if (item.score && item.score >= 8) {
-      earnedIncentive = 600;
+  // Resolve earned daily incentive amount strictly from CRM properties
+  const earnedIncentive = Number(item.incentive_amount) || 0;
+
+  // Format the earned daily incentive text with Provisional vs Settled vs Paid distinction (Section 7)
+  let formattedIncentiveText = "";
+  if (earnedIncentive > 0) {
+    if (item.is_settled && item.payment_status === "paid") {
+      formattedIncentiveText = `₹${earnedIncentive.toLocaleString("en-IN")} Paid Incentive`;
+    } else if (item.is_settled) {
+      formattedIncentiveText = `₹${earnedIncentive.toLocaleString("en-IN")} Earned Incentive`;
     } else {
-      earnedIncentive = 500;
+      formattedIncentiveText = `₹${earnedIncentive.toLocaleString("en-IN")} Provisional Earnings`;
     }
   }
 
-  // Format the earned daily incentive text
-  const formattedIncentiveText = earnedIncentive != null
-    ? `₹${earnedIncentive.toLocaleString("en-IN")} Daily Incentive Earned`
-    : `₹500 Daily Incentive Earned`;
-
-  // Display text: For target achievers, ALWAYS show the earned daily incentive amount instead of "Today's Target Achiever"
-  const hasIncentiveInEyebrow = item.eyebrow && (item.eyebrow.includes("₹") || item.eyebrow.toLowerCase().includes("incentive"));
+  // Display text: For target achievers, show the dynamic CRM incentive amount
   const departmentOrIncentive = isTargetAchiever
-    ? (hasIncentiveInEyebrow ? item.eyebrow : formattedIncentiveText)
-    : (item.eyebrow || (isTopScorer ? "Operations" : "Team Member"));
+    ? (formattedIncentiveText || item.eyebrow || `Daily Target Achiever`)
+    : (item.eyebrow || (isAnnouncement ? "Notice" : "Team Member"));
 
-  // Achievement text / Subtitle
-  const detailsText = item.subtitle || item.message || "";
+  // Target achievement details text
+  let detailsText = item.subtitle || item.message || "";
+  if (isTargetAchiever && item.achieved_points != null && item.target_points != null && item.target_points > 0) {
+    const comp = item.completion_percentage != null ? item.completion_percentage.toFixed(0) : ((item.achieved_points / item.target_points) * 100).toFixed(0);
+    const slabPart = item.slab_incentive && item.slab_incentive > 0 ? ` • ₹${item.slab_incentive.toLocaleString("en-IN")} Slab Accelerator` : "";
+    detailsText = `${comp}% Target Achieved (${item.achieved_points} / ${item.target_points} Pts)${slabPart}`;
+  }
 
   return (
     <div
@@ -342,6 +357,7 @@ function RecognitionCard({
           {isTopScorer && <Trophy className="w-3.5 h-3.5" />}
           {isBirthday && <Cake className="w-3.5 h-3.5" />}
           {isAnniversary && <Award className="w-3.5 h-3.5" />}
+          {isAnnouncement && <Sparkles className="w-3.5 h-3.5" />}
         </div>
       </div>
 
@@ -350,6 +366,7 @@ function RecognitionCard({
         {isTopScorer && <Trophy className="w-3 h-3 text-sky-600 dark:text-sky-400" />}
         {isBirthday && <Cake className="w-3 h-3 text-rose-600 dark:text-rose-400" />}
         {isAnniversary && <Award className="w-3 h-3 text-purple-600 dark:text-purple-400" />}
+        {isAnnouncement && <Sparkles className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />}
         <span>{item.badge}</span>
       </div>
 

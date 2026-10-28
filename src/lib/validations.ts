@@ -273,7 +273,15 @@ export const RecognitionTickerItemSchema = z.object({
   incentive_amount: z.coerce.number().optional(),
   base_incentive: z.coerce.number().optional(),
   slab_incentive: z.coerce.number().optional(),
-});
+  target_points: z.coerce.number().optional(),
+  achieved_points: z.coerce.number().optional(),
+  is_target_met: z.boolean().optional(),
+  is_settled: z.boolean().optional(),
+  is_provisional: z.boolean().optional(),
+  payment_status: z.string().optional(),
+  eligibility_status: z.string().optional(),
+  eligibility_reason: z.string().optional(),
+}).passthrough();
 
 export const RecognitionDataSchema = z.object({
   target_date: z.string().optional().default(() => new Date().toISOString().split("T")[0]),

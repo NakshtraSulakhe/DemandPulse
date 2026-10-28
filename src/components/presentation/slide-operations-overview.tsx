@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Slide1Data } from "@/types";
 import { formatNumber, formatPercent } from "@/lib/utils";
 import {
@@ -12,13 +12,17 @@ import {
   CheckCircle2,
   AlertCircle,
   TrendingUp,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface SlideOperationsOverviewProps {
   data?: Slide1Data;
   isLoading?: boolean;
   error?: Error | null;
   onRetry?: () => void;
+  campaignsPerPage?: number;
 }
 
 export default function SlideOperationsOverview({
@@ -26,6 +30,7 @@ export default function SlideOperationsOverview({
   isLoading,
   error,
   onRetry,
+  campaignsPerPage = 6,
 }: SlideOperationsOverviewProps) {
   if (error && !data) {
     return (
@@ -66,6 +71,39 @@ export default function SlideOperationsOverview({
 
   const campaigns = data?.campaigns || [];
   const lateComers = data?.late_comers || [];
+
+  // ---------- Auto-rotating campaign table pagination ----------
+  const [campaignPageIndex, setCampaignPageIndex] = useState<number>(0);
+
+  // Split campaigns into pages of `campaignsPerPage`
+  const campaignChunks: Array<typeof campaigns> = useMemo(() => {
+    const chunks: Array<typeof campaigns> = [];
+    for (let i = 0; i < campaigns.length; i += campaignsPerPage) {
+      chunks.push(campaigns.slice(i, i + campaignsPerPage));
+    }
+    return chunks;
+  }, [campaigns, campaignsPerPage]);
+
+  const totalCampaignPages = Math.max(1, campaignChunks.length);
+
+  // Auto carousel frame rotation (12 seconds per page, matching Slide 2)
+  useEffect(() => {
+    if (totalCampaignPages <= 1) return;
+    const interval = setInterval(() => {
+      setCampaignPageIndex((prev) => (prev + 1) % totalCampaignPages);
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [totalCampaignPages]);
+
+  // Reset page index if campaigns change and current page is out of range
+  useEffect(() => {
+    if (campaignPageIndex >= totalCampaignPages) {
+      setCampaignPageIndex(0);
+    }
+  }, [totalCampaignPages, campaignPageIndex]);
+
+  const currentCampaigns = campaignChunks[campaignPageIndex] || [];
+  // ---------------------------------------------------------------
 
   const attendanceRate =
     kpis.total_agents > 0
@@ -175,25 +213,71 @@ export default function SlideOperationsOverview({
 
       {/* Main Grid: Live Campaigns Table (68%) + Late Comers (32%) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
-        {/* Live Campaigns Table */}
-        <div className="lg:col-span-8 glass-panel rounded-xl p-4 flex flex-col border border-slate-200/80 dark:border-white/10 shadow-lg">
-          <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/80 dark:border-white/10 mb-2.5">
+        {/* Live Campaigns Table — Auto-Rotating Pages */}
+        <div className="lg:col-span-8 glass-panel rounded-xl p-4 flex flex-col border border-slate-200/80 dark:border-white/10 shadow-lg min-h-[460px]">
+          {/* Table Header & Carousel Rotation Indicators */}
+          <div className="flex flex-wrap items-center justify-between pb-2.5 border-b border-slate-200/80 dark:border-white/10 mb-2.5 gap-2">
             <div>
               <h2 className="text-xs lg:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <Target className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 Live Campaigns Target Allocation & Lead Progress
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Displaying {campaigns.length} of {data?.total_live_campaigns || campaigns.length} live campaigns with today&apos;s daily allocation entered
+                {campaigns.length} of {data?.total_live_campaigns || campaigns.length} live campaigns with today&apos;s daily allocation entered
               </p>
             </div>
-            <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              {campaigns.length} of {data?.total_live_campaigns || campaigns.length} Live Campaigns Allocated
-            </span>
+
+            {/* Carousel Pagination Controls & Rotation Dot Indicators */}
+            <div className="flex items-center gap-2.5">
+              <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {campaigns.length} Live
+              </span>
+
+              {totalCampaignPages > 1 && (
+                <>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                    Frame {campaignPageIndex + 1} of {totalCampaignPages}
+                  </span>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalCampaignPages }).map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setCampaignPageIndex(idx)}
+                        className={`h-1.5 rounded-full transition-all duration-300 ${
+                          campaignPageIndex === idx
+                            ? "w-4 bg-cyan-500 shadow-[0_0_6px_rgba(6,182,212,0.6)]"
+                            : "w-1.5 bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-500"
+                        }`}
+                        title={`Go to page ${idx + 1}`}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-0.5 ml-1">
+                    <button
+                      onClick={() => setCampaignPageIndex((prev) => (prev - 1 + totalCampaignPages) % totalCampaignPages)}
+                      className="p-1 rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                      title="Previous page"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setCampaignPageIndex((prev) => (prev + 1) % totalCampaignPages)}
+                      className="p-1 rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                      title="Next page"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="overflow-x-auto overflow-y-auto max-h-[460px]">
+          {/* Animated Table Body */}
+          <div className="flex-1 overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100/95 text-slate-700 dark:bg-slate-900/80 dark:text-slate-300 font-bold sticky top-0 z-10 uppercase tracking-wider text-[10.5px] border-b border-slate-200 dark:border-white/10">
                 <tr>
@@ -219,95 +303,102 @@ export default function SlideOperationsOverview({
                     </td>
                   </tr>
                 ) : (
-                  campaigns.map((camp) => {
-                    const isComplete = camp.remaining_leads_to_qualify === 0;
-                    return (
-                      <tr
-                        key={camp.campaign_id}
-                        className="hover:bg-slate-100/60 dark:hover:bg-white/[0.03] transition-colors group"
-                      >
-                        <td className="py-2 px-2.5">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-xs text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors">
-                              {camp.campaign_name}
-                            </span>
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 whitespace-nowrap flex items-center gap-1">
-                              <span className="w-1 h-1 rounded-full bg-emerald-500" />
-                              LIVE
-                            </span>
-                            {camp.campaign_type && (
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 border border-cyan-500/30 whitespace-nowrap">
-                                {camp.campaign_type}
+                  <AnimatePresence mode="wait">
+                    {currentCampaigns.map((camp) => {
+                      const isComplete = camp.remaining_leads_to_qualify === 0;
+                      return (
+                        <motion.tr
+                          key={camp.campaign_id}
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.2 }}
+                          className="hover:bg-slate-100/60 dark:hover:bg-white/[0.03] transition-colors group"
+                        >
+                          <td className="py-2 px-2.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-xs text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors">
+                                {camp.campaign_name}
                               </span>
-                            )}
-                          </div>
-                          {(camp.description || camp.campaign_description) && (
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 max-w-xs mt-0.5" title={camp.description || camp.campaign_description || ""}>
-                              {camp.description || camp.campaign_description}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-1 mt-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                            <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border border-slate-300 dark:border-slate-700">
-                              {camp.campaign_code}
-                            </span>
-                            {camp.client_code && (
-                              <span className="text-slate-400 dark:text-slate-500">• {camp.client_code}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-2 px-2 text-center font-bold text-xs text-slate-700 dark:text-slate-300">
-                          {formatNumber(camp.monthly_allocation)}
-                        </td>
-                        <td className="py-2 px-2 text-center">
-                          <span className="px-2 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 font-bold text-xs border border-cyan-500/30">
-                            {formatNumber(camp.daily_target)}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2 text-center font-bold text-xs text-slate-900 dark:text-slate-100">
-                          {formatNumber(camp.generated_leads)}
-                        </td>
-                        <td className="py-2 px-2 text-center font-bold text-xs text-emerald-600 dark:text-emerald-400">
-                          {formatNumber(camp.qualified_leads)}
-                        </td>
-                        <td className="py-2 px-2 text-center font-semibold text-xs text-rose-600 dark:text-rose-400">
-                          {formatNumber(camp.disqualified_leads)}
-                        </td>
-                        <td className="py-2 px-2 text-center font-semibold text-xs text-amber-600 dark:text-amber-400">
-                          {formatNumber(camp.pending_qa)}
-                        </td>
-                        <td className="py-2 px-2 text-center font-bold text-xs text-blue-700 dark:text-blue-300">
-                          {isComplete ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                              <CheckCircle2 className="w-3 h-3" /> Met
-                            </span>
-                          ) : (
-                            formatNumber(camp.remaining_leads_to_qualify)
-                          )}
-                        </td>
-                        <td className="py-2 px-2.5 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <div className="w-16 lg:w-24 bg-slate-200 dark:bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-300 dark:border-white/5">
-                              <div
-                                className={`h-full rounded-full transition-all duration-500 ${
-                                  camp.completion_percentage >= 100
-                                    ? "bg-emerald-500 shadow-[0_0_8px_rgba(52,211,153,0.6)]"
-                                    : camp.completion_percentage >= 60
-                                    ? "bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]"
-                                    : "bg-amber-500 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
-                                }`}
-                                style={{ width: `${Math.min(100, camp.completion_percentage)}%` }}
-                              />
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 whitespace-nowrap flex items-center gap-1">
+                                <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                                LIVE
+                              </span>
+                              {camp.campaign_type && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 border border-cyan-500/30 whitespace-nowrap">
+                                  {camp.campaign_type}
+                                </span>
+                              )}
                             </div>
-                            <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-slate-200 w-10 text-right">
-                              {formatPercent(camp.completion_percentage)}
+                            {(camp.description || camp.campaign_description) && (
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 max-w-xs mt-0.5" title={camp.description || camp.campaign_description || ""}>
+                                {camp.description || camp.campaign_description}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-1 mt-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                              <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border border-slate-300 dark:border-slate-700">
+                                {camp.campaign_code}
+                              </span>
+                              {camp.client_code && (
+                                <span className="text-slate-400 dark:text-slate-500">• {camp.client_code}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-2 text-center font-bold text-xs text-slate-700 dark:text-slate-300">
+                            {formatNumber(camp.monthly_allocation)}
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <span className="px-2 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 font-bold text-xs border border-cyan-500/30">
+                              {formatNumber(camp.daily_target)}
                             </span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
+                          </td>
+                          <td className="py-2 px-2 text-center font-bold text-xs text-slate-900 dark:text-slate-100">
+                            {formatNumber(camp.generated_leads)}
+                          </td>
+                          <td className="py-2 px-2 text-center font-bold text-xs text-emerald-600 dark:text-emerald-400">
+                            {formatNumber(camp.qualified_leads)}
+                          </td>
+                          <td className="py-2 px-2 text-center font-semibold text-xs text-rose-600 dark:text-rose-400">
+                            {formatNumber(camp.disqualified_leads)}
+                          </td>
+                          <td className="py-2 px-2 text-center font-semibold text-xs text-amber-600 dark:text-amber-400">
+                            {formatNumber(camp.pending_qa)}
+                          </td>
+                          <td className="py-2 px-2 text-center font-bold text-xs text-blue-700 dark:text-blue-300">
+                            {isComplete ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                <CheckCircle2 className="w-3 h-3" /> Met
+                              </span>
+                            ) : (
+                              formatNumber(camp.remaining_leads_to_qualify)
+                            )}
+                          </td>
+                          <td className="py-2 px-2.5 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <div className="w-16 lg:w-24 bg-slate-200 dark:bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-300 dark:border-white/5">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    camp.completion_percentage >= 100
+                                      ? "bg-emerald-500 shadow-[0_0_8px_rgba(52,211,153,0.6)]"
+                                      : camp.completion_percentage >= 60
+                                      ? "bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]"
+                                      : "bg-amber-500 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
+                                  }`}
+                                  style={{ width: `${Math.min(100, camp.completion_percentage)}%` }}
+                                />
+                              </div>
+                              <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-slate-200 w-10 text-right">
+                                {formatPercent(camp.completion_percentage)}
+                              </span>
+                            </div>
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
+                  </AnimatePresence>
                 )}
               </tbody>
+              {/* Totals footer — always computed from ALL campaigns across all pages */}
               {campaigns.length > 0 && (() => {
                 const totMonthly = campaigns.reduce((acc, c) => acc + (Number(c.monthly_allocation) || 0), 0);
                 const totDaily = campaigns.reduce((acc, c) => acc + (Number(c.daily_target) || 0), 0);

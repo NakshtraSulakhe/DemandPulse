@@ -62,6 +62,19 @@ export default function SlideAgentProductivity({
     });
   }, [activeData?.agents]);
 
+  // Precompute rank map for top 3 and bottom 3 performers by leads generated
+  const agentRankMap = useMemo(() => {
+    const map = new Map<number, { rank: number; isTop3: boolean; isBottom3: boolean }>();
+    const total = agents.length;
+    agents.forEach((agent, index) => {
+      const rank = index + 1;
+      const isTop3 = index < 3;
+      const isBottom3 = total >= 6 && index >= total - 3;
+      map.set(agent.agent_id, { rank, isTop3, isBottom3 });
+    });
+    return map;
+  }, [agents]);
+
   // Group agents into rotating frames
   const chunks: Array<typeof agents> = [];
   for (let i = 0; i < agents.length; i += rowsPerPage) {
@@ -395,9 +408,19 @@ export default function SlideAgentProductivity({
               <Award className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
               Agent Daily Target Points & Lead Distribution
             </h2>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Live points target progress with automated frame rotation for comprehensive floor monitoring
-            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Live points target progress with automated frame rotation for comprehensive floor monitoring
+              </p>
+              <div className="hidden sm:flex items-center gap-1.5 pl-2 border-l border-slate-300 dark:border-white/10 text-[10px]">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                  <TrendingUp className="w-2.5 h-2.5 text-emerald-500" /> Top 3 Leads (Green)
+                </span>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-bold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">
+                  <TrendingDown className="w-2.5 h-2.5 text-rose-500" /> Bottom 3 Leads (Red)
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Carousel Pagination Controls & Rotation Dot Indicators */}
@@ -443,19 +466,19 @@ export default function SlideAgentProductivity({
         {/* Animated Table Body */}
         <div className="flex-1 overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-100/95 text-slate-700 dark:bg-slate-900/80 dark:text-slate-300 font-bold uppercase tracking-wider text-[10.5px] border-b border-slate-200 dark:border-white/10">
+            <thead className="bg-gray-50 text-gray-700 dark:bg-gray-900/80 dark:text-gray-300 font-bold uppercase tracking-wider text-[10.5px] border-b border-gray-200 dark:border-white/10">
               <tr>
                 <th className="py-2 px-2.5">Agent</th>
-                <th className="py-2 px-2 text-center text-cyan-700 dark:text-cyan-300">Daily Target</th>
-                <th className="py-2 px-2 text-center text-slate-600 dark:text-slate-400">Monthly</th>
-                <th className="py-2 px-2 text-center text-slate-800 dark:text-slate-300">Generated</th>
-                <th className="py-2 px-2 text-center text-emerald-600 dark:text-emerald-400">Qualified</th>
-                <th className="py-2 px-2 text-center text-rose-600 dark:text-rose-400">Disqual</th>
-                <th className="py-2 px-2 text-center text-amber-600 dark:text-amber-400">Pending QA</th>
-                <th className="py-2 px-2 text-center text-emerald-600 dark:text-emerald-400 font-bold">Achieved Pts</th>
+                <th className="py-2 px-2 text-center text-blue-700 dark:text-blue-400">Daily Target</th>
+                <th className="py-2 px-2 text-center text-gray-600 dark:text-gray-400">Monthly</th>
+                <th className="py-2 px-2 text-center text-gray-800 dark:text-gray-300">Generated</th>
+                <th className="py-2 px-2 text-center text-green-700 dark:text-green-400">Qualified</th>
+                <th className="py-2 px-2 text-center text-red-700 dark:text-red-400">Disqual</th>
+                <th className="py-2 px-2 text-center text-orange-700 dark:text-orange-400">Pending QA</th>
+                <th className="py-2 px-2 text-center text-green-700 dark:text-green-400 font-bold">Achieved Pts</th>
                 <th className="py-2 px-2 text-center text-blue-700 dark:text-blue-300">Remaining</th>
-                <th className="py-2 px-2.5 text-right">Completion</th>
-                <th className="py-2 px-2 text-center">Status</th>
+                <th className="py-2 px-2.5 text-right text-gray-700 dark:text-gray-400">Target Progress</th>
+                <th className="py-2 px-2 text-center text-gray-700 dark:text-gray-400">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-white/5">
@@ -463,6 +486,11 @@ export default function SlideAgentProductivity({
                 {currentAgents.map((agent) => {
                   const isMet = agent.is_target_met || agent.completion_percentage >= 100;
                   const isAbsent = agent.is_present === false || agent.attendance_status?.toLowerCase() === "absent";
+                  const rankInfo = agentRankMap.get(agent.agent_id);
+                  const isTop3 = rankInfo?.isTop3 ?? false;
+                  const isBottom3 = rankInfo?.isBottom3 ?? false;
+                  const rank = rankInfo?.rank ?? 0;
+
                   return (
                     <motion.tr
                       key={agent.agent_id}
@@ -473,29 +501,73 @@ export default function SlideAgentProductivity({
                       className={`transition-colors group ${
                         isAbsent
                           ? "bg-rose-500/5 hover:bg-rose-500/10 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 opacity-75"
+                          : isTop3
+                          ? "bg-emerald-500/[0.04] hover:bg-emerald-500/[0.08] dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30"
+                          : isBottom3
+                          ? "bg-rose-500/[0.03] hover:bg-rose-500/[0.06] dark:bg-rose-950/20 dark:hover:bg-rose-900/30"
                           : "hover:bg-slate-100/60 dark:hover:bg-white/[0.03]"
                       }`}
                     >
                       <td className="py-2 px-2.5">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-800 dark:text-slate-100 shadow-sm">
+                          <div
+                            className={`relative w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm transition-all shrink-0 ${
+                              isTop3
+                                ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/50 ring-2 ring-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
+                                : isBottom3
+                                ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/50 ring-2 ring-rose-500/40 shadow-[0_0_8px_rgba(244,63,94,0.3)]"
+                                : "bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100"
+                            }`}
+                          >
                             {agent.agent_name
                               .split(" ")
                               .map((n) => n[0])
                               .join("")
                               .slice(0, 2)}
+                            {isTop3 && (
+                              <span
+                                className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 text-white rounded-full border border-white dark:border-slate-900 flex items-center justify-center text-[8px] font-black shadow-sm"
+                                title={`Rank #${rank} on Floor`}
+                              >
+                                {rank}
+                              </span>
+                            )}
+                            {isBottom3 && (
+                              <span
+                                className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-rose-500 text-white rounded-full border border-white dark:border-slate-900 flex items-center justify-center text-[8px] font-black shadow-sm"
+                                title={`Rank #${rank} (Bottom 3 on Floor)`}
+                              >
+                                !
+                              </span>
+                            )}
                           </div>
                           <div>
-                            <div className="font-bold text-xs text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors flex items-center gap-1.5">
-                              {agent.agent_name}
+                            <div className="font-bold text-xs text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors flex items-center gap-1.5 flex-wrap">
+                              <span>{agent.agent_name}</span>
+                              {isTop3 && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 text-[9.5px] rounded-full font-extrabold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.2)]">
+                                  <TrendingUp className="w-2.5 h-2.5 text-emerald-500" />
+                                  Top {rank}
+                                </span>
+                              )}
+                              {isBottom3 && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 text-[9.5px] rounded-full font-extrabold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30 shadow-[0_0_8px_rgba(244,63,94,0.2)]">
+                                  <TrendingDown className="w-2.5 h-2.5 text-rose-500" />
+                                  Bottom 3
+                                </span>
+                              )}
                               {isAbsent && (
                                 <span className="px-1.5 py-0.2 text-[9px] rounded font-bold bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30">
                                   Absent
                                 </span>
                               )}
                             </div>
-                            <div className="text-[10px] text-slate-500 dark:text-slate-400 capitalize">
-                              {agent.role || "SDR"}
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 capitalize flex items-center gap-1.5">
+                              <span>{agent.role || "SDR"}</span>
+                              <span className="text-slate-400 dark:text-slate-600">•</span>
+                              <span className="font-mono text-[9.5px] text-slate-500 dark:text-slate-400">
+                                #{rank} of {agents.length}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -508,8 +580,18 @@ export default function SlideAgentProductivity({
                       <td className="py-2 px-2 text-center font-bold text-xs text-slate-600 dark:text-slate-400">
                         {agent.monthly_target_points} pts
                       </td>
-                      <td className="py-2 px-2 text-center font-bold text-xs text-slate-900 dark:text-slate-100">
-                        {agent.generated_leads}
+                      <td className="py-2 px-2 text-center font-bold text-xs">
+                        <span
+                          className={`px-2 py-0.5 rounded-lg inline-block transition-all ${
+                            isTop3
+                              ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/20 font-black"
+                              : isBottom3
+                              ? "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30 font-bold"
+                              : "text-slate-900 dark:text-slate-100"
+                          }`}
+                        >
+                          {agent.generated_leads}
+                        </span>
                       </td>
                       <td className="py-2 px-2 text-center font-bold text-xs text-emerald-600 dark:text-emerald-400">
                         {agent.qualified_leads}
@@ -536,19 +618,43 @@ export default function SlideAgentProductivity({
                       </td>
                       <td className="py-2 px-2.5 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <div className="w-16 lg:w-24 bg-slate-200 dark:bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-300 dark:border-white/5">
+                          <div className="w-16 lg:w-24 bg-gray-100 dark:bg-gray-800 rounded-full h-2.5 overflow-hidden border border-gray-300 dark:border-gray-600">
                             <div
-                              className={`h-full rounded-full transition-all duration-500 ${
-                                isMet
-                                  ? "bg-emerald-500 shadow-[0_0_8px_rgba(52,211,153,0.6)]"
-                                  : agent.completion_percentage >= 60
-                                  ? "bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.5)]"
-                                  : "bg-amber-500 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
-                              }`}
-                              style={{ width: `${Math.min(100, agent.completion_percentage)}%` }}
+                              className="h-full rounded-full transition-all duration-500 shadow-sm"
+                              style={{
+                                width: `${Math.min(100, agent.completion_percentage)}%`,
+                                backgroundColor: (() => {
+                                  const pct = agent.completion_percentage;
+                                  if (pct <= 25) {
+                                    const ratio = pct / 25;
+                                    const r = Math.round(34 + (255 - 34) * ratio);
+                                    const g = Math.round(197 + (0) * ratio);
+                                    const b = Math.round(94 + (0) * ratio);
+                                    return `rgb(${r}, ${g}, ${b})`;
+                                  } else if (pct <= 50) {
+                                    const ratio = (pct - 25) / 25;
+                                    const r = 255;
+                                    const g = Math.round(193 - 53 * ratio);
+                                    const b = 0;
+                                    return `rgb(${r}, ${g}, ${b})`;
+                                  } else if (pct <= 75) {
+                                    const ratio = (pct - 50) / 25;
+                                    const r = 255;
+                                    const g = Math.round(140 - 140 * ratio);
+                                    const b = 0;
+                                    return `rgb(${r}, ${g}, ${b})`;
+                                  } else {
+                                    const ratio = (pct - 75) / 25;
+                                    const r = 255;
+                                    const g = Math.round(140 - 140 * ratio);
+                                    const b = 0;
+                                    return `rgb(${r}, ${g}, ${b})`;
+                                  }
+                                })(),
+                              }}
                             />
                           </div>
-                          <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-slate-200 w-10 text-right">
+                          <span className="font-mono font-bold text-[11px] text-gray-800 dark:text-gray-200 w-10 text-right">
                             {formatPercent(agent.completion_percentage)}
                           </span>
                         </div>
