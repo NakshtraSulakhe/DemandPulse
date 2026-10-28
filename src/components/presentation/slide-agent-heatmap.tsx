@@ -138,11 +138,11 @@ export default function SlideAgentHeatmap({
         itemGap: 12,
         textStyle: { color: isDark ? "#cbd5e1" : "#475569", fontSize: 11, fontWeight: "bold" },
         pieces: [
-          { min: 5, label: "5+ (Peak Burst)", color: "#ef4444" },
-          { min: 4, max: 4, label: "4 (Very High)", color: "#f97316" },
+          { min: 5, label: "5+ (Peak Burst)", color: "#10b981" },
+          { min: 4, max: 4, label: "4 (Very High)", color: "#84cc16" },
           { min: 3, max: 3, label: "3 (High)", color: "#f59e0b" },
-          { min: 2, max: 2, label: "2 (Moderate)", color: "#84cc16" },
-          { min: 1, max: 1, label: "1 (Low)", color: "#10b981" },
+          { min: 2, max: 2, label: "2 (Moderate)", color: "#f97316" },
+          { min: 1, max: 1, label: "1 (Low)", color: "#ef4444" },
           { max: 0, label: "0 (Quiet)", color: isDark ? "rgba(30, 41, 59, 0.45)" : "rgba(241, 245, 249, 0.85)" },
         ],
       },
@@ -160,13 +160,17 @@ export default function SlideAgentHeatmap({
             show: true,
             fontSize: 10.5,
             fontWeight: "bold",
-            color: (p: { data: [number, number, number] }) => (p.data[2] === 1 ? "#0f172a" : "#ffffff"),
+            color: (p: { data: [number, number, number] }) => {
+              const val = p.data[2];
+              if (val === 3 || val === 4) return "#0f172a";
+              return "#ffffff";
+            },
             formatter: (p: { data: [number, number, number] }) => (p.data[2] > 0 ? String(p.data[2]) : ""),
           },
           emphasis: {
             itemStyle: {
               shadowBlur: 10,
-              shadowColor: "rgba(239, 68, 68, 0.8)",
+              shadowColor: "rgba(16, 185, 129, 0.6)",
               borderColor: "#ffffff",
               borderWidth: 1.5,
             },
@@ -390,15 +394,15 @@ export default function SlideAgentHeatmap({
                       const count = inv.generated_count;
                       let bgClass = "text-slate-400/50 dark:text-slate-600/60 bg-slate-100/50 dark:bg-slate-900/30 border border-slate-200/50 dark:border-white/[0.03] hover:bg-slate-200/50 dark:hover:bg-white/[0.05]";
                       if (count >= 5) {
-                        bgClass = "bg-gradient-to-br from-rose-500 to-red-600 text-white font-black shadow-sm shadow-red-500/30 border border-red-400/60";
+                        bgClass = "bg-gradient-to-br from-emerald-500 to-green-600 text-white font-black shadow-sm shadow-emerald-500/30 border border-emerald-400/60";
                       } else if (count === 4) {
-                        bgClass = "bg-gradient-to-br from-orange-500 to-amber-600 text-white font-bold shadow-sm shadow-orange-500/30 border border-orange-400/60";
+                        bgClass = "bg-gradient-to-br from-lime-400 to-emerald-500 text-slate-950 font-bold shadow-sm shadow-lime-500/25 border border-lime-300/60";
                       } else if (count === 3) {
                         bgClass = "bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-sm shadow-amber-500/25 border border-amber-300/60";
                       } else if (count === 2) {
-                        bgClass = "bg-gradient-to-br from-lime-400 to-emerald-500 text-slate-950 font-bold shadow-sm shadow-lime-500/25 border border-lime-300/60";
+                        bgClass = "bg-gradient-to-br from-orange-500 to-amber-600 text-white font-bold shadow-sm shadow-orange-500/30 border border-orange-400/60";
                       } else if (count === 1) {
-                        bgClass = "bg-gradient-to-br from-emerald-500 to-green-600 text-white font-bold shadow-sm shadow-emerald-500/25 border border-emerald-400/50";
+                        bgClass = "bg-gradient-to-br from-rose-500 to-red-600 text-white font-bold shadow-sm shadow-red-500/30 border border-red-400/50";
                       }
                       return (
                         <td
@@ -427,9 +431,9 @@ export default function SlideAgentHeatmap({
               <div
                 className="w-20 h-2 rounded-full border border-white/20 shadow-inner"
                 style={{
-                  background: "linear-gradient(to right, #10b981, #84cc16, #f59e0b, #f97316, #ef4444)",
+                  background: "linear-gradient(to right, #ef4444, #f97316, #f59e0b, #84cc16, #10b981)",
                 }}
-                title="Continuous Intensity Gradient: Low (Green) -> Moderate (Lime/Amber) -> High (Orange/Red)"
+                title="Continuous Intensity Gradient: Low (Red) -> Moderate (Orange) -> High (Amber) -> Peak (Green)"
               />
             </div>
           </div>
@@ -439,24 +443,24 @@ export default function SlideAgentHeatmap({
               <span className="text-slate-500 dark:text-slate-400">0 (Quiet)</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded border border-emerald-400 inline-block" style={{ backgroundColor: "#10b981" }} />
-              <span style={{ color: "#10b981" }} className="font-bold">1 (Low)</span>
+              <span className="w-2.5 h-2.5 rounded border border-red-400 inline-block" style={{ backgroundColor: "#ef4444" }} />
+              <span style={{ color: "#ef4444" }} className="font-bold">1 (Low)</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded border border-lime-400 inline-block" style={{ backgroundColor: "#84cc16" }} />
-              <span style={{ color: "#84cc16" }} className="font-bold">2 (Moderate)</span>
+              <span className="w-2.5 h-2.5 rounded border border-orange-400 inline-block" style={{ backgroundColor: "#f97316" }} />
+              <span style={{ color: "#f97316" }} className="font-bold">2 (Moderate)</span>
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded border border-amber-400 inline-block" style={{ backgroundColor: "#f59e0b" }} />
               <span style={{ color: "#f59e0b" }} className="font-bold">3 (High)</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded border border-orange-400 inline-block" style={{ backgroundColor: "#f97316" }} />
-              <span style={{ color: "#f97316" }} className="font-bold">4 (Very High)</span>
+              <span className="w-2.5 h-2.5 rounded border border-lime-400 inline-block" style={{ backgroundColor: "#84cc16" }} />
+              <span style={{ color: "#84cc16" }} className="font-bold">4 (Very High)</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded border border-red-400 inline-block" style={{ backgroundColor: "#ef4444" }} />
-              <span style={{ color: "#ef4444" }} className="font-bold">5+ (Peak Burst)</span>
+              <span className="w-2.5 h-2.5 rounded border border-emerald-400 inline-block" style={{ backgroundColor: "#10b981" }} />
+              <span style={{ color: "#10b981" }} className="font-bold">5+ (Peak Burst)</span>
             </span>
           </div>
         </div>
