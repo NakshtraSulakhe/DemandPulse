@@ -265,10 +265,18 @@ export default function RecognitionScroller({
   );
 }
 
+function getInitials(name?: string): string {
+  if (!name) return "AG";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "AG";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 /**
- * Individual Celebratory Card Strip
+ * Modern Recognition Card
  * Structured as a single sleek horizontal pill exactly as in the CRM Admin Dashboard screenshot:
- * [Photo] [🏆 Badge] [#Rank] Cyrus Navrathinam • Operations • 112.5% productivity today...
+ * [Initials/Photo] [🏆 Badge] [#Rank] Name • Amount
  */
 function RecognitionCard({
   item,
@@ -282,6 +290,7 @@ function RecognitionCard({
     (Number(item.incentive_amount) || 0) > 0 ||
     item.is_target_met === true;
   const earnedIncentive = Number(item.incentive_amount) || 0;
+  const initials = getInitials(item.title);
 
   return (
     <div
@@ -289,7 +298,7 @@ function RecognitionCard({
         isSlider ? "w-full justify-between" : "max-w-none"
       }`}
     >
-      {/* 1. Profile Photo with Trophy Badge for Target Achievers */}
+      {/* 1. Profile Photo (or Name Initials if photo is not available or fails to load) */}
       {isTargetAchiever ? (
         <div className="relative shrink-0 flex items-center">
           {item.profile_pic ? (
@@ -297,7 +306,7 @@ function RecognitionCard({
               <img
                 src={item.profile_pic}
                 alt={item.title}
-                className="w-7 h-7 sm:w-8 h-8 rounded-full object-cover ring-2 ring-amber-400/70 shadow-xs bg-slate-100 dark:bg-[#111111]"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover ring-2 ring-amber-400/70 shadow-xs bg-slate-100 dark:bg-[#111111]"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = "none";
                   const fallback = (e.target as HTMLElement).nextElementSibling as HTMLElement;
@@ -306,23 +315,17 @@ function RecognitionCard({
               />
               <div
                 style={{ display: "none" }}
-                className="w-7 h-7 sm:w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500/25 to-yellow-400/25 border border-amber-400/50 text-amber-500 items-center justify-center font-bold shadow-xs"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-amber-500/20 to-yellow-400/30 border border-amber-400/50 text-amber-700 dark:text-amber-300 items-center justify-center font-bold text-[11px] sm:text-xs shadow-xs font-mono tracking-wider"
               >
-                <Trophy className="w-4 h-4 text-amber-500" />
-              </div>
-              <div
-                className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shadow-xs border border-white dark:border-black"
-                title="Target Achiever"
-              >
-                <Trophy className="w-2.5 h-2.5 fill-current" />
+                {initials}
               </div>
             </div>
           ) : (
             <div
-              className="w-7 h-7 sm:w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500/20 to-yellow-400/25 border border-amber-400/50 text-amber-500 dark:text-amber-400 flex items-center justify-center font-bold shadow-xs"
-              title="Target Achiever"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-amber-500/20 to-yellow-400/30 border border-amber-400/50 text-amber-700 dark:text-amber-300 flex items-center justify-center font-bold text-[11px] sm:text-xs shadow-xs font-mono tracking-wider"
+              title={item.title}
             >
-              <Trophy className="w-4 h-4 fill-amber-400/30" />
+              {initials}
             </div>
           )}
         </div>
@@ -330,9 +333,16 @@ function RecognitionCard({
         <img
           src={item.profile_pic}
           alt={item.title}
-          className="w-7 h-7 sm:w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 dark:ring-white/20 shadow-xs bg-slate-100 dark:bg-[#111111] shrink-0"
+          className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover ring-1 ring-slate-200 dark:ring-white/20 shadow-xs bg-slate-100 dark:bg-[#111111] shrink-0"
         />
-      ) : null}
+      ) : (
+        <div
+          className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-[11px] sm:text-xs shrink-0 font-mono tracking-wider"
+          title={item.title}
+        >
+          {initials}
+        </div>
+      )}
 
       {/* 2. Trophy Tag */}
       {isTargetAchiever && (
