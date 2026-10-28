@@ -643,29 +643,35 @@ export default function SlideAgentProductivity({
                                 width: `${Math.min(100, agent.completion_percentage)}%`,
                                 backgroundColor: (() => {
                                   const pct = agent.completion_percentage;
-                                  if (pct <= 25) {
-                                    const ratio = pct / 25;
-                                    const r = Math.round(34 + (255 - 34) * ratio);
-                                    const g = Math.round(197 + (0) * ratio);
-                                    const b = Math.round(94 + (0) * ratio);
+                                  if (pct >= 100) {
+                                    return "#10b981"; // Emerald green for 100%+ target met
+                                  } else if (pct >= 75) {
+                                    // 75% to 100%: Lime to Emerald
+                                    const ratio = (pct - 75) / 25;
+                                    const r = Math.round(132 + (16 - 132) * ratio);
+                                    const g = Math.round(204 + (185 - 204) * ratio);
+                                    const b = Math.round(22 + (129 - 22) * ratio);
                                     return `rgb(${r}, ${g}, ${b})`;
-                                  } else if (pct <= 50) {
-                                    const ratio = (pct - 25) / 25;
-                                    const r = 255;
-                                    const g = Math.round(193 - 53 * ratio);
-                                    const b = 0;
-                                    return `rgb(${r}, ${g}, ${b})`;
-                                  } else if (pct <= 75) {
+                                  } else if (pct >= 50) {
+                                    // 50% to 75%: Amber to Lime
                                     const ratio = (pct - 50) / 25;
-                                    const r = 255;
-                                    const g = Math.round(140 - 140 * ratio);
-                                    const b = 0;
+                                    const r = Math.round(245 + (132 - 245) * ratio);
+                                    const g = Math.round(158 + (204 - 158) * ratio);
+                                    const b = Math.round(11 + (22 - 11) * ratio);
+                                    return `rgb(${r}, ${g}, ${b})`;
+                                  } else if (pct >= 25) {
+                                    // 25% to 50%: Orange to Amber
+                                    const ratio = (pct - 25) / 25;
+                                    const r = Math.round(249 + (245 - 249) * ratio);
+                                    const g = Math.round(115 + (158 - 115) * ratio);
+                                    const b = Math.round(22 + (11 - 22) * ratio);
                                     return `rgb(${r}, ${g}, ${b})`;
                                   } else {
-                                    const ratio = (pct - 75) / 25;
-                                    const r = 255;
-                                    const g = Math.round(140 - 140 * ratio);
-                                    const b = 0;
+                                    // 0% to 25%: Red to Orange
+                                    const ratio = Math.max(0, pct) / 25;
+                                    const r = Math.round(239 + (249 - 239) * ratio);
+                                    const g = Math.round(68 + (115 - 68) * ratio);
+                                    const b = Math.round(68 + (22 - 68) * ratio);
                                     return `rgb(${r}, ${g}, ${b})`;
                                   }
                                 })(),
