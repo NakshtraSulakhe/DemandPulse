@@ -40,6 +40,7 @@ export async function PUT(req: NextRequest) {
     const updated = await updatePlaylist(validated.data, BigInt(1));
     return NextResponse.json({ success: true, message: "Playlist updated successfully", data: updated });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message || "Failed to update playlist" }, { status: 400 });
+    console.error("[api/slides/playlists] PUT error:", err);
+    return NextResponse.json({ success: false, error: err.message || "Failed to update playlist" }, { status: 500 });
   }
 }

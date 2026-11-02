@@ -1,11 +1,13 @@
 const fs = require("fs");
 const path = require("path");
 const { PrismaClient } = require("@prisma/client");
+const { buildUrlFromDbCredentials } = require("./db-credentials");
 
+const dbUrl = buildUrlFromDbCredentials();
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: process.env.SLIDES_DATABASE_URL || "mysql://root:@localhost:3306/demandflow_slides"
+      url: dbUrl
     }
   }
 });
@@ -42,12 +44,12 @@ async function run() {
   }
 
   const tables = await prisma.$queryRawUnsafe("SHOW TABLES");
-  console.log(`\nMigration completed successfully! Total tables in demandflow_slides: ${tables.length}`);
+  console.log(`\nMigration completed successfully! Total tables: ${tables.length}`);
   console.log(JSON.stringify(tables, null, 2));
   await prisma.$disconnect();
 }
 
 run().catch((err) => {
-  console.error("Migration failed:", err);
+  console.error("Migration fatal error:", err);
   process.exit(1);
 });

@@ -5,10 +5,12 @@
 
 const { PrismaClient, Prisma } = require("@prisma/client");
 
+const { buildUrlFromDbCredentials } = require("./db-credentials");
+const dbUrl = buildUrlFromDbCredentials();
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: process.env.SLIDES_DATABASE_URL || "mysql://root:@localhost:3306/demandflow_slides",
+      url: dbUrl,
     },
   },
 });

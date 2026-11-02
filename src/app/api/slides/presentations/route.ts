@@ -44,6 +44,7 @@ export async function PUT(req: NextRequest) {
     const updated = await updatePresentation(id, validated.data, BigInt(1));
     return NextResponse.json({ success: true, message: "Presentation profile updated successfully", data: updated });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message || "Failed to update presentation" }, { status: 400 });
+    console.error("[api/slides/presentations] PUT error:", err);
+    return NextResponse.json({ success: false, error: err.message || "Failed to update presentation" }, { status: 500 });
   }
 }
