@@ -4,10 +4,6 @@
     {
       "path": "/api/analytics/sync?action=sync&isFinal=true",
       "schedule": "0 21 * * *"
-    },
-    {
-      "path": "/api/analytics/sync?action=sync",
-      "schedule": "*/30 * * * *"
     }
   ]
 }
