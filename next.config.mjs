@@ -1,9 +1,3 @@
-const DEFAULT_DB_NAME = "u449458970_demandpulse";
-const DEFAULT_HOST = "auth-db1274.hstgr.io";
-const DEFAULT_USER = "u449458970_demandpulse";
-const DEFAULT_PASS = "TaRajGlobal@2026#";
-const DEFAULT_PORT = "3306";
-
 function cleanEnvVal(raw, isSecret = false) {
   if (raw === undefined || raw === null) return "";
   let val = String(raw).trim();
@@ -29,65 +23,55 @@ function buildUrlFromDbCredentials() {
     process.env.DB_HOST ||
     process.env.MYSQL_HOST ||
     process.env.DATABASE_HOST ||
-    process.env.DBHOST ||
     process.env.DB_HOSTNAME ||
     ""
   );
-
-  if (isVercel && (rawHost === "localhost" || rawHost === "127.0.0.1")) {
-    rawHost = "";
-  }
-  let host = rawHost || DEFAULT_HOST;
 
   let rawPort = cleanEnvVal(
     process.env.DB_PORT ||
     process.env.MYSQL_PORT ||
     process.env.DATABASE_PORT ||
-    process.env.PORT ||
     ""
   );
 
-  let cleanHost = host;
-  let cleanPort = rawPort || DEFAULT_PORT;
+  let cleanHost = rawHost;
+  let cleanPort = rawPort || "3306";
   if (cleanHost.includes(":")) {
     const parts = cleanHost.split(":");
     cleanHost = parts[0];
     cleanPort = parts[1].replace(/[^0-9]/g, "") || cleanPort;
   }
-  cleanPort = cleanPort.replace(/[^0-9]/g, "") || DEFAULT_PORT;
+  cleanPort = cleanPort.replace(/[^0-9]/g, "") || "3306";
 
   const user = cleanEnvVal(
     process.env.DB_USER ||
     process.env.MYSQL_USER ||
     process.env.DATABASE_USER ||
     process.env.DB_USERNAME ||
-    process.env.MYSQLUSER ||
     ""
-  ) || DEFAULT_USER;
+  );
 
   const password = cleanEnvVal(
     process.env.DB_PASSWORD ||
     process.env.MYSQL_PASSWORD ||
     process.env.DATABASE_PASSWORD ||
     process.env.DB_PASS ||
-    process.env.MYSQLPASSWORD ||
-    process.env.DBPASS ||
     "",
     true
-  ) || DEFAULT_PASS;
+  );
 
   let rawDb = cleanEnvVal(
     process.env.DB_NAME ||
     process.env.MYSQL_DATABASE ||
     process.env.DATABASE_NAME ||
     process.env.DB_DATABASE ||
-    process.env.MYSQLDATABASE ||
-    process.env.DBNAME ||
     ""
   );
   let cleanDb = rawDb.replace(/^[:/]+/, "").trim();
-  if (!cleanDb || cleanDb === "3306" || cleanDb === ":3306") {
-    cleanDb = DEFAULT_DB_NAME;
+
+  // If credentials are not present (e.g. in CI build step without DB secrets), provide a safe build placeholder
+  if (!cleanHost || !user || !password || !cleanDb || cleanDb === "3306" || cleanDb === ":3306") {
+    return "mysql://unconfigured_user:unconfigured_pass@127.0.0.1:3306/u449458970_demandpulse?connect_timeout=15";
   }
 
   const encodedUser = encodeURIComponent(user);
