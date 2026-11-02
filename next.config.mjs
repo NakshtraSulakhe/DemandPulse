@@ -1,6 +1,17 @@
 function setupDatabaseEnv() {
-  if (process.env.SLIDES_DATABASE_URL && process.env.SLIDES_DATABASE_URL.trim() !== "") {
-    process.env.SLIDES_DATABASE_URL = process.env.SLIDES_DATABASE_URL.trim().replace(/\/(:[0-9]+)(\/|$)/, "$1$2");
+  let url = process.env.SLIDES_DATABASE_URL?.trim();
+  const isVercel = Boolean(process.env.VERCEL || process.env.NEXT_PUBLIC_VERCEL_ENV);
+  if (isVercel && url && (url.includes("localhost") || url.includes("127.0.0.1"))) {
+    url = undefined;
+  }
+
+  if (url) {
+    url = url.replace(/\/(:[0-9]+)(\/|$)/, "$1$2");
+    if (!url.includes("connection_limit=")) {
+      const sep = url.includes("?") ? "&" : "?";
+      url = `${url}${sep}connection_limit=1&pool_timeout=10&connect_timeout=15`;
+    }
+    process.env.SLIDES_DATABASE_URL = url;
     return;
   }
   const host = process.env.DB_HOST;

@@ -15,9 +15,49 @@ import {
   getDbSlide5,
 } from "@/lib/slides/db-slide-reader";
 import { getShiftBusinessDate } from "@/lib/shift/engine";
+import { runAnalyticsSync } from "@/lib/sync/sync-engine";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+/**
+ * Normalizes input date strings (YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY) into canonical YYYY-MM-DD
+ */
+function normalizeDateParam(raw?: string | null): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+
+  // Case 1: Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Case 2: DD-MM-YYYY or DD/MM/YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, "0");
+    const month = dmyMatch[2].padStart(2, "0");
+    const year = dmyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // Case 3: YYYY/MM/DD
+  const ymdMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, "0");
+    const day = ymdMatch[3].padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(trimmed);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return undefined;
+}
 
 export async function GET(
   req: NextRequest,
@@ -25,10 +65,11 @@ export async function GET(
 ) {
   const slide = params.slide.toLowerCase();
   const searchParams = req.nextUrl.searchParams;
-  const dateParam = searchParams.get("date") || undefined;
+  const rawDate = searchParams.get("date");
+  const dateParam = normalizeDateParam(rawDate);
   const currentShiftDate = getShiftBusinessDate();
   const targetDate = dateParam || currentShiftDate;
-  const isHistoricalDate = dateParam && dateParam < currentShiftDate;
+  const isHistoricalDate = Boolean(dateParam && dateParam < currentShiftDate);
   const forceLive = searchParams.get("force_live") === "true";
 
   try {
@@ -59,15 +100,24 @@ export async function GET(
           }
         }
 
-        // Live shift query: Fetch from CRM with automatic sync & fallback
+        // Query CRM API for slide 1 (live shift or backdated date missing from database)
         const crmResult = await getCrmSlide1(targetDate);
 
         if (crmResult.success && crmResult.data) {
+          // Asynchronously persist to MySQL so this date is stored in the database!
+          runAnalyticsSync(targetDate, {
+            force: false,
+            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
+            isFinal: isHistoricalDate,
+          }).catch((syncErr) => {
+            console.warn(`[auto-persist] Failed to persist Slide 1 for ${targetDate}:`, syncErr?.message || syncErr);
+          });
+
           return NextResponse.json(crmResult, {
             status: 200,
             headers: {
               "Cache-Control": "no-store, no-cache, must-revalidate",
-              "X-Data-Source": "live-crm-api",
+              "X-Data-Source": isHistoricalDate ? "crm-api-backfill" : "live-crm-api",
             },
           });
         }
@@ -134,11 +184,20 @@ export async function GET(
         const crmResult = await getCrmSlide2(targetDate, page, limit, dataset);
 
         if (crmResult.success && crmResult.data && dataset !== "example") {
+          // Asynchronously persist to MySQL so this date is stored in the database!
+          runAnalyticsSync(targetDate, {
+            force: false,
+            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
+            isFinal: isHistoricalDate,
+          }).catch((syncErr) => {
+            console.warn(`[auto-persist] Failed to persist Slide 2 for ${targetDate}:`, syncErr?.message || syncErr);
+          });
+
           return NextResponse.json(crmResult, {
             status: 200,
             headers: {
               "Cache-Control": "no-store, no-cache, must-revalidate",
-              "X-Data-Source": "live-crm-api",
+              "X-Data-Source": isHistoricalDate ? "crm-api-backfill" : "live-crm-api",
             },
           });
         }
@@ -205,11 +264,19 @@ export async function GET(
         const crmResult = await getCrmSlide3(targetDate, interval, shiftStart, shiftEnd);
 
         if (crmResult.success && crmResult.data) {
+          runAnalyticsSync(targetDate, {
+            force: false,
+            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
+            isFinal: isHistoricalDate,
+          }).catch((syncErr) => {
+            console.warn(`[auto-persist] Failed to persist Slide 3 for ${targetDate}:`, syncErr?.message || syncErr);
+          });
+
           return NextResponse.json(crmResult, {
             status: 200,
             headers: {
               "Cache-Control": "no-store, no-cache, must-revalidate",
-              "X-Data-Source": "live-crm-api",
+              "X-Data-Source": isHistoricalDate ? "crm-api-backfill" : "live-crm-api",
             },
           });
         }
@@ -276,11 +343,19 @@ export async function GET(
         const crmResult = await getCrmSlide4(targetDate, interval, shiftStart, shiftEnd);
 
         if (crmResult.success && crmResult.data) {
+          runAnalyticsSync(targetDate, {
+            force: false,
+            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
+            isFinal: isHistoricalDate,
+          }).catch((syncErr) => {
+            console.warn(`[auto-persist] Failed to persist Slide 4 for ${targetDate}:`, syncErr?.message || syncErr);
+          });
+
           return NextResponse.json(crmResult, {
             status: 200,
             headers: {
               "Cache-Control": "no-store, no-cache, must-revalidate",
-              "X-Data-Source": "live-crm-api",
+              "X-Data-Source": isHistoricalDate ? "crm-api-backfill" : "live-crm-api",
             },
           });
         }
@@ -346,11 +421,19 @@ export async function GET(
         const crmResult = await getCrmSlide5(targetDate, shiftStart, shiftEnd);
 
         if (crmResult.success && crmResult.data) {
+          runAnalyticsSync(targetDate, {
+            force: false,
+            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
+            isFinal: isHistoricalDate,
+          }).catch((syncErr) => {
+            console.warn(`[auto-persist] Failed to persist Slide 5 for ${targetDate}:`, syncErr?.message || syncErr);
+          });
+
           return NextResponse.json(crmResult, {
             status: 200,
             headers: {
               "Cache-Control": "no-store, no-cache, must-revalidate",
-              "X-Data-Source": "live-crm-api",
+              "X-Data-Source": isHistoricalDate ? "crm-api-backfill" : "live-crm-api",
             },
           });
         }
@@ -445,8 +528,14 @@ export async function GET(
     }
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[analytics-route] Uncaught error in GET /api/analytics/${slide}:`, err);
     return NextResponse.json(
-      { error: "Internal analytics server error", details: errorMsg },
+      {
+        success: false,
+        error: "Internal analytics server error",
+        details: errorMsg,
+        timestamp: new Date().toISOString(),
+      },
       { status: 500 }
     );
   }

@@ -85,74 +85,80 @@ export async function upsertCampaignDailySnapshots(
 
   const workDate = new Date(workDateStr);
 
-  await prisma.$transaction(async (tx) => {
-    for (const c of campaigns) {
-      const crmCampaignId = BigInt(c.crm_campaign_id);
-      const factor = c.campaign_point_factor ?? 1.0;
-      const metrics = calculateCampaignSnapshotMetrics(
-        c.daily_target_leads,
-        c.qualified_leads,
-        factor
-      );
+  await prisma.$transaction(
+    async (tx) => {
+      for (const c of campaigns) {
+        const crmCampaignId = BigInt(c.crm_campaign_id);
+        const factor = c.campaign_point_factor ?? 1.0;
+        const metrics = calculateCampaignSnapshotMetrics(
+          c.daily_target_leads,
+          c.qualified_leads,
+          factor
+        );
 
-      const sourceUpdatedAt = c.source_updated_at
-        ? new Date(c.source_updated_at)
-        : null;
+        const sourceUpdatedAt = c.source_updated_at
+          ? new Date(c.source_updated_at)
+          : null;
 
-      await tx.campaignDailySnapshot.upsert({
-        where: {
-          crmCampaignId_workDate_snapshotVersion: {
-            crmCampaignId,
-            workDate,
-            snapshotVersion,
+        await tx.campaignDailySnapshot.upsert({
+          where: {
+            crmCampaignId_workDate_snapshotVersion: {
+              crmCampaignId,
+              workDate,
+              snapshotVersion,
+            },
           },
-        },
-        update: {
-          crmCampaignCode: c.crm_campaign_code || null,
-          campaignNameSnapshot: c.campaign_name,
-          clientCodeSnapshot: c.client_code || null,
-          campaignTypeSnapshot: c.campaign_type || "General",
-          monthlyAllocationSnapshot: c.monthly_allocation || 0,
-          dailyTargetLeads: c.daily_target_leads,
-          campaignPointFactor: new Prisma.Decimal(factor),
-          dailyTargetPoints: new Prisma.Decimal(metrics.targetPoints),
-          generatedLeads: c.generated_leads,
-          qualifiedLeads: c.qualified_leads,
-          disqualifiedLeads: c.disqualified_leads || 0,
-          pendingQaLeads: c.pending_qa_leads || 0,
-          remainingTargetLeads: metrics.remaining,
-          completionPercentage: new Prisma.Decimal(metrics.completionPct),
-          targetAchieved: metrics.targetAchieved,
-          sourceUpdatedAt,
-          syncedAt: new Date(),
-          isFinal,
-        },
-        create: {
-          crmCampaignId,
-          crmCampaignCode: c.crm_campaign_code || null,
-          campaignNameSnapshot: c.campaign_name,
-          clientCodeSnapshot: c.client_code || null,
-          campaignTypeSnapshot: c.campaign_type || "General",
-          workDate,
-          monthlyAllocationSnapshot: c.monthly_allocation || 0,
-          dailyTargetLeads: c.daily_target_leads,
-          campaignPointFactor: new Prisma.Decimal(factor),
-          dailyTargetPoints: new Prisma.Decimal(metrics.targetPoints),
-          generatedLeads: c.generated_leads,
-          qualifiedLeads: c.qualified_leads,
-          disqualifiedLeads: c.disqualified_leads || 0,
-          pendingQaLeads: c.pending_qa_leads || 0,
-          remainingTargetLeads: metrics.remaining,
-          completionPercentage: new Prisma.Decimal(metrics.completionPct),
-          targetAchieved: metrics.targetAchieved,
-          sourceUpdatedAt,
-          syncedAt: new Date(),
-          snapshotVersion,
-          isFinal,
-        },
-      });
+          update: {
+            crmCampaignCode: c.crm_campaign_code || null,
+            campaignNameSnapshot: c.campaign_name,
+            clientCodeSnapshot: c.client_code || null,
+            campaignTypeSnapshot: c.campaign_type || "General",
+            monthlyAllocationSnapshot: c.monthly_allocation || 0,
+            dailyTargetLeads: c.daily_target_leads,
+            campaignPointFactor: new Prisma.Decimal(factor),
+            dailyTargetPoints: new Prisma.Decimal(metrics.targetPoints),
+            generatedLeads: c.generated_leads,
+            qualifiedLeads: c.qualified_leads,
+            disqualifiedLeads: c.disqualified_leads || 0,
+            pendingQaLeads: c.pending_qa_leads || 0,
+            remainingTargetLeads: metrics.remaining,
+            completionPercentage: new Prisma.Decimal(metrics.completionPct),
+            targetAchieved: metrics.targetAchieved,
+            sourceUpdatedAt,
+            syncedAt: new Date(),
+            isFinal,
+          },
+          create: {
+            crmCampaignId,
+            crmCampaignCode: c.crm_campaign_code || null,
+            campaignNameSnapshot: c.campaign_name,
+            clientCodeSnapshot: c.client_code || null,
+            campaignTypeSnapshot: c.campaign_type || "General",
+            workDate,
+            monthlyAllocationSnapshot: c.monthly_allocation || 0,
+            dailyTargetLeads: c.daily_target_leads,
+            campaignPointFactor: new Prisma.Decimal(factor),
+            dailyTargetPoints: new Prisma.Decimal(metrics.targetPoints),
+            generatedLeads: c.generated_leads,
+            qualifiedLeads: c.qualified_leads,
+            disqualifiedLeads: c.disqualified_leads || 0,
+            pendingQaLeads: c.pending_qa_leads || 0,
+            remainingTargetLeads: metrics.remaining,
+            completionPercentage: new Prisma.Decimal(metrics.completionPct),
+            targetAchieved: metrics.targetAchieved,
+            sourceUpdatedAt,
+            syncedAt: new Date(),
+            snapshotVersion,
+            isFinal,
+          },
+        });
+      }
+    },
+    {
+      maxWait: 15000,
+      timeout: 45000,
     }
-  });
+  );
 
   return { success: true, count: campaigns.length };
 }

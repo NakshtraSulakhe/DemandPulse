@@ -10,7 +10,12 @@
  * 5. Resilient error handling: Never converts missing metrics or CRM downtime into zero counts.
  */
 
-import { getShiftBusinessDate, getShiftWindowForBusinessDate, getCurrentShiftState } from "@/lib/shift/engine";
+import {
+  getShiftBusinessDate,
+  getShiftWindowForBusinessDate,
+  getCurrentShiftState,
+  normalizeDateString,
+} from "@/lib/shift/engine";
 import {
   getCrmSlide1,
   getCrmSlide2,
@@ -67,7 +72,8 @@ export async function runAnalyticsSync(
   }
 ): Promise<SyncEngineResult> {
   const startTime = Date.now();
-  const workDate = targetDate || getShiftBusinessDate();
+  const normalizedTarget = normalizeDateString(targetDate);
+  const workDate = normalizedTarget || getShiftBusinessDate();
   const jobName = options?.jobName || "demandflow_analytics_sync";
 
   // Prevent overlapping sync jobs unless forced
@@ -92,13 +98,17 @@ export async function runAnalyticsSync(
   let hasMockFallback = false;
 
   try {
-    // 1. Record sync start in MySQL
-    const runInfo = await startSyncRun({
-      job_name: jobName,
-      work_date: workDate,
-      source_watermark: `sync_${Date.now()}`,
-    });
-    runId = runInfo.runId;
+    // 1. Record sync start in MySQL (defensively - audit failure won't halt sync)
+    try {
+      const runInfo = await startSyncRun({
+        job_name: jobName,
+        work_date: workDate,
+        source_watermark: `sync_${Date.now()}`,
+      });
+      runId = runInfo.runId;
+    } catch (auditErr: any) {
+      console.warn("[SyncEngine] Failed to record startSyncRun in database:", auditErr?.message || auditErr);
+    }
 
     const shiftWindow = getShiftWindowForBusinessDate(workDate);
     const shiftState = getCurrentShiftState();
@@ -471,7 +481,7 @@ export async function runAnalyticsSync(
         processed_record_count: processedRecords,
         failed_record_count: failedRecords,
         error_summary: errorSummary,
-      });
+      }).catch((e) => console.warn("[SyncEngine] Failed to completeSyncRun in database:", e?.message || e));
     }
 
     lastSyncCompletedAt = new Date();

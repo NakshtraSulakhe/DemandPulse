@@ -126,84 +126,90 @@ export async function upsertAgentDailySnapshots(
 
   const workDate = new Date(workDateStr);
 
-  await prisma.$transaction(async (tx) => {
-    for (const a of agents) {
-      const crmAgentId = BigInt(a.crm_agent_id);
-      const targetPts = Math.max(0, a.daily_target_points);
-      const achievedPts = Math.max(0, a.achieved_points);
-      const remainingPts = Math.max(0, targetPts - achievedPts);
-      const completionPct =
-        targetPts > 0
-          ? Math.round((achievedPts / targetPts) * 100 * 1000) / 1000
-          : 0;
+  await prisma.$transaction(
+    async (tx) => {
+      for (const a of agents) {
+        const crmAgentId = BigInt(a.crm_agent_id);
+        const targetPts = Math.max(0, a.daily_target_points);
+        const achievedPts = Math.max(0, a.achieved_points);
+        const remainingPts = Math.max(0, targetPts - achievedPts);
+        const completionPct =
+          targetPts > 0
+            ? Math.round((achievedPts / targetPts) * 100 * 1000) / 1000
+            : 0;
 
-      const elapsed = a.elapsed_work_minutes ?? 0;
-      const paceInfo = calculateAgentPace(targetPts, achievedPts, elapsed, 465);
+        const elapsed = a.elapsed_work_minutes ?? 0;
+        const paceInfo = calculateAgentPace(targetPts, achievedPts, elapsed, 465);
 
-      const sourceUpdatedAt = a.source_updated_at
-        ? new Date(a.source_updated_at)
-        : null;
+        const sourceUpdatedAt = a.source_updated_at
+          ? new Date(a.source_updated_at)
+          : null;
 
-      await tx.agentDailySnapshot.upsert({
-        where: {
-          crmAgentId_workDate_snapshotVersion: {
-            crmAgentId,
-            workDate,
-            snapshotVersion,
+        await tx.agentDailySnapshot.upsert({
+          where: {
+            crmAgentId_workDate_snapshotVersion: {
+              crmAgentId,
+              workDate,
+              snapshotVersion,
+            },
           },
-        },
-        update: {
-          agentNameSnapshot: a.agent_name,
-          dailyTargetPoints: new Prisma.Decimal(targetPts),
-          achievedPoints: new Prisma.Decimal(achievedPts),
-          qualifiedLeads: a.qualified_leads,
-          disqualifiedLeads: a.disqualified_leads || 0,
-          generatedLeads: a.generated_leads,
-          pendingQaLeads: a.pending_qa_leads || 0,
-          remainingTargetPoints: new Prisma.Decimal(remainingPts),
-          targetCompletionPct: new Prisma.Decimal(completionPct),
-          attendanceStatusSnapshot: a.attendance_status || "Present",
-          effectiveWorkMinutes: 465,
-          elapsedWorkMinutes: elapsed,
-          expectedPointsAtSnapshot: new Prisma.Decimal(paceInfo.expectedPoints),
-          productivityPacePct:
-            paceInfo.productivityPacePct !== null
-              ? new Prisma.Decimal(paceInfo.productivityPacePct)
-              : null,
-          paceStatus: paceInfo.paceStatus,
-          sourceUpdatedAt,
-          syncedAt: new Date(),
-          isFinal,
-        },
-        create: {
-          crmAgentId,
-          agentNameSnapshot: a.agent_name,
-          workDate,
-          dailyTargetPoints: new Prisma.Decimal(targetPts),
-          achievedPoints: new Prisma.Decimal(achievedPts),
-          qualifiedLeads: a.qualified_leads,
-          disqualifiedLeads: a.disqualified_leads || 0,
-          generatedLeads: a.generated_leads,
-          pendingQaLeads: a.pending_qa_leads || 0,
-          remainingTargetPoints: new Prisma.Decimal(remainingPts),
-          targetCompletionPct: new Prisma.Decimal(completionPct),
-          attendanceStatusSnapshot: a.attendance_status || "Present",
-          effectiveWorkMinutes: 465,
-          elapsedWorkMinutes: elapsed,
-          expectedPointsAtSnapshot: new Prisma.Decimal(paceInfo.expectedPoints),
-          productivityPacePct:
-            paceInfo.productivityPacePct !== null
-              ? new Prisma.Decimal(paceInfo.productivityPacePct)
-              : null,
-          paceStatus: paceInfo.paceStatus,
-          sourceUpdatedAt,
-          syncedAt: new Date(),
-          snapshotVersion,
-          isFinal,
-        },
-      });
+          update: {
+            agentNameSnapshot: a.agent_name,
+            dailyTargetPoints: new Prisma.Decimal(targetPts),
+            achievedPoints: new Prisma.Decimal(achievedPts),
+            qualifiedLeads: a.qualified_leads,
+            disqualifiedLeads: a.disqualified_leads || 0,
+            generatedLeads: a.generated_leads,
+            pendingQaLeads: a.pending_qa_leads || 0,
+            remainingTargetPoints: new Prisma.Decimal(remainingPts),
+            targetCompletionPct: new Prisma.Decimal(completionPct),
+            attendanceStatusSnapshot: a.attendance_status || "Present",
+            effectiveWorkMinutes: 465,
+            elapsedWorkMinutes: elapsed,
+            expectedPointsAtSnapshot: new Prisma.Decimal(paceInfo.expectedPoints),
+            productivityPacePct:
+              paceInfo.productivityPacePct !== null
+                ? new Prisma.Decimal(paceInfo.productivityPacePct)
+                : null,
+            paceStatus: paceInfo.paceStatus,
+            sourceUpdatedAt,
+            syncedAt: new Date(),
+            isFinal,
+          },
+          create: {
+            crmAgentId,
+            agentNameSnapshot: a.agent_name,
+            workDate,
+            dailyTargetPoints: new Prisma.Decimal(targetPts),
+            achievedPoints: new Prisma.Decimal(achievedPts),
+            qualifiedLeads: a.qualified_leads,
+            disqualifiedLeads: a.disqualified_leads || 0,
+            generatedLeads: a.generated_leads,
+            pendingQaLeads: a.pending_qa_leads || 0,
+            remainingTargetPoints: new Prisma.Decimal(remainingPts),
+            targetCompletionPct: new Prisma.Decimal(completionPct),
+            attendanceStatusSnapshot: a.attendance_status || "Present",
+            effectiveWorkMinutes: 465,
+            elapsedWorkMinutes: elapsed,
+            expectedPointsAtSnapshot: new Prisma.Decimal(paceInfo.expectedPoints),
+            productivityPacePct:
+              paceInfo.productivityPacePct !== null
+                ? new Prisma.Decimal(paceInfo.productivityPacePct)
+                : null,
+            paceStatus: paceInfo.paceStatus,
+            sourceUpdatedAt,
+            syncedAt: new Date(),
+            snapshotVersion,
+            isFinal,
+          },
+        });
+      }
+    },
+    {
+      maxWait: 15000,
+      timeout: 45000,
     }
-  });
+  );
 
   return { success: true, count: agents.length };
 }
@@ -283,38 +289,48 @@ export async function upsertAgentIntervalMetrics(
 
   const workDate = new Date(workDateStr);
 
-  await prisma.$transaction(async (tx) => {
-    for (const item of intervals) {
-      const crmAgentId = BigInt(item.crm_agent_id);
-      const intervalStartAt = new Date(item.interval_start_at);
-      const intervalEndAt = new Date(item.interval_end_at);
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < intervals.length; i += BATCH_SIZE) {
+    const chunk = intervals.slice(i, i + BATCH_SIZE);
+    await prisma.$transaction(
+      async (tx) => {
+        for (const item of chunk) {
+          const crmAgentId = BigInt(item.crm_agent_id);
+          const intervalStartAt = new Date(item.interval_start_at);
+          const intervalEndAt = new Date(item.interval_end_at);
 
-      await tx.agentIntervalMetric.upsert({
-        where: {
-          crmAgentId_intervalStartAt: {
-            crmAgentId,
-            intervalStartAt,
-          },
-        },
-        update: {
-          agentNameSnapshot: item.agent_name || null,
-          workDate,
-          intervalEndAt,
-          generatedLeads: item.generated_leads,
-          syncedAt: new Date(),
-        },
-        create: {
-          crmAgentId,
-          agentNameSnapshot: item.agent_name || null,
-          workDate,
-          intervalStartAt,
-          intervalEndAt,
-          generatedLeads: item.generated_leads,
-          syncedAt: new Date(),
-        },
-      });
-    }
-  });
+          await tx.agentIntervalMetric.upsert({
+            where: {
+              crmAgentId_intervalStartAt: {
+                crmAgentId,
+                intervalStartAt,
+              },
+            },
+            update: {
+              agentNameSnapshot: item.agent_name || null,
+              workDate,
+              intervalEndAt,
+              generatedLeads: item.generated_leads,
+              syncedAt: new Date(),
+            },
+            create: {
+              crmAgentId,
+              agentNameSnapshot: item.agent_name || null,
+              workDate,
+              intervalStartAt,
+              intervalEndAt,
+              generatedLeads: item.generated_leads,
+              syncedAt: new Date(),
+            },
+          });
+        }
+      },
+      {
+        maxWait: 15000,
+        timeout: 45000,
+      }
+    );
+  }
 
   return { success: true, count: intervals.length };
 }

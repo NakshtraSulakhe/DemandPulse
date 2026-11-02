@@ -40,7 +40,7 @@ export function useSlide1(date?: string, customPollInterval?: number | false) {
       const res = await fetch(`/api/analytics/slide1${q}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
-        throw new Error(json.error || `CRM API error ${res.status}`);
+        throw new Error(json.details ? `${json.error}: ${json.details}` : (json.error || `CRM API error ${res.status}`));
       }
       return json;
     },
@@ -77,7 +77,7 @@ export function useSlide2(
       const res = await fetch(`/api/analytics/slide2?${params.toString()}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
-        throw new Error(json.error || `CRM API error ${res.status}`);
+        throw new Error(json.details ? `${json.error}: ${json.details}` : (json.error || `CRM API error ${res.status}`));
       }
       return json;
     },
@@ -111,7 +111,7 @@ export function useSlide3(
       const res = await fetch(`/api/analytics/slide3?${params.toString()}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
-        throw new Error(json.error || `CRM API error ${res.status}`);
+        throw new Error(json.details ? `${json.error}: ${json.details}` : (json.error || `CRM API error ${res.status}`));
       }
       return json;
     },
@@ -145,7 +145,7 @@ export function useSlide4(
       const res = await fetch(`/api/analytics/slide4?${params.toString()}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
-        throw new Error(json.error || `CRM API error ${res.status}`);
+        throw new Error(json.details ? `${json.error}: ${json.details}` : (json.error || `CRM API error ${res.status}`));
       }
       return json;
     },
@@ -172,7 +172,7 @@ export function useSlide5(date?: string, customPollInterval?: number | false) {
       const res = await fetch(`/api/analytics/slide5${q}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
-        throw new Error(json.error || `CRM API error ${res.status}`);
+        throw new Error(json.details ? `${json.error}: ${json.details}` : (json.error || `CRM API error ${res.status}`));
       }
       return json;
     },
@@ -202,7 +202,7 @@ export function useCampaignTargets(date?: string, status: string = "Live", custo
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok || (!json.success && !json.ok)) {
-        throw new Error(json.error || `CRM API error ${res.status}`);
+        throw new Error(json.details ? `${json.error}: ${json.details}` : (json.error || `CRM API error ${res.status}`));
       }
       if (json.data && Array.isArray(json.data.campaigns)) {
         return json;

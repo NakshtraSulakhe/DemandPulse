@@ -55,45 +55,51 @@ export async function upsertQaDailySnapshots(
 
   const workDate = new Date(workDateStr);
 
-  await prisma.$transaction(async (tx) => {
-    for (const a of analysts) {
-      const crmQaAgentId = BigInt(a.crm_qa_agent_id);
-      const uniqueAudits = a.unique_leads_audited ?? a.total_audits;
+  await prisma.$transaction(
+    async (tx) => {
+      for (const a of analysts) {
+        const crmQaAgentId = BigInt(a.crm_qa_agent_id);
+        const uniqueAudits = a.unique_leads_audited ?? a.total_audits;
 
-      await tx.qaDailySnapshot.upsert({
-        where: {
-          crmQaAgentId_workDate_snapshotVersion: {
+        await tx.qaDailySnapshot.upsert({
+          where: {
+            crmQaAgentId_workDate_snapshotVersion: {
+              crmQaAgentId,
+              workDate,
+              snapshotVersion,
+            },
+          },
+          update: {
+            qaAgentNameSnapshot: a.qa_agent_name || null,
+            totalAudits: a.total_audits,
+            uniqueLeadsAudited: uniqueAudits,
+            qualifiedLeads: a.qualified_leads,
+            disqualifiedLeads: a.disqualified_leads || 0,
+            reworkLeads: a.rework_leads || 0,
+            otherQaStatusCountsJson: a.other_qa_status_counts_json ?? Prisma.DbNull,
+            syncedAt: new Date(),
+          },
+          create: {
             crmQaAgentId,
+            qaAgentNameSnapshot: a.qa_agent_name || null,
             workDate,
+            totalAudits: a.total_audits,
+            uniqueLeadsAudited: uniqueAudits,
+            qualifiedLeads: a.qualified_leads,
+            disqualifiedLeads: a.disqualified_leads || 0,
+            reworkLeads: a.rework_leads || 0,
+            otherQaStatusCountsJson: a.other_qa_status_counts_json ?? Prisma.DbNull,
+            syncedAt: new Date(),
             snapshotVersion,
           },
-        },
-        update: {
-          qaAgentNameSnapshot: a.qa_agent_name || null,
-          totalAudits: a.total_audits,
-          uniqueLeadsAudited: uniqueAudits,
-          qualifiedLeads: a.qualified_leads,
-          disqualifiedLeads: a.disqualified_leads || 0,
-          reworkLeads: a.rework_leads || 0,
-          otherQaStatusCountsJson: a.other_qa_status_counts_json ?? Prisma.DbNull,
-          syncedAt: new Date(),
-        },
-        create: {
-          crmQaAgentId,
-          qaAgentNameSnapshot: a.qa_agent_name || null,
-          workDate,
-          totalAudits: a.total_audits,
-          uniqueLeadsAudited: uniqueAudits,
-          qualifiedLeads: a.qualified_leads,
-          disqualifiedLeads: a.disqualified_leads || 0,
-          reworkLeads: a.rework_leads || 0,
-          otherQaStatusCountsJson: a.other_qa_status_counts_json ?? Prisma.DbNull,
-          syncedAt: new Date(),
-          snapshotVersion,
-        },
-      });
+        });
+      }
+    },
+    {
+      maxWait: 15000,
+      timeout: 45000,
     }
-  });
+  );
 
   return { success: true, count: analysts.length };
 }
@@ -153,45 +159,55 @@ export async function upsertQaIntervalMetrics(
 
   const workDate = new Date(workDateStr);
 
-  await prisma.$transaction(async (tx) => {
-    for (const item of intervals) {
-      const crmQaAgentId = BigInt(item.crm_qa_agent_id);
-      const intervalStartAt = new Date(item.interval_start_at);
-      const intervalEndAt = new Date(item.interval_end_at);
-      const uniqueQualified = item.unique_leads_qualified ?? item.qualified_events;
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < intervals.length; i += BATCH_SIZE) {
+    const chunk = intervals.slice(i, i + BATCH_SIZE);
+    await prisma.$transaction(
+      async (tx) => {
+        for (const item of chunk) {
+          const crmQaAgentId = BigInt(item.crm_qa_agent_id);
+          const intervalStartAt = new Date(item.interval_start_at);
+          const intervalEndAt = new Date(item.interval_end_at);
+          const uniqueQualified = item.unique_leads_qualified ?? item.qualified_events;
 
-      await tx.qaIntervalMetric.upsert({
-        where: {
-          crmQaAgentId_intervalStartAt: {
-            crmQaAgentId,
-            intervalStartAt,
-          },
-        },
-        update: {
-          qaAgentNameSnapshot: item.qa_agent_name || null,
-          workDate,
-          intervalEndAt,
-          auditedEvents: item.audited_events,
-          qualifiedEvents: item.qualified_events,
-          disqualifiedEvents: item.disqualified_events || 0,
-          uniqueLeadsQualified: uniqueQualified,
-          syncedAt: new Date(),
-        },
-        create: {
-          crmQaAgentId,
-          qaAgentNameSnapshot: item.qa_agent_name || null,
-          workDate,
-          intervalStartAt,
-          intervalEndAt,
-          auditedEvents: item.audited_events,
-          qualifiedEvents: item.qualified_events,
-          disqualifiedEvents: item.disqualified_events || 0,
-          uniqueLeadsQualified: uniqueQualified,
-          syncedAt: new Date(),
-        },
-      });
-    }
-  });
+          await tx.qaIntervalMetric.upsert({
+            where: {
+              crmQaAgentId_intervalStartAt: {
+                crmQaAgentId,
+                intervalStartAt,
+              },
+            },
+            update: {
+              qaAgentNameSnapshot: item.qa_agent_name || null,
+              workDate,
+              intervalEndAt,
+              auditedEvents: item.audited_events,
+              qualifiedEvents: item.qualified_events,
+              disqualifiedEvents: item.disqualified_events || 0,
+              uniqueLeadsQualified: uniqueQualified,
+              syncedAt: new Date(),
+            },
+            create: {
+              crmQaAgentId,
+              qaAgentNameSnapshot: item.qa_agent_name || null,
+              workDate,
+              intervalStartAt,
+              intervalEndAt,
+              auditedEvents: item.audited_events,
+              qualifiedEvents: item.qualified_events,
+              disqualifiedEvents: item.disqualified_events || 0,
+              uniqueLeadsQualified: uniqueQualified,
+              syncedAt: new Date(),
+            },
+          });
+        }
+      },
+      {
+        maxWait: 15000,
+        timeout: 45000,
+      }
+    );
+  }
 
   return { success: true, count: intervals.length };
 }

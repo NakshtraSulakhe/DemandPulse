@@ -3,9 +3,23 @@ import { PrismaClient } from "@prisma/client";
 function resolveDatabaseUrl(): string | undefined {
   let url = process.env.SLIDES_DATABASE_URL?.trim();
 
+  // If running on Vercel or in production, ignore accidental localhost/127.0.0.1 URLs
+  const isVercel = Boolean(process.env.VERCEL || process.env.NEXT_PUBLIC_VERCEL_ENV);
+  if (isVercel && url && (url.includes("localhost") || url.includes("127.0.0.1"))) {
+    console.warn("[db.ts] Discarding localhost database URL in Vercel environment. Looking for DB_HOST credentials.");
+    url = undefined;
+  }
+
   if (url) {
     // Auto-fix accidental typo: mysql://user:pass@host/:3306/db -> mysql://user:pass@host:3306/db
     url = url.replace(/\/(:[0-9]+)(\/|$)/, "$1$2");
+    
+    // Ensure serverless connection pooling parameters exist on the URL to prevent connection exhaustion
+    if (!url.includes("connection_limit=")) {
+      const sep = url.includes("?") ? "&" : "?";
+      url = `${url}${sep}connection_limit=1&pool_timeout=10&connect_timeout=15`;
+    }
+
     process.env.SLIDES_DATABASE_URL = url;
     return url;
   }
@@ -50,6 +64,13 @@ export const prisma =
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
+}
+
+/**
+ * Returns true if valid database connection settings are configured in environment
+ */
+export function isDatabaseConfigured(): boolean {
+  return Boolean(activeDbUrl);
 }
 
 /**

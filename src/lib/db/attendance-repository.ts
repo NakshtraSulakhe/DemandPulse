@@ -115,44 +115,50 @@ export async function upsertAgentAttendanceSnapshots(
 
   const workDate = new Date(workDateStr);
 
-  await prisma.$transaction(async (tx) => {
-    for (const a of records) {
-      const crmAgentId = BigInt(a.crm_agent_id);
-      const punchInAt = a.punch_in_at ? new Date(a.punch_in_at) : null;
-      const punchOutAt = a.punch_out_at ? new Date(a.punch_out_at) : null;
+  await prisma.$transaction(
+    async (tx) => {
+      for (const a of records) {
+        const crmAgentId = BigInt(a.crm_agent_id);
+        const punchInAt = a.punch_in_at ? new Date(a.punch_in_at) : null;
+        const punchOutAt = a.punch_out_at ? new Date(a.punch_out_at) : null;
 
-      await tx.agentAttendanceSnapshot.upsert({
-        where: {
-          crmAgentId_workDate_snapshotVersion: {
+        await tx.agentAttendanceSnapshot.upsert({
+          where: {
+            crmAgentId_workDate_snapshotVersion: {
+              crmAgentId,
+              workDate,
+              snapshotVersion,
+            },
+          },
+          update: {
+            agentNameSnapshot: a.agent_name || null,
+            attendanceStatus: a.attendance_status,
+            punchInAt,
+            punchOutAt,
+            lateMinutes: a.late_minutes || 0,
+            effectiveWorkMinutes: a.effective_work_minutes || 465,
+            syncedAt: new Date(),
+          },
+          create: {
             crmAgentId,
+            agentNameSnapshot: a.agent_name || null,
             workDate,
+            attendanceStatus: a.attendance_status,
+            punchInAt,
+            punchOutAt,
+            lateMinutes: a.late_minutes || 0,
+            effectiveWorkMinutes: a.effective_work_minutes || 465,
+            syncedAt: new Date(),
             snapshotVersion,
           },
-        },
-        update: {
-          agentNameSnapshot: a.agent_name || null,
-          attendanceStatus: a.attendance_status,
-          punchInAt,
-          punchOutAt,
-          lateMinutes: a.late_minutes || 0,
-          effectiveWorkMinutes: a.effective_work_minutes || 465,
-          syncedAt: new Date(),
-        },
-        create: {
-          crmAgentId,
-          agentNameSnapshot: a.agent_name || null,
-          workDate,
-          attendanceStatus: a.attendance_status,
-          punchInAt,
-          punchOutAt,
-          lateMinutes: a.late_minutes || 0,
-          effectiveWorkMinutes: a.effective_work_minutes || 465,
-          syncedAt: new Date(),
-          snapshotVersion,
-        },
-      });
+        });
+      }
+    },
+    {
+      maxWait: 15000,
+      timeout: 45000,
     }
-  });
+  );
 
   return { success: true, count: records.length };
 }

@@ -58,80 +58,86 @@ export async function upsertIncentiveDailySnapshots(
 
   const workDate = new Date(workDateStr);
 
-  await prisma.$transaction(async (tx) => {
-    for (const r of records) {
-      const crmAgentId = BigInt(r.crm_agent_id);
-      const crmPayoutId = r.crm_payout_id ? BigInt(r.crm_payout_id) : null;
-      const sourceUpdatedAt = r.source_updated_at ? new Date(r.source_updated_at) : null;
+  await prisma.$transaction(
+    async (tx) => {
+      for (const r of records) {
+        const crmAgentId = BigInt(r.crm_agent_id);
+        const crmPayoutId = r.crm_payout_id ? BigInt(r.crm_payout_id) : null;
+        const sourceUpdatedAt = r.source_updated_at ? new Date(r.source_updated_at) : null;
 
-      // Check existing record to avoid regressing paid amounts
-      const existing = await tx.incentiveDailySnapshot.findUnique({
-        where: {
-          crmAgentId_workDate_snapshotVersion: {
-            crmAgentId,
-            workDate,
-            snapshotVersion,
+        // Check existing record to avoid regressing paid amounts
+        const existing = await tx.incentiveDailySnapshot.findUnique({
+          where: {
+            crmAgentId_workDate_snapshotVersion: {
+              crmAgentId,
+              workDate,
+              snapshotVersion,
+            },
           },
-        },
-      });
+        });
 
-      // If existing was already paid and final, preserve payment status and reference
-      const isAlreadyPaid = existing?.paymentStatus === "paid";
-      const finalPaymentStatus = isAlreadyPaid ? "paid" : (r.payment_status || "unpaid");
-      const finalPaymentRef = isAlreadyPaid
-        ? (existing?.crmPaymentReference || r.crm_payment_reference || null)
-        : (r.crm_payment_reference || null);
+        // If existing was already paid and final, preserve payment status and reference
+        const isAlreadyPaid = existing?.paymentStatus === "paid";
+        const finalPaymentStatus = isAlreadyPaid ? "paid" : (r.payment_status || "unpaid");
+        const finalPaymentRef = isAlreadyPaid
+          ? (existing?.crmPaymentReference || r.crm_payment_reference || null)
+          : (r.crm_payment_reference || null);
 
-      await tx.incentiveDailySnapshot.upsert({
-        where: {
-          crmAgentId_workDate_snapshotVersion: {
-            crmAgentId,
-            workDate,
-            snapshotVersion,
+        await tx.incentiveDailySnapshot.upsert({
+          where: {
+            crmAgentId_workDate_snapshotVersion: {
+              crmAgentId,
+              workDate,
+              snapshotVersion,
+            },
           },
-        },
-        update: {
-          crmPayoutId,
-          agentNameSnapshot: r.agent_name || null,
-          targetPoints: new Prisma.Decimal(r.target_points),
-          achievedPoints: new Prisma.Decimal(r.achieved_points),
-          qualifiedLeads: r.qualified_leads,
-          baseIncentive: new Prisma.Decimal(r.base_incentive),
-          slabIncentive: new Prisma.Decimal(r.slab_incentive),
-          totalIncentive: new Prisma.Decimal(r.total_incentive),
-          eligibilityStatus: r.eligibility_status || "ineligible",
-          approvalStatus: r.approval_status || "pending_approval",
-          paymentStatus: finalPaymentStatus,
-          policyVersionReference: r.policy_version_reference ?? null,
-          crmPaymentReference: finalPaymentRef,
-          sourceUpdatedAt,
-          syncedAt: new Date(),
-          isFinal: isAlreadyPaid ? true : isFinal,
-        },
-        create: {
-          crmPayoutId,
-          crmAgentId,
-          agentNameSnapshot: r.agent_name || null,
-          workDate,
-          targetPoints: new Prisma.Decimal(r.target_points),
-          achievedPoints: new Prisma.Decimal(r.achieved_points),
-          qualifiedLeads: r.qualified_leads,
-          baseIncentive: new Prisma.Decimal(r.base_incentive),
-          slabIncentive: new Prisma.Decimal(r.slab_incentive),
-          totalIncentive: new Prisma.Decimal(r.total_incentive),
-          eligibilityStatus: r.eligibility_status || "ineligible",
-          approvalStatus: r.approval_status || "pending_approval",
-          paymentStatus: finalPaymentStatus,
-          policyVersionReference: r.policy_version_reference ?? null,
-          crmPaymentReference: finalPaymentRef,
-          sourceUpdatedAt,
-          syncedAt: new Date(),
-          snapshotVersion,
-          isFinal: isAlreadyPaid ? true : isFinal,
-        },
-      });
+          update: {
+            crmPayoutId,
+            agentNameSnapshot: r.agent_name || null,
+            targetPoints: new Prisma.Decimal(r.target_points),
+            achievedPoints: new Prisma.Decimal(r.achieved_points),
+            qualifiedLeads: r.qualified_leads,
+            baseIncentive: new Prisma.Decimal(r.base_incentive),
+            slabIncentive: new Prisma.Decimal(r.slab_incentive),
+            totalIncentive: new Prisma.Decimal(r.total_incentive),
+            eligibilityStatus: r.eligibility_status || "ineligible",
+            approvalStatus: r.approval_status || "pending_approval",
+            paymentStatus: finalPaymentStatus,
+            policyVersionReference: r.policy_version_reference ?? null,
+            crmPaymentReference: finalPaymentRef,
+            sourceUpdatedAt,
+            syncedAt: new Date(),
+            isFinal: isAlreadyPaid ? true : isFinal,
+          },
+          create: {
+            crmPayoutId,
+            crmAgentId,
+            agentNameSnapshot: r.agent_name || null,
+            workDate,
+            targetPoints: new Prisma.Decimal(r.target_points),
+            achievedPoints: new Prisma.Decimal(r.achieved_points),
+            qualifiedLeads: r.qualified_leads,
+            baseIncentive: new Prisma.Decimal(r.base_incentive),
+            slabIncentive: new Prisma.Decimal(r.slab_incentive),
+            totalIncentive: new Prisma.Decimal(r.total_incentive),
+            eligibilityStatus: r.eligibility_status || "ineligible",
+            approvalStatus: r.approval_status || "pending_approval",
+            paymentStatus: finalPaymentStatus,
+            policyVersionReference: r.policy_version_reference ?? null,
+            crmPaymentReference: finalPaymentRef,
+            sourceUpdatedAt,
+            syncedAt: new Date(),
+            snapshotVersion,
+            isFinal: isAlreadyPaid ? true : isFinal,
+          },
+        });
+      }
+    },
+    {
+      maxWait: 15000,
+      timeout: 45000,
     }
-  });
+  );
 
   return { success: true, count: records.length };
 }
