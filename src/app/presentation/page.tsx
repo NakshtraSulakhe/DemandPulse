@@ -33,6 +33,7 @@ export default function PresentationPage() {
   const [isTvMode, setIsTvMode] = useState<boolean>(true);
   const [displayScaling, setDisplayScaling] = useState<string>("tv-1080p");
   const [isDbSynced, setIsDbSynced] = useState<boolean>(false);
+  const isHeatmapIntervalUserOverridden = React.useRef<boolean>(false);
 
   // Per-slide date filters for backdated dashboard snapshots (YYYY-MM-DD)
   const [slideDates, setSlideDates] = useState<Record<number, string | undefined>>({});
@@ -92,7 +93,7 @@ export default function PresentationPage() {
       }
 
       if (prefRes?.success && prefRes.data) {
-        if (typeof prefRes.data.heatmapIntervalMinutes === "number" && [5, 10, 15, 20, 30, 60].includes(prefRes.data.heatmapIntervalMinutes)) {
+        if (!isHeatmapIntervalUserOverridden.current && typeof prefRes.data.heatmapIntervalMinutes === "number" && [5, 10, 15, 20, 30, 60].includes(prefRes.data.heatmapIntervalMinutes)) {
           setHeatmapInterval(prefRes.data.heatmapIntervalMinutes);
         }
         if (typeof prefRes.data.tvModeEnabled === "boolean") {
@@ -121,16 +122,17 @@ export default function PresentationPage() {
 
     syncWithDatabase();
 
-    // Multi-screen live synchronization polling (every 10 seconds from MySQL)
+    // Multi-screen live synchronization polling (every 30 seconds from MySQL to protect connection pool)
     const syncInterval = setInterval(() => {
       syncWithDatabase();
-    }, 10000);
+    }, 30000);
 
     return () => clearInterval(syncInterval);
   }, [syncWithDatabase]);
 
   // Persist heatmap interval to MySQL on user change (zero localStorage)
   const handleHeatmapIntervalChange = useCallback((newInterval: number) => {
+    isHeatmapIntervalUserOverridden.current = true;
     setHeatmapInterval(newInterval);
     fetch("/api/slides/preferences", {
       method: "POST",

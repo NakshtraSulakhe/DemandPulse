@@ -199,7 +199,7 @@ export function getMockSlide4Data(intervalMinutes = 10): Slide4Data {
 }
 
 export function getMockSlide5Data(): Slide5Data {
-  const times = ["17:30", "18:30", "19:30", "20:30", "21:30", "22:30", "23:30", "00:30", "01:30"];
+  const times = ["18:00", "19:00", "20:00", "21:00", "22:00", "23:00", "00:00", "01:00", "02:00"];
   let cumGen = 0;
   let cumAud = 0;
   let cumQual = 0;
