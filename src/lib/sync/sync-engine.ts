@@ -43,9 +43,10 @@ import {
 import { upsertIncentiveDailySnapshots } from "@/lib/db/incentive-reporting-repository";
 import { startSyncRun, completeSyncRun } from "@/lib/db/sync-run-repository";
 
-// Concurrency mutex lock to prevent concurrent executions
-let isSyncRunning = false;
+// Concurrency mutex lock: track in-progress syncs per business workDate
+const activeSyncDates = new Map<string, number>(); // workDate -> timestamp
 let lastSyncCompletedAt: Date | null = null;
+const SYNC_LOCK_TIMEOUT_MS = 60000; // 60 seconds auto-expiration
 
 export interface SyncEngineResult {
   success: boolean;
@@ -76,20 +77,24 @@ export async function runAnalyticsSync(
   const workDate = normalizedTarget || getShiftBusinessDate();
   const jobName = options?.jobName || "demandflow_analytics_sync";
 
-  // Prevent overlapping sync jobs unless forced
-  if (isSyncRunning && !options?.force) {
+  // Check if this date is already syncing and not expired
+  const existingLockTime = activeSyncDates.get(workDate);
+  const isDateSyncing = existingLockTime && (startTime - existingLockTime < SYNC_LOCK_TIMEOUT_MS);
+
+  // Prevent overlapping sync jobs for the same date unless forced
+  if (isDateSyncing && !options?.force) {
     return {
       success: false,
       workDate,
       processedCount: 0,
       failedCount: 0,
-      errors: { concurrency: "Another synchronization run is already in progress." },
+      errors: { concurrency: `A synchronization run for ${workDate} is already in progress.` },
       durationMs: Date.now() - startTime,
-      message: "Sync skipped: Job currently active.",
+      message: `Sync skipped: Job currently active for ${workDate}.`,
     };
   }
 
-  isSyncRunning = true;
+  activeSyncDates.set(workDate, startTime);
 
   let runId: string | undefined;
   const errors: Record<string, string> = {};
@@ -521,7 +526,8 @@ export async function runAnalyticsSync(
       message: `Sync failed: ${errorMsg}`,
     };
   } finally {
-    isSyncRunning = false;
+    activeSyncDates.delete(workDate);
+    lastSyncCompletedAt = new Date();
   }
 }
 
@@ -530,7 +536,8 @@ export async function runAnalyticsSync(
  */
 export function getSyncEngineStatus() {
   return {
-    isSyncRunning,
+    isSyncRunning: activeSyncDates.size > 0,
+    activeDates: Array.from(activeSyncDates.keys()),
     lastSyncCompletedAt: lastSyncCompletedAt ? lastSyncCompletedAt.toISOString() : null,
   };
 }

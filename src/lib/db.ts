@@ -87,7 +87,7 @@ export function getDatabaseConfig(): DatabaseConfig {
 
   // 4. Password resolution (preserves special characters like '#' and '@')
   const password = cleanEnvVal(
-    process.env.DB_PASSWORD ||
+    process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD :
     process.env.MYSQL_PASSWORD ||
     process.env.DATABASE_PASSWORD ||
     process.env.DB_PASS ||
@@ -109,11 +109,35 @@ export function getDatabaseConfig(): DatabaseConfig {
   const missingVariables: string[] = [];
   if (!cleanHost) missingVariables.push("DB_HOST");
   if (!user) missingVariables.push("DB_USER");
-  if (!password) missingVariables.push("DB_PASSWORD");
   if (!cleanDb) missingVariables.push("DB_NAME");
 
   // Validation rules
   if (missingVariables.length > 0) {
+    // If discrete variables are missing, check if a full valid URL is already in SLIDES_DATABASE_URL or DATABASE_URL
+    const directUrl = process.env.SLIDES_DATABASE_URL || process.env.DATABASE_URL;
+    if (directUrl && !directUrl.includes("unconfigured_user")) {
+      try {
+        const parsedUrl = new URL(directUrl);
+        const host = parsedUrl.hostname;
+        const portNum = parseInt(parsedUrl.port || "3306", 10);
+        const dbUser = decodeURIComponent(parsedUrl.username || "");
+        const dbPass = decodeURIComponent(parsedUrl.password || "");
+        const dbName = parsedUrl.pathname.replace(/^\//, "");
+        if (host && dbUser && dbName) {
+          return {
+            isValid: true,
+            url: directUrl,
+            host,
+            port: portNum,
+            user: dbUser,
+            database: dbName,
+            hasPassword: Boolean(dbPass),
+            missingVariables: [],
+          };
+        }
+      } catch {}
+    }
+
     return {
       isValid: false,
       host: cleanHost,
@@ -160,7 +184,7 @@ export function getDatabaseConfig(): DatabaseConfig {
     port,
     user,
     database: cleanDb,
-    hasPassword: true,
+    hasPassword: Boolean(password),
     missingVariables: [],
   };
 }
@@ -343,7 +367,7 @@ export async function runDatabaseDiagnostic() {
           expectedDatabase: config.database,
           actualSelectedDatabase: selectedDatabase,
           serverVersion,
-          passwordConfigured: true,
+          passwordConfigured: config.hasPassword,
           environment,
           latencyMs,
           error: `Connected to MySQL, but active database is '${selectedDatabase}' instead of expected '${config.database}'.`,
@@ -361,7 +385,7 @@ export async function runDatabaseDiagnostic() {
         database: config.database,
         actualSelectedDatabase: selectedDatabase,
         serverVersion,
-        passwordConfigured: true,
+        passwordConfigured: config.hasPassword,
         environment,
         latencyMs,
       },
@@ -385,7 +409,7 @@ export async function runDatabaseDiagnostic() {
         port: config.port,
         user: config.user,
         database: config.database,
-        passwordConfigured: true,
+        passwordConfigured: config.hasPassword,
         environment,
         latencyMs,
         error: errMsg,
