@@ -1,5 +1,4 @@
-import { prisma, serializeDbData } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { query, queryOne, execute, withTransaction } from "@/lib/db";
 
 export type FinalizationStatus =
   | "provisional"
@@ -27,24 +26,27 @@ export interface AnalyticsDailyFinalizationRecord {
 export async function getDailyFinalization(
   workDateStr: string
 ): Promise<AnalyticsDailyFinalizationRecord> {
-  const workDate = new Date(workDateStr);
+  const sql = `
+    SELECT id, work_date, finalization_status, finalized_at, finalized_by, source_watermark, revision_number, last_reconciled_at, created_at, updated_at
+    FROM analytics_daily_finalizations
+    WHERE work_date = ?
+    LIMIT 1
+  `;
 
-  const existing = await prisma.analyticsDailyFinalization.findUnique({
-    where: { workDate },
-  });
+  const existing = await queryOne<any>(sql, [workDateStr]);
 
   if (existing) {
     return {
       id: existing.id.toString(),
       work_date: workDateStr,
-      finalization_status: existing.finalizationStatus as FinalizationStatus,
-      finalized_at: existing.finalizedAt ? existing.finalizedAt.toISOString() : null,
-      finalized_by: existing.finalizedBy ? Number(existing.finalizedBy) : null,
-      source_watermark: existing.sourceWatermark,
-      revision_number: existing.revisionNumber,
-      last_reconciled_at: existing.lastReconciledAt ? existing.lastReconciledAt.toISOString() : null,
-      created_at: existing.createdAt.toISOString(),
-      updated_at: existing.updatedAt.toISOString(),
+      finalization_status: existing.finalization_status as FinalizationStatus,
+      finalized_at: existing.finalized_at ? String(existing.finalized_at) : null,
+      finalized_by: existing.finalized_by ? Number(existing.finalized_by) : null,
+      source_watermark: existing.source_watermark,
+      revision_number: existing.revision_number,
+      last_reconciled_at: existing.last_reconciled_at ? String(existing.last_reconciled_at) : null,
+      created_at: String(existing.created_at),
+      updated_at: String(existing.updated_at),
     };
   }
 
@@ -71,58 +73,37 @@ export async function setDailyFinalizationStatus(
   finalizedBy: number = 1,
   sourceWatermark?: string | null
 ): Promise<AnalyticsDailyFinalizationRecord> {
-  const workDate = new Date(workDateStr);
   const isFinal = status === "finalized";
-  const finalizedAt = isFinal ? new Date() : null;
+  const finalizedAtStr = isFinal ? new Date().toISOString().slice(0, 19).replace("T", " ") : null;
 
-  const record = await prisma.analyticsDailyFinalization.upsert({
-    where: { workDate },
-    update: {
-      finalizationStatus: status,
-      finalizedAt,
-      finalizedBy: BigInt(finalizedBy),
-      sourceWatermark: sourceWatermark || undefined,
-      lastReconciledAt: new Date(),
-    },
-    create: {
-      workDate,
-      finalizationStatus: status,
-      finalizedAt,
-      finalizedBy: BigInt(finalizedBy),
-      sourceWatermark: sourceWatermark || null,
-      revisionNumber: 1,
-      lastReconciledAt: new Date(),
-    },
+  const sql = `
+    INSERT INTO analytics_daily_finalizations (
+      work_date, finalization_status, finalized_at, finalized_by, source_watermark, revision_number, last_reconciled_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 1, NOW(6), NOW(6), NOW(6))
+    ON DUPLICATE KEY UPDATE
+      finalization_status = VALUES(finalization_status),
+      finalized_at = VALUES(finalized_at),
+      finalized_by = VALUES(finalized_by),
+      source_watermark = COALESCE(VALUES(source_watermark), source_watermark),
+      last_reconciled_at = NOW(6),
+      updated_at = NOW(6)
+  `;
+
+  await withTransaction(async (conn) => {
+    await conn.execute(sql, [
+      workDateStr,
+      status,
+      finalizedAtStr,
+      finalizedBy,
+      sourceWatermark || null,
+    ]);
+
+    if (isFinal) {
+      await conn.execute(`UPDATE campaign_daily_snapshots SET is_final = 1, updated_at = NOW(6) WHERE work_date = ?`, [workDateStr]);
+      await conn.execute(`UPDATE agent_daily_snapshots SET is_final = 1, updated_at = NOW(6) WHERE work_date = ?`, [workDateStr]);
+      await conn.execute(`UPDATE incentive_daily_snapshots SET is_final = 1, updated_at = NOW(6) WHERE work_date = ?`, [workDateStr]);
+    }
   });
 
-  // If finalized, mark daily snapshots as final
-  if (isFinal) {
-    await prisma.$transaction([
-      prisma.campaignDailySnapshot.updateMany({
-        where: { workDate },
-        data: { isFinal: true },
-      }),
-      prisma.agentDailySnapshot.updateMany({
-        where: { workDate },
-        data: { isFinal: true },
-      }),
-      prisma.incentiveDailySnapshot.updateMany({
-        where: { workDate },
-        data: { isFinal: true },
-      }),
-    ]);
-  }
-
-  return {
-    id: record.id.toString(),
-    work_date: workDateStr,
-    finalization_status: record.finalizationStatus as FinalizationStatus,
-    finalized_at: record.finalizedAt ? record.finalizedAt.toISOString() : null,
-    finalized_by: record.finalizedBy ? Number(record.finalizedBy) : null,
-    source_watermark: record.sourceWatermark,
-    revision_number: record.revisionNumber,
-    last_reconciled_at: record.lastReconciledAt ? record.lastReconciledAt.toISOString() : null,
-    created_at: record.createdAt.toISOString(),
-    updated_at: record.updatedAt.toISOString(),
-  };
+  return await getDailyFinalization(workDateStr);
 }

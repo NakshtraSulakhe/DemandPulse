@@ -26,6 +26,7 @@ import {
   DEFAULT_INCENTIVE_CONFIG,
 } from "@/lib/incentives/rules-config";
 import { getAllocationsMapForDate } from "@/lib/db/allocations";
+import { getAgentAttendanceSnapshotsForDate } from "@/lib/db/attendance-repository";
 import {
   getMockSlide1Data,
   getMockSlide2Data,
@@ -40,6 +41,7 @@ import {
   calculateFloorCapacityPoints,
   calculateCapacityGap,
   getExampleBenchmarkDataset,
+  isAgentPresentForFloorCapacity,
 } from "@/lib/productivity/points-capacity";
 
 export interface CrmFetchResult<T> {
@@ -315,10 +317,69 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
           };
         });
 
+      // Process and normalize late comers for the 6:00 PM IST (18:00:00) shift
+      const crmLateComers = (parsed.data.slide1.late_comers || []).map((l: any) => {
+        let lateMin = Number(l.late_minutes) || 0;
+        const punchInTime = String(l.punch_in || "");
+
+        // If punch-in is provided, calculate late minutes against 18:00:00 IST
+        if (punchInTime) {
+          const timeMatch = punchInTime.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+          if (timeMatch) {
+            const h = parseInt(timeMatch[1], 10);
+            const m = parseInt(timeMatch[2], 10);
+            const punchMins = h * 60 + m;
+            const shiftStartMins = 18 * 60; // 18:00 IST
+            const grace = Number(l.grace_minutes) || 0;
+            if (punchMins > shiftStartMins + grace && (h >= 17 || h <= 3)) {
+              lateMin = punchMins - shiftStartMins;
+            }
+          }
+        }
+
+        return {
+          ...l,
+          shift_start_time: "18:00:00",
+          late_minutes: lateMin,
+          status: l.status || "Late",
+        };
+      });
+
+      // Merge with MySQL attendance snapshots if available
+      const dbLateSnapshots = await getAgentAttendanceSnapshotsForDate(effectiveDate).catch(() => []);
+      const dbLateComers = dbLateSnapshots
+        .filter((s: any) => s.late_minutes > 0)
+        .map((s: any) => ({
+          user_id: s.crm_agent_id,
+          full_name: s.agent_name_snapshot || `Agent #${s.crm_agent_id}`,
+          role: "operations_agent",
+          punch_in: s.punch_in_at ? String(s.punch_in_at).slice(11, 19) : "",
+          shift_start_time: "18:00:00",
+          grace_minutes: 0,
+          late_minutes: s.late_minutes,
+          status: s.attendance_status || "Late",
+        }));
+
+      const seenLateIds = new Set<number>();
+      const finalLateComers: any[] = [];
+      for (const item of [...crmLateComers, ...dbLateComers]) {
+        if (!seenLateIds.has(item.user_id)) {
+          seenLateIds.add(item.user_id);
+          finalLateComers.push(item);
+        }
+      }
+
+      const updatedKpiCards = {
+        ...parsed.data.slide1.kpi_cards,
+        late_today: Math.max(parsed.data.slide1.kpi_cards?.late_today || 0, finalLateComers.length),
+      };
+
       return {
         success: true,
         data: {
           ...parsed.data.slide1,
+          kpi_cards: updatedKpiCards,
+          late_comers: finalLateComers,
           total_live_campaigns: totalLiveCampaignsCount,
           total_allocated_campaigns: allocatedLiveCampaigns.length,
           campaigns: allocatedLiveCampaigns,
@@ -394,7 +455,7 @@ export async function getCrmSlide2(
 
   const configuredPath = config.endpoints?.slide2 || "slides/slide2.php";
   const slide2Promise = fetchFromCrm<unknown>(
-    buildEndpointUrl(configuredPath, { date: effectiveDate, page, limit })
+    buildEndpointUrl(configuredPath, { date: effectiveDate, page: 1, limit: 100 })
   );
 
   // Concurrently fetch daily campaign targets from CRM
@@ -455,9 +516,10 @@ export async function getCrmSlide2(
       if (incentiveRes?.success && Array.isArray(incentiveRes.data?.agents)) {
         for (const ag of incentiveRes.data.agents) {
           if (ag.agent_id != null) {
+            const isPres = isAgentPresentForFloorCapacity(ag.attendance_status, ag.is_present);
             attendanceMap.set(Number(ag.agent_id), {
-              attendance_status: ag.attendance_status || (ag.is_present ? "Present" : "Absent"),
-              is_present: ag.is_present ?? true,
+              attendance_status: ag.attendance_status || (isPres ? "Present" : "Absent"),
+              is_present: isPres,
             });
           }
         }
@@ -484,11 +546,19 @@ export async function getCrmSlide2(
         return (a.agent_name || "").localeCompare(b.agent_name || "");
       });
 
+      const pageSize = limit === "all" ? sortedAgents.length : (Number(limit) || 10);
+      const startIndex = (page - 1) * pageSize;
+      const paginatedAgents = sortedAgents.slice(startIndex, startIndex + pageSize);
+
       return {
         success: true,
         data: {
           ...parsed.data.slide2,
-          agents: sortedAgents,
+          total_agents: floorCapacityResult.total_agents,
+          page,
+          limit: Number(limit) || 10,
+          total_pages: Math.ceil(sortedAgents.length / pageSize) || 1,
+          agents: paginatedAgents,
           campaign_target_points: campaignTargetPoints,
           floor_capacity: {
             total_capacity_points: floorCapacityResult.total_capacity_points,
@@ -531,8 +601,8 @@ export async function getCrmSlide2(
 export async function getCrmSlide3(
   dateStr?: string,
   interval = 10,
-  shiftStart = "17:30:00",
-  shiftEnd = "02:30:00"
+  shiftStart = "18:00:00",
+  shiftEnd = "03:00:00"
 ): Promise<CrmFetchResult<Slide3Data>> {
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();
@@ -658,8 +728,8 @@ export async function getCrmSlide3(
 export async function getCrmSlide4(
   dateStr?: string,
   interval = 10,
-  shiftStart = "17:30:00",
-  shiftEnd = "02:30:00"
+  shiftStart = "18:00:00",
+  shiftEnd = "03:00:00"
 ): Promise<CrmFetchResult<Slide4Data>> {
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();

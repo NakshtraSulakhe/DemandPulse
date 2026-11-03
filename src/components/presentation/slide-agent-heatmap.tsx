@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Slide4Data, AgentHeatmapItem, AgentHeatmapInterval } from "@/types";
 import { formatNumber } from "@/lib/utils";
 import dynamic from "next/dynamic";
@@ -9,9 +9,13 @@ import {
   Zap,
   Clock,
   TrendingUp,
+  TrendingDown,
   Flame,
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import HeatmapIntervalSelector from "@/components/presentation/heatmap-interval-selector";
 import { useTheme } from "@/components/providers/theme-provider";
 import SlideDateFilter from "@/components/presentation/slide-date-filter";
@@ -25,6 +29,7 @@ interface SlideAgentHeatmapProps {
   onRetry?: () => void;
   interval?: number;
   onIntervalChange?: (newInterval: number) => void;
+  rowsPerPage?: number;
   selectedDate?: string;
   onDateChange?: (date: string | undefined) => void;
   onApplyDateToAll?: (date: string) => void;
@@ -37,17 +42,66 @@ export default function SlideAgentHeatmap({
   onRetry,
   interval = 30,
   onIntervalChange,
+  rowsPerPage = 8,
   selectedDate,
   onDateChange,
   onApplyDateToAll,
 }: SlideAgentHeatmapProps) {
   const { isDark } = useTheme();
   const [viewMode, setViewMode] = useState<"echarts" | "matrix">("matrix");
+  const [activePageIndex, setActivePageIndex] = useState<number>(0);
 
+  // Sort agents by total leads generated descending
   const agents: AgentHeatmapItem[] = useMemo(() => {
     const raw = data?.agent_heatmap || [];
-    return [...raw].sort((a, b) => (b.total_generated || 0) - (a.total_generated || 0));
+    return [...raw].sort((a, b) => {
+      const diff = (b.total_generated || 0) - (a.total_generated || 0);
+      if (diff !== 0) return diff;
+      return a.agent_name.localeCompare(b.agent_name);
+    });
   }, [data?.agent_heatmap]);
+
+  // Precompute floor rank map for top 3 and bottom 3 performers
+  const agentRankMap = useMemo(() => {
+    const map = new Map<number, { rank: number; isTop3: boolean; isBottom3: boolean }>();
+    const total = agents.length;
+    agents.forEach((agent, index) => {
+      const rank = index + 1;
+      const isTop3 = index < 3;
+      const isBottom3 = total >= 6 && index >= total - 3;
+      map.set(agent.agent_id, { rank, isTop3, isBottom3 });
+    });
+    return map;
+  }, [agents]);
+
+  // Group agents into rotating frames (sub-slides, 8 per frame by default)
+  const chunks: Array<AgentHeatmapItem[]> = useMemo(() => {
+    const res: Array<AgentHeatmapItem[]> = [];
+    for (let i = 0; i < agents.length; i += rowsPerPage) {
+      res.push(agents.slice(i, i + rowsPerPage));
+    }
+    return res;
+  }, [agents, rowsPerPage]);
+
+  const totalPages = Math.max(1, chunks.length);
+
+  // Auto carousel frame rotation (12s per frame, identical to Agent Productivity Slide 2)
+  useEffect(() => {
+    if (totalPages <= 1) return;
+    const timer = setInterval(() => {
+      setActivePageIndex((prev) => (prev + 1) % totalPages);
+    }, 12000);
+    return () => clearInterval(timer);
+  }, [totalPages]);
+
+  // Keep activePageIndex within valid bounds if dataset changes
+  useEffect(() => {
+    if (activePageIndex >= totalPages) {
+      setActivePageIndex(0);
+    }
+  }, [totalPages, activePageIndex]);
+
+  const currentAgents = chunks[activePageIndex] || [];
 
   const intervals: AgentHeatmapInterval[] = agents[0]?.intervals || [];
   const totalAgents = data?.total_agents || agents.length;
@@ -55,10 +109,11 @@ export default function SlideAgentHeatmap({
   const intervalMinutes = data?.interval_minutes || interval;
   const totalIntervals = data?.total_intervals || intervals.length;
 
-  // Prepare ECharts heatmap configuration
+  // Prepare ECharts heatmap configuration for current frame agents
   const chartOption = useMemo(() => {
+    const targetAgents = currentAgents.length > 0 ? currentAgents : agents;
     const timeLabels = intervals.map((i: AgentHeatmapInterval) => i.time_label.split(" - ")[0]);
-    const agentNames = agents.map((a: AgentHeatmapItem) => a.agent_name);
+    const agentNames = targetAgents.map((a: AgentHeatmapItem) => a.agent_name);
 
     const labelInterval =
       intervals.length <= 12 ? 0 : intervals.length <= 24 ? 1 : intervals.length <= 40 ? 2 : intervals.length <= 60 ? 3 : 5;
@@ -66,7 +121,7 @@ export default function SlideAgentHeatmap({
     const seriesData: [number, number, number, string][] = [];
     let maxVal = 1;
 
-    agents.forEach((agent: AgentHeatmapItem, yIdx: number) => {
+    targetAgents.forEach((agent: AgentHeatmapItem, yIdx: number) => {
       agent.intervals.forEach((inv: AgentHeatmapInterval, xIdx: number) => {
         const val = inv.generated_count || 0;
         if (val > maxVal) maxVal = val;
@@ -178,7 +233,7 @@ export default function SlideAgentHeatmap({
         },
       ],
     };
-  }, [agents, intervals, isDark]);
+  }, [currentAgents, agents, intervals, isDark]);
 
   if (error && !data) {
     return (
@@ -235,7 +290,7 @@ export default function SlideAgentHeatmap({
         )}
       </div>
 
-      {/* Top Banner - Reduced compact sizing */}
+      {/* Top KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="glass-panel p-3.5 lg:p-4 rounded-xl flex items-center justify-between border border-white/10 relative overflow-hidden group">
           <div className="absolute -right-4 -top-4 w-20 h-20 bg-purple-500/10 rounded-full blur-xl group-hover:bg-purple-500/20 transition-all" />
@@ -303,19 +358,68 @@ export default function SlideAgentHeatmap({
       </div>
 
       {/* Main Heatmap Container */}
-      <div className="glass-panel rounded-xl p-4 border border-white/10 shadow-lg flex flex-col">
+      <div className="glass-panel rounded-xl p-3 sm:p-4 border border-white/10 shadow-lg flex flex-col">
         <div className="flex flex-wrap items-center justify-between pb-2.5 border-b border-white/10 mb-2 gap-2">
-          <div>
-            <h2 className="text-xs lg:text-sm font-bold text-white flex items-center gap-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-xs lg:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
               <Flame className="w-3.5 h-3.5 text-purple-400" />
               Agent Lead Generation {intervalMinutes}-Minute Interval Heatmap
             </h2>
-            <p className="text-[11px] text-slate-400">
-              Timewise outbound pace: leads generated per agent across each {intervalMinutes}-minute segment of the shift
-            </p>
+            <div className="flex items-center gap-1.5 pl-2 border-l border-slate-300 dark:border-white/10">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                Showing {currentAgents.length} of {agents.length} Agents
+              </span>
+              <div className="hidden sm:flex items-center gap-1.5 pl-2 border-l border-slate-300 dark:border-white/10 text-[10px]">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                  <TrendingUp className="w-2.5 h-2.5 text-emerald-500" /> Top 3 (Green)
+                </span>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-bold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">
+                  <TrendingDown className="w-2.5 h-2.5 text-rose-500" /> Bottom 3 (Red)
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Carousel Pagination Controls & Rotation Dot Indicators (Identical to Slide 2) */}
+            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900/60 px-2 py-1 rounded-lg border border-slate-200 dark:border-white/5">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                Frame {activePageIndex + 1} of {totalPages}
+              </span>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }).map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setActivePageIndex(idx)}
+                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                      activePageIndex === idx
+                        ? "w-4 bg-purple-500 shadow-[0_0_6px_rgba(168,85,247,0.6)]"
+                        : "w-1.5 bg-slate-300 dark:bg-slate-700 hover:bg-slate-400 dark:hover:bg-slate-500"
+                    }`}
+                    title={`Go to frame ${idx + 1}`}
+                  />
+                ))}
+              </div>
+
+              <div className="flex items-center gap-0.5 ml-1">
+                <button
+                  onClick={() => setActivePageIndex((prev) => (prev - 1 + totalPages) % totalPages)}
+                  className="p-1 rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                  title="Previous frame"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setActivePageIndex((prev) => (prev + 1) % totalPages)}
+                  className="p-1 rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+                  title="Next frame"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
             {onIntervalChange && (
               <HeatmapIntervalSelector
                 value={intervalMinutes}
@@ -350,7 +454,7 @@ export default function SlideAgentHeatmap({
 
         {viewMode === "echarts" ? (
           <div className="w-full h-[450px]">
-            {agents.length > 0 ? (
+            {currentAgents.length > 0 || agents.length > 0 ? (
               <ReactECharts
                 option={chartOption}
                 style={{ height: "100%", width: "100%" }}
@@ -363,14 +467,16 @@ export default function SlideAgentHeatmap({
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto max-h-[440px]">
+          <div className="overflow-x-auto min-h-[380px]">
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-400 sticky top-0 z-10 text-[9.5px] border-b border-slate-200 dark:border-white/10">
                 <tr>
-                  <th className="py-2 px-2.5 sticky left-0 bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-300 z-20 min-w-[130px]">
+                  <th className="py-2 px-2.5 sticky left-0 bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-300 z-20 min-w-[170px]">
                     Agent Name
                   </th>
-                  <th className="py-2 px-2 text-center text-cyan-600 dark:text-cyan-400 bg-slate-100 dark:bg-slate-900 font-bold">Total</th>
+                  <th className="py-2 px-2 text-center text-cyan-600 dark:text-cyan-400 bg-slate-100 dark:bg-slate-900 font-bold min-w-[55px]">
+                    Total
+                  </th>
                   {intervals.map((inv: AgentHeatmapInterval) => (
                     <th
                       key={inv.slot_index}
@@ -382,40 +488,102 @@ export default function SlideAgentHeatmap({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-white/5 font-mono">
-                {agents.map((a: AgentHeatmapItem) => (
-                  <tr key={a.agent_id} className="hover:bg-slate-100/50 dark:hover:bg-white/[0.02]">
-                    <td className="py-1.5 px-2.5 font-semibold text-xs text-slate-900 dark:text-white sticky left-0 bg-white dark:bg-slate-950/90 z-10 whitespace-nowrap border-r border-slate-200 dark:border-transparent">
-                      {a.agent_name}
-                    </td>
-                    <td className="py-1.5 px-2 text-center font-bold text-xs text-cyan-600 dark:text-cyan-400 bg-slate-50 dark:bg-slate-950/90">
-                      {a.total_generated}
-                    </td>
-                    {a.intervals.map((inv: AgentHeatmapInterval) => {
-                      const count = inv.generated_count;
-                      let bgClass = "text-slate-400/50 dark:text-slate-600/60 bg-slate-100/50 dark:bg-slate-900/30 border border-slate-200/50 dark:border-white/[0.03] hover:bg-slate-200/50 dark:hover:bg-white/[0.05]";
-                      if (count >= 5) {
-                        bgClass = "bg-gradient-to-br from-emerald-500 to-green-600 text-white font-black shadow-sm shadow-emerald-500/30 border border-emerald-400/60";
-                      } else if (count === 4) {
-                        bgClass = "bg-gradient-to-br from-lime-400 to-emerald-500 text-slate-950 font-bold shadow-sm shadow-lime-500/25 border border-lime-300/60";
-                      } else if (count === 3) {
-                        bgClass = "bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-sm shadow-amber-500/25 border border-amber-300/60";
-                      } else if (count === 2) {
-                        bgClass = "bg-gradient-to-br from-orange-500 to-amber-600 text-white font-bold shadow-sm shadow-orange-500/30 border border-orange-400/60";
-                      } else if (count === 1) {
-                        bgClass = "bg-gradient-to-br from-rose-500 to-red-600 text-white font-bold shadow-sm shadow-red-500/30 border border-red-400/50";
-                      }
-                      return (
-                        <td
-                          key={inv.slot_index}
-                          className={`py-1 px-0.5 text-center text-[9.5px] rounded transition-all font-mono ${bgClass}`}
-                          title={`${inv.time_label}: ${count} leads generated`}
-                        >
-                          {count > 0 ? count : "·"}
+                <AnimatePresence mode="wait">
+                  {currentAgents.map((a: AgentHeatmapItem) => {
+                    const rankInfo = agentRankMap.get(a.agent_id);
+                    const isTop3 = rankInfo?.isTop3 ?? false;
+                    const isBottom3 = rankInfo?.isBottom3 ?? false;
+                    const rank = rankInfo?.rank ?? 0;
+
+                    return (
+                      <motion.tr
+                        key={`${activePageIndex}-${a.agent_id}`}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.2 }}
+                        className={`transition-colors group ${
+                          isTop3
+                            ? "bg-emerald-500/[0.04] hover:bg-emerald-500/[0.08] dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30"
+                            : isBottom3
+                            ? "bg-rose-500/[0.03] hover:bg-rose-500/[0.06] dark:bg-rose-950/20 dark:hover:bg-rose-900/30"
+                            : "hover:bg-slate-100/60 dark:hover:bg-white/[0.03]"
+                        }`}
+                      >
+                        <td className="py-2 px-2.5 font-semibold text-xs sticky left-0 bg-white dark:bg-slate-950/95 z-10 whitespace-nowrap border-r border-slate-200 dark:border-white/10">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`relative w-6 h-6 rounded-full flex items-center justify-center text-[9.5px] font-bold shadow-sm transition-all shrink-0 ${
+                                isTop3
+                                  ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/50 ring-1 ring-emerald-500/40"
+                                  : isBottom3
+                                  ? "bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/50 ring-1 ring-rose-500/40"
+                                  : "bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100"
+                              }`}
+                            >
+                              {a.agent_name
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                                .slice(0, 2)}
+                              {rank > 0 && (
+                                <span
+                                  className={`absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border border-white dark:border-slate-900 flex items-center justify-center text-[7.5px] font-black shadow-sm ${
+                                    isTop3
+                                      ? "bg-emerald-500 text-white"
+                                      : isBottom3
+                                      ? "bg-rose-500 text-white"
+                                      : "bg-slate-600 text-white"
+                                  }`}
+                                  title={`Rank #${rank} on Floor`}
+                                >
+                                  {rank}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-xs text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-300 transition-colors">
+                                {a.agent_name}
+                              </span>
+                              {isTop3 && (
+                                <span className="inline-flex items-center gap-0.5 px-1 py-0.2 text-[8.5px] rounded-full font-extrabold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                                  Top {rank}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                        <td className="py-2 px-2 text-center font-bold text-xs text-cyan-600 dark:text-cyan-400 bg-slate-50 dark:bg-slate-950/95 border-r border-slate-200 dark:border-white/10">
+                          {a.total_generated}
+                        </td>
+                        {a.intervals.map((inv: AgentHeatmapInterval) => {
+                          const count = inv.generated_count;
+                          let bgClass = "text-slate-400/50 dark:text-slate-600/60 bg-slate-100/50 dark:bg-slate-900/30 border border-slate-200/50 dark:border-white/[0.03] hover:bg-slate-200/50 dark:hover:bg-white/[0.05]";
+                          if (count >= 5) {
+                            bgClass = "bg-gradient-to-br from-emerald-500 to-green-600 text-white font-black shadow-sm shadow-emerald-500/30 border border-emerald-400/60";
+                          } else if (count === 4) {
+                            bgClass = "bg-gradient-to-br from-lime-400 to-emerald-500 text-slate-950 font-bold shadow-sm shadow-lime-500/25 border border-lime-300/60";
+                          } else if (count === 3) {
+                            bgClass = "bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-sm shadow-amber-500/25 border border-amber-300/60";
+                          } else if (count === 2) {
+                            bgClass = "bg-gradient-to-br from-orange-500 to-amber-600 text-white font-bold shadow-sm shadow-orange-500/30 border border-orange-400/60";
+                          } else if (count === 1) {
+                            bgClass = "bg-gradient-to-br from-rose-500 to-red-600 text-white font-bold shadow-sm shadow-red-500/30 border border-red-400/50";
+                          }
+                          return (
+                            <td
+                              key={inv.slot_index}
+                              className={`py-1 px-0.5 text-center text-[9.5px] rounded transition-all font-mono ${bgClass}`}
+                              title={`${inv.time_label}: ${count} leads generated`}
+                            >
+                              {count > 0 ? count : "·"}
+                            </td>
+                          );
+                        })}
+                      </motion.tr>
+                    );
+                  })}
+                </AnimatePresence>
               </tbody>
             </table>
           </div>

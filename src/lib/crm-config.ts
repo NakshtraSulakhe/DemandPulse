@@ -5,7 +5,7 @@ import {
   CrmCustomEndpoint,
   DEFAULT_CRM_ENDPOINTS,
 } from "@/types/crm-config";
-import { prisma, serializeDbData } from "@/lib/db";
+import { queryOne, execute, serializeDbData } from "@/lib/db";
 import { recordSettingChangeEvent } from "@/lib/db/preferences-repository";
 
 export { DEFAULT_CRM_ENDPOINTS };
@@ -56,11 +56,18 @@ export async function getCrmConfig(): Promise<CrmConfig> {
   const defaults = getDefaultCrmConfig();
 
   try {
-    const settingRecord = await prisma.slideSystemSetting.findUnique({
-      where: { settingKey: "crm_connection_config" },
-    });
+    const row = await queryOne<{
+      setting_key: string;
+      setting_value: any;
+    }>(
+      `SELECT setting_key, setting_value FROM slide_system_settings WHERE setting_key = ? LIMIT 1`,
+      ["crm_connection_config"]
+    );
 
-    const parsed: any = settingRecord ? serializeDbData(settingRecord.settingValue) : null;
+    let parsed: any = null;
+    if (row && row.setting_value) {
+      parsed = typeof row.setting_value === "string" ? JSON.parse(row.setting_value) : row.setting_value;
+    }
 
     if (!parsed) {
       cachedConfig = defaults;
@@ -132,41 +139,38 @@ export async function saveCrmConfig(updates: Partial<CrmConfig>, updatedBy = "Ad
     updatedBy,
   };
 
+  const jsonValue = JSON.stringify(serializeDbData(merged));
+
   // 1. Update slide_system_settings in MySQL
-  await prisma.slideSystemSetting.upsert({
-    where: { settingKey: "crm_connection_config" },
-    update: {
-      settingValue: merged as any,
-      updatedAt: new Date(),
-    },
-    create: {
-      settingKey: "crm_connection_config",
-      settingValue: merged as any,
-    },
-  });
+  await execute(
+    `INSERT INTO slide_system_settings (setting_key, setting_value, updated_at)
+     VALUES (?, ?, NOW(6))
+     ON DUPLICATE KEY UPDATE
+       setting_value = VALUES(setting_value),
+       updated_at = NOW(6)`,
+    ["crm_connection_config", jsonValue]
+  );
 
   // 2. Update slide_crm_connection_settings in MySQL
-  await prisma.slideCrmConnectionSetting.upsert({
-    where: { id: BigInt(1) },
-    update: {
-      baseUrl: merged.crmApiBaseUrl,
-      pollingIntervalSeconds: merged.analyticsSyncInterval,
-      timeoutSeconds: Math.round(merged.crmApiTimeoutMs / 1000),
-      mockFallback: merged.crmMockFallback,
-      autoSyncEnabled: merged.autoSyncEnabled,
-      updatedAt: new Date(),
-    },
-    create: {
-      id: BigInt(1),
-      connectionName: "Production Bridge CRM",
-      baseUrl: merged.crmApiBaseUrl,
-      pollingIntervalSeconds: merged.analyticsSyncInterval,
-      timeoutSeconds: Math.round(merged.crmApiTimeoutMs / 1000),
-      mockFallback: merged.crmMockFallback,
-      autoSyncEnabled: merged.autoSyncEnabled,
-      isActive: true,
-    },
-  });
+  await execute(
+    `INSERT INTO slide_crm_connection_settings
+       (id, connection_name, base_url, polling_interval_seconds, timeout_seconds, mock_fallback, auto_sync_enabled, is_active, updated_at)
+     VALUES (1, 'Production Bridge CRM', ?, ?, ?, ?, ?, 1, NOW(6))
+     ON DUPLICATE KEY UPDATE
+       base_url = VALUES(base_url),
+       polling_interval_seconds = VALUES(polling_interval_seconds),
+       timeout_seconds = VALUES(timeout_seconds),
+       mock_fallback = VALUES(mock_fallback),
+       auto_sync_enabled = VALUES(auto_sync_enabled),
+       updated_at = NOW(6)`,
+    [
+      merged.crmApiBaseUrl,
+      merged.analyticsSyncInterval,
+      Math.round(merged.crmApiTimeoutMs / 1000),
+      merged.crmMockFallback ? 1 : 0,
+      merged.autoSyncEnabled ? 1 : 0,
+    ]
+  );
 
   // 3. Record configuration modification event
   await recordSettingChangeEvent(

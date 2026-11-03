@@ -1,4 +1,4 @@
-import { prisma, serializeDbData } from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 
 export interface AnalyticsMetricDefinitionRecord {
   id: string;
@@ -17,21 +17,21 @@ export interface AnalyticsMetricDefinitionRecord {
  * Retrieves all stored metric definitions.
  */
 export async function getAllMetricDefinitions(): Promise<AnalyticsMetricDefinitionRecord[]> {
-  const rows = await prisma.analyticsMetricDefinition.findMany({
-    orderBy: { metricKey: "asc" },
-  });
+  const rows = await query<any>(
+    `SELECT * FROM analytics_metric_definitions ORDER BY metric_key ASC`
+  );
 
   return rows.map((r) => ({
     id: r.id.toString(),
-    metric_key: r.metricKey,
-    metric_version: r.metricVersion,
-    display_name: r.displayName,
-    source_system: r.sourceSystem,
-    source_field_mapping: r.sourceFieldMapping,
-    aggregation_description: r.aggregationDescription,
-    eligibility_description: r.eligibilityDescription,
-    effective_from: r.effectiveFrom.toISOString().slice(0, 10),
-    effective_to: r.effectiveTo ? r.effectiveTo.toISOString().slice(0, 10) : null,
+    metric_key: r.metric_key,
+    metric_version: r.metric_version,
+    display_name: r.display_name,
+    source_system: r.source_system,
+    source_field_mapping: r.source_field_mapping,
+    aggregation_description: r.aggregation_description,
+    eligibility_description: r.eligibility_description,
+    effective_from: typeof r.effective_from === "string" ? r.effective_from.slice(0, 10) : new Date(r.effective_from).toISOString().slice(0, 10),
+    effective_to: r.effective_to ? (typeof r.effective_to === "string" ? r.effective_to.slice(0, 10) : new Date(r.effective_to).toISOString().slice(0, 10)) : null,
   }));
 }
 
@@ -41,22 +41,23 @@ export async function getAllMetricDefinitions(): Promise<AnalyticsMetricDefiniti
 export async function getMetricDefinitionByKey(
   metricKey: string
 ): Promise<AnalyticsMetricDefinitionRecord | null> {
-  const r = await prisma.analyticsMetricDefinition.findUnique({
-    where: { metricKey },
-  });
+  const r = await queryOne<any>(
+    `SELECT * FROM analytics_metric_definitions WHERE metric_key = ? LIMIT 1`,
+    [metricKey]
+  );
 
   if (!r) return null;
 
   return {
     id: r.id.toString(),
-    metric_key: r.metricKey,
-    metric_version: r.metricVersion,
-    display_name: r.displayName,
-    source_system: r.sourceSystem,
-    source_field_mapping: r.sourceFieldMapping,
-    aggregation_description: r.aggregationDescription,
-    eligibility_description: r.eligibilityDescription,
-    effective_from: r.effectiveFrom.toISOString().slice(0, 10),
-    effective_to: r.effectiveTo ? r.effectiveTo.toISOString().slice(0, 10) : null,
+    metric_key: r.metric_key,
+    metric_version: r.metric_version,
+    display_name: r.display_name,
+    source_system: r.source_system,
+    source_field_mapping: r.source_field_mapping,
+    aggregation_description: r.aggregation_description,
+    eligibility_description: r.eligibility_description,
+    effective_from: typeof r.effective_from === "string" ? r.effective_from.slice(0, 10) : new Date(r.effective_from).toISOString().slice(0, 10),
+    effective_to: r.effective_to ? (typeof r.effective_to === "string" ? r.effective_to.slice(0, 10) : new Date(r.effective_to).toISOString().slice(0, 10)) : null,
   };
 }

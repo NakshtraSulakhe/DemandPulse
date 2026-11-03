@@ -25,7 +25,7 @@ import {
 } from "@/lib/crm-api";
 import { fetchDailySettled } from "@/lib/incentives/api";
 import { getAllocationsMapForDate } from "@/lib/db/allocations";
-import { getVerifiedPointFactor } from "@/lib/productivity/points-capacity";
+import { getVerifiedPointFactor, isAgentPresentForFloorCapacity } from "@/lib/productivity/points-capacity";
 import { upsertCampaignDailySnapshots } from "@/lib/db/campaign-analytics-repository";
 import {
   upsertAgentDailySnapshots,
@@ -205,7 +205,7 @@ export async function runAnalyticsSync(
           disqualified_leads: ag.disqualified_leads || 0,
           generated_leads: ag.generated_leads || 0,
           pending_qa_leads: ag.pending_qa || 0,
-          attendance_status: ag.attendance_status || (ag.is_present === false ? "Absent" : "Present"),
+          attendance_status: ag.attendance_status || (isAgentPresentForFloorCapacity(ag.attendance_status, ag.is_present) ? "Present" : "Absent"),
           elapsed_work_minutes: elapsedMinutes,
           source_updated_at: new Date(),
         }));
@@ -247,7 +247,7 @@ export async function runAnalyticsSync(
       if (s2Result.success && s2Result.data && Array.isArray(s2Result.data.agents)) {
         totalAgents = s2Result.data.agents.length;
         s2Result.data.agents.forEach((a) => {
-          const isPresent = a.is_present !== false && (a.attendance_status || "").toLowerCase() !== "absent";
+          const isPresent = isAgentPresentForFloorCapacity(a.attendance_status, a.is_present);
           const target = a.daily_target_points || 0;
           totalAchievedPoints += a.achieved_points || 0;
           if (isPresent) {

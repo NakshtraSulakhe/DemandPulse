@@ -100,26 +100,30 @@ export function getVerifiedPointFactor(
 /**
  * Evaluates whether an agent is considered present for floor capacity calculation.
  * Respects CRM business rules:
- * - Allowed Present statuses: "Present", "Full Day", "Half Day", "In Progress", "Late"
- * - Disqualified / Absent statuses: "Absent", "Approved Leave", "Leave", "Sick Leave", "Off"
+ * - Allowed Present statuses: "Present", "In Progress", "Punched In", "Active", "Full Day", "Half Day", "Late"
+ * - Disqualified / Absent statuses: "Absent", "Not Recorded", "NCNS", "No Show", "Approved Leave", "Leave", "Sick Leave", "Off"
  */
 export function isAgentPresentForFloorCapacity(
   attendanceStatus?: string | null,
   isPresentFlag?: boolean | null
 ): boolean {
-  if (isPresentFlag === true) return true;
-  if (isPresentFlag === false) {
-    // If flag is explicitly false, verify status string isn't an in-progress shift
-    if (!attendanceStatus) return false;
-  }
+  // If explicitly flagged as not present by CRM attendance engine
+  if (isPresentFlag === false) return false;
 
-  if (!attendanceStatus) return true; // Default to present if in active shift roster
+  if (!attendanceStatus) {
+    return isPresentFlag === true;
+  }
 
   const clean = attendanceStatus.trim().toLowerCase();
 
-  // Explicit absent statuses
+  // Explicit absent / non-working statuses
   if (
     clean === "absent" ||
+    clean === "not recorded" ||
+    clean === "not_recorded" ||
+    clean === "ncns" ||
+    clean === "no call no show" ||
+    clean === "no show" ||
     clean === "leave" ||
     clean === "approved leave" ||
     clean === "sick leave" ||
@@ -127,26 +131,36 @@ export function isAgentPresentForFloorCapacity(
     clean === "weekly off" ||
     clean === "off" ||
     clean === "holiday" ||
-    clean === "disqualified"
+    clean === "disqualified" ||
+    clean === "unmarked" ||
+    clean === "unexcused"
   ) {
     return false;
   }
 
-  // Explicit present/active statuses
+  // Explicit present / active working statuses
   if (
     clean === "present" ||
-    clean === "full day" ||
-    clean === "half day" ||
     clean === "in progress" ||
-    clean === "late" ||
+    clean === "in_progress" ||
+    clean === "active" ||
     clean === "punched in" ||
-    clean === "active"
+    clean === "punched_in" ||
+    clean === "late" ||
+    clean === "late present" ||
+    clean === "full day" ||
+    clean === "half day"
   ) {
     return true;
   }
 
-  // Any non-absent status is treated as present according to CRM rules
-  return true;
+  // If isPresentFlag is provided, respect it
+  if (isPresentFlag !== undefined && isPresentFlag !== null) {
+    return Boolean(isPresentFlag);
+  }
+
+  // Unknown non-standard status: default to false to avoid overcounting floor capacity
+  return false;
 }
 
 /**

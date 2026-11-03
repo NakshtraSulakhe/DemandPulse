@@ -1,5 +1,4 @@
-import { prisma, serializeDbData } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { query, queryOne, execute, withTransaction } from "@/lib/db";
 
 export interface AttendanceDailySnapshotRecord {
   id: string;
@@ -55,50 +54,41 @@ export interface UpsertAgentAttendanceInput {
 export async function upsertAttendanceDailySnapshot(
   data: UpsertAttendanceDailyInput
 ): Promise<AttendanceDailySnapshotRecord> {
-  const workDate = new Date(data.work_date);
   const version = data.snapshot_version ?? 1;
+  const jsonStatus = data.other_status_counts_json ? JSON.stringify(data.other_status_counts_json) : null;
 
-  const record = await prisma.attendanceDailySnapshot.upsert({
-    where: {
-      workDate_snapshotVersion: {
-        workDate,
-        snapshotVersion: version,
-      },
-    },
-    update: {
-      totalAgents: data.total_agents,
-      presentCount: data.present_count,
-      absentCount: data.absent_count,
-      lateCount: data.late_count || 0,
-      leaveCount: data.leave_count || 0,
-      otherStatusCountsJson: data.other_status_counts_json ?? Prisma.DbNull,
-      syncedAt: new Date(),
-    },
-    create: {
-      workDate,
-      totalAgents: data.total_agents,
-      presentCount: data.present_count,
-      absentCount: data.absent_count,
-      lateCount: data.late_count || 0,
-      leaveCount: data.leave_count || 0,
-      otherStatusCountsJson: data.other_status_counts_json ?? Prisma.DbNull,
-      syncedAt: new Date(),
-      snapshotVersion: version,
-    },
-  });
+  const sql = `
+    INSERT INTO attendance_daily_snapshots (
+      work_date, total_agents, present_count, absent_count, late_count, leave_count,
+      other_status_counts_json, synced_at, snapshot_version, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(6), ?, NOW(6), NOW(6))
+    ON DUPLICATE KEY UPDATE
+      total_agents = VALUES(total_agents),
+      present_count = VALUES(present_count),
+      absent_count = VALUES(absent_count),
+      late_count = VALUES(late_count),
+      leave_count = VALUES(leave_count),
+      other_status_counts_json = VALUES(other_status_counts_json),
+      synced_at = NOW(6),
+      updated_at = NOW(6)
+  `;
 
-  return {
-    id: record.id.toString(),
-    work_date: data.work_date,
-    total_agents: record.totalAgents,
-    present_count: record.presentCount,
-    absent_count: record.absentCount,
-    late_count: record.lateCount,
-    leave_count: record.leaveCount,
-    other_status_counts_json: record.otherStatusCountsJson,
-    synced_at: record.syncedAt.toISOString(),
-    snapshot_version: record.snapshotVersion,
-  };
+  await execute(sql, [
+    data.work_date,
+    data.total_agents,
+    data.present_count,
+    data.absent_count,
+    data.late_count || 0,
+    data.leave_count || 0,
+    jsonStatus,
+    version,
+  ]);
+
+  const record = await getAttendanceDailySnapshotForDate(data.work_date, version);
+  if (!record) {
+    throw new Error(`Failed to retrieve attendance daily snapshot for date ${data.work_date}`);
+  }
+  return record;
 }
 
 /**
@@ -113,52 +103,45 @@ export async function upsertAgentAttendanceSnapshots(
     return { success: true, count: 0 };
   }
 
-  const workDate = new Date(workDateStr);
+  const sql = `
+    INSERT INTO agent_attendance_snapshots (
+      crm_agent_id, agent_name_snapshot, work_date, attendance_status, punch_in_at, punch_out_at,
+      late_minutes, effective_work_minutes, synced_at, snapshot_version, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(6), ?, NOW(6), NOW(6))
+    ON DUPLICATE KEY UPDATE
+      agent_name_snapshot = VALUES(agent_name_snapshot),
+      attendance_status = VALUES(attendance_status),
+      punch_in_at = VALUES(punch_in_at),
+      punch_out_at = VALUES(punch_out_at),
+      late_minutes = VALUES(late_minutes),
+      effective_work_minutes = VALUES(effective_work_minutes),
+      synced_at = NOW(6),
+      updated_at = NOW(6)
+  `;
 
-  await prisma.$transaction(
-    async (tx) => {
-      for (const a of records) {
-        const crmAgentId = BigInt(a.crm_agent_id);
-        const punchInAt = a.punch_in_at ? new Date(a.punch_in_at) : null;
-        const punchOutAt = a.punch_out_at ? new Date(a.punch_out_at) : null;
+  await withTransaction(async (conn) => {
+    for (const a of records) {
+      const crmAgentId = Number(a.crm_agent_id);
+      const punchInAt = a.punch_in_at
+        ? new Date(a.punch_in_at).toISOString().slice(0, 19).replace("T", " ")
+        : null;
+      const punchOutAt = a.punch_out_at
+        ? new Date(a.punch_out_at).toISOString().slice(0, 19).replace("T", " ")
+        : null;
 
-        await tx.agentAttendanceSnapshot.upsert({
-          where: {
-            crmAgentId_workDate_snapshotVersion: {
-              crmAgentId,
-              workDate,
-              snapshotVersion,
-            },
-          },
-          update: {
-            agentNameSnapshot: a.agent_name || null,
-            attendanceStatus: a.attendance_status,
-            punchInAt,
-            punchOutAt,
-            lateMinutes: a.late_minutes || 0,
-            effectiveWorkMinutes: a.effective_work_minutes || 465,
-            syncedAt: new Date(),
-          },
-          create: {
-            crmAgentId,
-            agentNameSnapshot: a.agent_name || null,
-            workDate,
-            attendanceStatus: a.attendance_status,
-            punchInAt,
-            punchOutAt,
-            lateMinutes: a.late_minutes || 0,
-            effectiveWorkMinutes: a.effective_work_minutes || 465,
-            syncedAt: new Date(),
-            snapshotVersion,
-          },
-        });
-      }
-    },
-    {
-      maxWait: 15000,
-      timeout: 45000,
+      await conn.execute(sql, [
+        crmAgentId,
+        a.agent_name || null,
+        workDateStr,
+        a.attendance_status,
+        punchInAt,
+        punchOutAt,
+        a.late_minutes || 0,
+        a.effective_work_minutes || 465,
+        snapshotVersion,
+      ]);
     }
-  );
+  });
 
   return { success: true, count: records.length };
 }
@@ -170,29 +153,28 @@ export async function getAttendanceDailySnapshotForDate(
   workDateStr: string,
   snapshotVersion: number = 1
 ): Promise<AttendanceDailySnapshotRecord | null> {
-  const workDate = new Date(workDateStr);
-  const record = await prisma.attendanceDailySnapshot.findUnique({
-    where: {
-      workDate_snapshotVersion: {
-        workDate,
-        snapshotVersion,
-      },
-    },
-  });
+  const sql = `
+    SELECT * FROM attendance_daily_snapshots
+    WHERE work_date = ? AND snapshot_version = ?
+    LIMIT 1
+  `;
 
+  const record = await queryOne<any>(sql, [workDateStr, snapshotVersion]);
   if (!record) return null;
 
   return {
     id: record.id.toString(),
     work_date: workDateStr,
-    total_agents: record.totalAgents,
-    present_count: record.presentCount,
-    absent_count: record.absentCount,
-    late_count: record.lateCount,
-    leave_count: record.leaveCount,
-    other_status_counts_json: record.otherStatusCountsJson,
-    synced_at: record.syncedAt.toISOString(),
-    snapshot_version: record.snapshotVersion,
+    total_agents: record.total_agents,
+    present_count: record.present_count,
+    absent_count: record.absent_count,
+    late_count: record.late_count,
+    leave_count: record.leave_count,
+    other_status_counts_json: typeof record.other_status_counts_json === "string"
+      ? JSON.parse(record.other_status_counts_json)
+      : record.other_status_counts_json,
+    synced_at: String(record.synced_at),
+    snapshot_version: record.snapshot_version,
   };
 }
 
@@ -203,27 +185,25 @@ export async function getAgentAttendanceSnapshotsForDate(
   workDateStr: string,
   snapshotVersion: number = 1
 ): Promise<AgentAttendanceSnapshotRecord[]> {
-  const workDate = new Date(workDateStr);
+  const sql = `
+    SELECT * FROM agent_attendance_snapshots
+    WHERE work_date = ? AND snapshot_version = ?
+    ORDER BY late_minutes DESC, attendance_status ASC
+  `;
 
-  const rows = await prisma.agentAttendanceSnapshot.findMany({
-    where: {
-      workDate,
-      snapshotVersion,
-    },
-    orderBy: [{ lateMinutes: "desc" }, { attendanceStatus: "asc" }],
-  });
+  const rows = await query<any>(sql, [workDateStr, snapshotVersion]);
 
   return rows.map((r) => ({
     id: r.id.toString(),
-    crm_agent_id: Number(r.crmAgentId),
-    agent_name_snapshot: r.agentNameSnapshot,
+    crm_agent_id: Number(r.crm_agent_id),
+    agent_name_snapshot: r.agent_name_snapshot,
     work_date: workDateStr,
-    attendance_status: r.attendanceStatus,
-    punch_in_at: r.punchInAt ? r.punchInAt.toISOString() : null,
-    punch_out_at: r.punchOutAt ? r.punchOutAt.toISOString() : null,
-    late_minutes: r.lateMinutes,
-    effective_work_minutes: r.effectiveWorkMinutes,
-    synced_at: r.syncedAt.toISOString(),
-    snapshot_version: r.snapshotVersion,
+    attendance_status: r.attendance_status,
+    punch_in_at: r.punch_in_at ? String(r.punch_in_at) : null,
+    punch_out_at: r.punch_out_at ? String(r.punch_out_at) : null,
+    late_minutes: r.late_minutes,
+    effective_work_minutes: r.effective_work_minutes,
+    synced_at: String(r.synced_at),
+    snapshot_version: r.snapshot_version,
   }));
 }

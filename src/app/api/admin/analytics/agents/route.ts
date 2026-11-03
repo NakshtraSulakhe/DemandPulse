@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAgentSnapshotsForDate } from "@/lib/db/agent-productivity-repository";
 import { verifyAdminSession } from "@/lib/auth";
 import { getShiftBusinessDate } from "@/lib/shift/engine";
-import { prisma } from "@/lib/db";
+import { query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -30,44 +30,49 @@ export async function GET(req: NextRequest) {
         paceStatus,
       });
     } else {
-      const startDate = new Date(from || getShiftBusinessDate());
-      const endDate = new Date(to || (from || getShiftBusinessDate()));
+      const startDateStr = from || getShiftBusinessDate();
+      const endDateStr = to || startDateStr;
 
-      const where: any = {
-        workDate: {
-          gte: startDate,
-          lte: endDate,
-        },
-      };
-      if (agentId) where.crmAgentId = BigInt(agentId);
-      if (paceStatus && paceStatus !== "all") where.paceStatus = paceStatus;
+      const whereClauses: string[] = ["work_date >= ?", "work_date <= ?"];
+      const params: any[] = [startDateStr, endDateStr];
 
-      const rows = await prisma.agentDailySnapshot.findMany({
-        where,
-        orderBy: [{ workDate: "desc" }, { achievedPoints: "desc" }],
-      });
+      if (agentId) {
+        whereClauses.push("crm_agent_id = ?");
+        params.push(agentId);
+      }
+      if (paceStatus && paceStatus !== "all") {
+        whereClauses.push("pace_status = ?");
+        params.push(paceStatus);
+      }
+
+      const rows = await query<any>(
+        `SELECT * FROM agent_daily_snapshots
+         WHERE ${whereClauses.join(" AND ")}
+         ORDER BY work_date DESC, achieved_points DESC`,
+        params
+      );
 
       records = rows.map((r) => ({
         id: r.id.toString(),
-        crm_agent_id: Number(r.crmAgentId),
-        agent_name_snapshot: r.agentNameSnapshot,
-        work_date: r.workDate.toISOString().slice(0, 10),
-        daily_target_points: Number(r.dailyTargetPoints),
-        achieved_points: Number(r.achievedPoints),
-        qualified_leads: r.qualifiedLeads,
-        disqualified_leads: r.disqualifiedLeads,
-        generated_leads: r.generatedLeads,
-        pending_qa_leads: r.pendingQaLeads,
-        remaining_target_points: Number(r.remainingTargetPoints),
-        target_completion_pct: Number(r.targetCompletionPct),
-        attendance_status_snapshot: r.attendanceStatusSnapshot,
-        effective_work_minutes: r.effectiveWorkMinutes,
-        elapsed_work_minutes: r.elapsedWorkMinutes,
-        expected_points_at_snapshot: Number(r.expectedPointsAtSnapshot),
-        productivity_pace_pct: r.productivityPacePct !== null ? Number(r.productivityPacePct) : null,
-        pace_status: r.paceStatus,
-        synced_at: r.syncedAt.toISOString(),
-        is_final: r.isFinal,
+        crm_agent_id: Number(r.crm_agent_id),
+        agent_name_snapshot: r.agent_name_snapshot,
+        work_date: typeof r.work_date === "string" ? r.work_date.slice(0, 10) : new Date(r.work_date).toISOString().slice(0, 10),
+        daily_target_points: Number(r.daily_target_points),
+        achieved_points: Number(r.achieved_points),
+        qualified_leads: r.qualified_leads,
+        disqualified_leads: r.disqualified_leads,
+        generated_leads: r.generated_leads,
+        pending_qa_leads: r.pending_qa_leads,
+        remaining_target_points: Number(r.remaining_target_points),
+        target_completion_pct: Number(r.target_completion_pct),
+        attendance_status_snapshot: r.attendance_status_snapshot,
+        effective_work_minutes: r.effective_work_minutes,
+        elapsed_work_minutes: r.elapsed_work_minutes,
+        expected_points_at_snapshot: Number(r.expected_points_at_snapshot),
+        productivity_pace_pct: r.productivity_pace_pct !== null && r.productivity_pace_pct !== undefined ? Number(r.productivity_pace_pct) : null,
+        pace_status: r.pace_status,
+        synced_at: String(r.synced_at),
+        is_final: Boolean(r.is_final),
       }));
     }
 

@@ -1,5 +1,4 @@
-import { prisma, serializeDbData } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { query, execute, withTransaction } from "@/lib/db";
 
 export interface QaDailySnapshotRecord {
   id: string;
@@ -53,53 +52,44 @@ export async function upsertQaDailySnapshots(
     return { success: true, count: 0 };
   }
 
-  const workDate = new Date(workDateStr);
+  const sql = `
+    INSERT INTO qa_daily_snapshots (
+      crm_qa_agent_id, qa_agent_name_snapshot, work_date, total_audits, unique_leads_audited,
+      qualified_leads, disqualified_leads, rework_leads, other_qa_status_counts_json, synced_at,
+      snapshot_version, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), ?, NOW(6), NOW(6))
+    ON DUPLICATE KEY UPDATE
+      qa_agent_name_snapshot = VALUES(qa_agent_name_snapshot),
+      total_audits = VALUES(total_audits),
+      unique_leads_audited = VALUES(unique_leads_audited),
+      qualified_leads = VALUES(qualified_leads),
+      disqualified_leads = VALUES(disqualified_leads),
+      rework_leads = VALUES(rework_leads),
+      other_qa_status_counts_json = VALUES(other_qa_status_counts_json),
+      synced_at = NOW(6),
+      updated_at = NOW(6)
+  `;
 
-  await prisma.$transaction(
-    async (tx) => {
-      for (const a of analysts) {
-        const crmQaAgentId = BigInt(a.crm_qa_agent_id);
-        const uniqueAudits = a.unique_leads_audited ?? a.total_audits;
+  await withTransaction(async (conn) => {
+    for (const a of analysts) {
+      const crmQaAgentId = Number(a.crm_qa_agent_id);
+      const uniqueAudits = a.unique_leads_audited ?? a.total_audits;
+      const jsonStatus = a.other_qa_status_counts_json ? JSON.stringify(a.other_qa_status_counts_json) : null;
 
-        await tx.qaDailySnapshot.upsert({
-          where: {
-            crmQaAgentId_workDate_snapshotVersion: {
-              crmQaAgentId,
-              workDate,
-              snapshotVersion,
-            },
-          },
-          update: {
-            qaAgentNameSnapshot: a.qa_agent_name || null,
-            totalAudits: a.total_audits,
-            uniqueLeadsAudited: uniqueAudits,
-            qualifiedLeads: a.qualified_leads,
-            disqualifiedLeads: a.disqualified_leads || 0,
-            reworkLeads: a.rework_leads || 0,
-            otherQaStatusCountsJson: a.other_qa_status_counts_json ?? Prisma.DbNull,
-            syncedAt: new Date(),
-          },
-          create: {
-            crmQaAgentId,
-            qaAgentNameSnapshot: a.qa_agent_name || null,
-            workDate,
-            totalAudits: a.total_audits,
-            uniqueLeadsAudited: uniqueAudits,
-            qualifiedLeads: a.qualified_leads,
-            disqualifiedLeads: a.disqualified_leads || 0,
-            reworkLeads: a.rework_leads || 0,
-            otherQaStatusCountsJson: a.other_qa_status_counts_json ?? Prisma.DbNull,
-            syncedAt: new Date(),
-            snapshotVersion,
-          },
-        });
-      }
-    },
-    {
-      maxWait: 15000,
-      timeout: 45000,
+      await conn.execute(sql, [
+        crmQaAgentId,
+        a.qa_agent_name || null,
+        workDateStr,
+        a.total_audits,
+        uniqueAudits,
+        a.qualified_leads,
+        a.disqualified_leads || 0,
+        a.rework_leads || 0,
+        jsonStatus,
+        snapshotVersion,
+      ]);
     }
-  );
+  });
 
   return { success: true, count: analysts.length };
 }
@@ -111,29 +101,29 @@ export async function getQaDailySnapshotsForDate(
   workDateStr: string,
   snapshotVersion: number = 1
 ): Promise<QaDailySnapshotRecord[]> {
-  const workDate = new Date(workDateStr);
+  const sql = `
+    SELECT * FROM qa_daily_snapshots
+    WHERE work_date = ? AND snapshot_version = ?
+    ORDER BY qualified_leads DESC, total_audits DESC
+  `;
 
-  const rows = await prisma.qaDailySnapshot.findMany({
-    where: {
-      workDate,
-      snapshotVersion,
-    },
-    orderBy: [{ qualifiedLeads: "desc" }, { totalAudits: "desc" }],
-  });
+  const rows = await query<any>(sql, [workDateStr, snapshotVersion]);
 
   return rows.map((r) => ({
     id: r.id.toString(),
-    crm_qa_agent_id: Number(r.crmQaAgentId),
-    qa_agent_name_snapshot: r.qaAgentNameSnapshot,
+    crm_qa_agent_id: Number(r.crm_qa_agent_id),
+    qa_agent_name_snapshot: r.qa_agent_name_snapshot,
     work_date: workDateStr,
-    total_audits: r.totalAudits,
-    unique_leads_audited: r.uniqueLeadsAudited,
-    qualified_leads: r.qualifiedLeads,
-    disqualified_leads: r.disqualifiedLeads,
-    rework_leads: r.reworkLeads,
-    other_qa_status_counts_json: r.otherQaStatusCountsJson,
-    synced_at: r.syncedAt.toISOString(),
-    snapshot_version: r.snapshotVersion,
+    total_audits: r.total_audits,
+    unique_leads_audited: r.unique_leads_audited,
+    qualified_leads: r.qualified_leads,
+    disqualified_leads: r.disqualified_leads,
+    rework_leads: r.rework_leads,
+    other_qa_status_counts_json: typeof r.other_qa_status_counts_json === "string"
+      ? JSON.parse(r.other_qa_status_counts_json)
+      : r.other_qa_status_counts_json,
+    synced_at: String(r.synced_at),
+    snapshot_version: r.snapshot_version,
   }));
 }
 
@@ -157,56 +147,45 @@ export async function upsertQaIntervalMetrics(
     return { success: true, count: 0 };
   }
 
-  const workDate = new Date(workDateStr);
+  const sql = `
+    INSERT INTO qa_interval_metrics (
+      crm_qa_agent_id, qa_agent_name_snapshot, work_date, interval_start_at, interval_end_at,
+      audited_events, qualified_events, disqualified_events, unique_leads_qualified, synced_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), NOW(6))
+    ON DUPLICATE KEY UPDATE
+      qa_agent_name_snapshot = VALUES(qa_agent_name_snapshot),
+      work_date = VALUES(work_date),
+      interval_end_at = VALUES(interval_end_at),
+      audited_events = VALUES(audited_events),
+      qualified_events = VALUES(qualified_events),
+      disqualified_events = VALUES(disqualified_events),
+      unique_leads_qualified = VALUES(unique_leads_qualified),
+      synced_at = NOW(6)
+  `;
 
   const BATCH_SIZE = 50;
   for (let i = 0; i < intervals.length; i += BATCH_SIZE) {
     const chunk = intervals.slice(i, i + BATCH_SIZE);
-    await prisma.$transaction(
-      async (tx) => {
-        for (const item of chunk) {
-          const crmQaAgentId = BigInt(item.crm_qa_agent_id);
-          const intervalStartAt = new Date(item.interval_start_at);
-          const intervalEndAt = new Date(item.interval_end_at);
-          const uniqueQualified = item.unique_leads_qualified ?? item.qualified_events;
+    await withTransaction(async (conn) => {
+      for (const item of chunk) {
+        const crmQaAgentId = Number(item.crm_qa_agent_id);
+        const start = new Date(item.interval_start_at).toISOString().slice(0, 19).replace("T", " ");
+        const end = new Date(item.interval_end_at).toISOString().slice(0, 19).replace("T", " ");
+        const uniqueQualified = item.unique_leads_qualified ?? item.qualified_events;
 
-          await tx.qaIntervalMetric.upsert({
-            where: {
-              crmQaAgentId_intervalStartAt: {
-                crmQaAgentId,
-                intervalStartAt,
-              },
-            },
-            update: {
-              qaAgentNameSnapshot: item.qa_agent_name || null,
-              workDate,
-              intervalEndAt,
-              auditedEvents: item.audited_events,
-              qualifiedEvents: item.qualified_events,
-              disqualifiedEvents: item.disqualified_events || 0,
-              uniqueLeadsQualified: uniqueQualified,
-              syncedAt: new Date(),
-            },
-            create: {
-              crmQaAgentId,
-              qaAgentNameSnapshot: item.qa_agent_name || null,
-              workDate,
-              intervalStartAt,
-              intervalEndAt,
-              auditedEvents: item.audited_events,
-              qualifiedEvents: item.qualified_events,
-              disqualifiedEvents: item.disqualified_events || 0,
-              uniqueLeadsQualified: uniqueQualified,
-              syncedAt: new Date(),
-            },
-          });
-        }
-      },
-      {
-        maxWait: 15000,
-        timeout: 45000,
+        await conn.execute(sql, [
+          crmQaAgentId,
+          item.qa_agent_name || null,
+          workDateStr,
+          start,
+          end,
+          item.audited_events,
+          item.qualified_events,
+          item.disqualified_events || 0,
+          uniqueQualified,
+        ]);
       }
-    );
+    });
   }
 
   return { success: true, count: intervals.length };
@@ -219,28 +198,33 @@ export async function getQaIntervalMetricsForDate(
   workDateStr: string,
   analystId?: number
 ): Promise<QaIntervalMetricRecord[]> {
-  const workDate = new Date(workDateStr);
-  const where: Prisma.QaIntervalMetricWhereInput = { workDate };
+  const whereClauses = ["work_date = ?"];
+  const params: any[] = [workDateStr];
+
   if (analystId) {
-    where.crmQaAgentId = BigInt(analystId);
+    whereClauses.push("crm_qa_agent_id = ?");
+    params.push(analystId);
   }
 
-  const rows = await prisma.qaIntervalMetric.findMany({
-    where,
-    orderBy: [{ intervalStartAt: "asc" }, { auditedEvents: "desc" }],
-  });
+  const sql = `
+    SELECT * FROM qa_interval_metrics
+    WHERE ${whereClauses.join(" AND ")}
+    ORDER BY interval_start_at ASC, audited_events DESC
+  `;
+
+  const rows = await query<any>(sql, params);
 
   return rows.map((r) => ({
     id: r.id.toString(),
-    crm_qa_agent_id: Number(r.crmQaAgentId),
-    qa_agent_name_snapshot: r.qaAgentNameSnapshot,
+    crm_qa_agent_id: Number(r.crm_qa_agent_id),
+    qa_agent_name_snapshot: r.qa_agent_name_snapshot,
     work_date: workDateStr,
-    interval_start_at: r.intervalStartAt.toISOString(),
-    interval_end_at: r.intervalEndAt.toISOString(),
-    audited_events: r.auditedEvents,
-    qualified_events: r.qualifiedEvents,
-    disqualified_events: r.disqualifiedEvents,
-    unique_leads_qualified: r.uniqueLeadsQualified,
-    synced_at: r.syncedAt.toISOString(),
+    interval_start_at: String(r.interval_start_at),
+    interval_end_at: String(r.interval_end_at),
+    audited_events: r.audited_events,
+    qualified_events: r.qualified_events,
+    disqualified_events: r.disqualified_events,
+    unique_leads_qualified: r.unique_leads_qualified,
+    synced_at: String(r.synced_at),
   }));
 }

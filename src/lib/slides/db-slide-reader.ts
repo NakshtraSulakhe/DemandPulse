@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/db";
 import { getShiftBusinessDate, getCurrentShiftState, generateShiftIntervals } from "@/lib/shift/engine";
 import { getCampaignSnapshotsForDate } from "@/lib/db/campaign-analytics-repository";
 import { getAgentSnapshotsForDate, getAgentIntervalMetricsForDate } from "@/lib/db/agent-productivity-repository";
@@ -6,6 +5,7 @@ import { getFloorDailySnapshotForDate, computeFloorCapacityGap } from "@/lib/db/
 import { getQaDailySnapshotsForDate, getQaIntervalMetricsForDate } from "@/lib/db/qa-analytics-repository";
 import { getAttendanceDailySnapshotForDate, getAgentAttendanceSnapshotsForDate } from "@/lib/db/attendance-repository";
 import { getDailyFinalization } from "@/lib/db/finalization-repository";
+import { isAgentPresentForFloorCapacity } from "@/lib/productivity/points-capacity";
 
 function convertUtcToIstTime(timeStr: string): string {
   if (!timeStr) return timeStr;
@@ -104,7 +104,7 @@ export async function getDbSlide1(targetDate?: string): Promise<DbSlideReadResul
         full_name: l.agent_name_snapshot || `Agent #${l.crm_agent_id}`,
         role: "SDR",
         punch_in: l.punch_in_at || "",
-        shift_start_time: "17:30:00",
+        shift_start_time: "18:00:00",
         grace_minutes: 0,
         late_minutes: l.late_minutes,
         status: l.attendance_status,
@@ -200,7 +200,7 @@ export async function getDbSlide2(
       completion_percentage: a.target_completion_pct,
       is_target_met: a.target_completion_pct >= 100,
       attendance_status: a.attendance_status_snapshot,
-      is_present: a.attendance_status_snapshot.toLowerCase() !== "absent",
+      is_present: isAgentPresentForFloorCapacity(a.attendance_status_snapshot),
       // Time-based productivity pace fields
       elapsed_work_minutes: a.elapsed_work_minutes || 0,
       expected_points_at_snapshot: a.expected_points_at_snapshot || 0,

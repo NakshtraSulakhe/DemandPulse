@@ -1,4 +1,4 @@
-import { prisma, serializeDbData } from "@/lib/db";
+import { query, queryOne, execute, serializeDbData } from "@/lib/db";
 
 export interface UserPreferencesDto {
   theme: "dark" | "light";
@@ -37,22 +37,31 @@ const DEFAULT_DISPLAY_PREFS: DisplayPreferencesDto = {
  * Get preferences for a specific user ID or default user (ID 1)
  */
 export async function getUserPreferences(userId: bigint | number = 1): Promise<UserPreferencesDto> {
-  const numericId = BigInt(userId);
+  const numericId = Number(userId);
   try {
-    const record = await prisma.slideUserPreference.findUnique({
-      where: { userId: numericId },
-    });
+    const row = await queryOne<{
+      theme: string;
+      header_drawer_open: number | boolean;
+      tv_mode_enabled: number | boolean;
+      display_scaling: string;
+      heatmap_interval_minutes: number;
+    }>(
+      `SELECT theme, header_drawer_open, tv_mode_enabled, display_scaling, heatmap_interval_minutes
+       FROM slide_user_preferences
+       WHERE user_id = ? LIMIT 1`,
+      [numericId]
+    );
 
-    if (!record) {
+    if (!row) {
       return DEFAULT_USER_PREFS;
     }
 
     return {
-      theme: (record.theme as "dark" | "light") || "dark",
-      headerDrawerOpen: record.headerDrawerOpen,
-      tvModeEnabled: record.tvModeEnabled,
-      displayScaling: record.displayScaling || "normal",
-      heatmapIntervalMinutes: record.heatmapIntervalMinutes || 10,
+      theme: (row.theme as "dark" | "light") || "dark",
+      headerDrawerOpen: Boolean(row.header_drawer_open),
+      tvModeEnabled: Boolean(row.tv_mode_enabled),
+      displayScaling: row.display_scaling || "normal",
+      heatmapIntervalMinutes: row.heatmap_interval_minutes || 10,
     };
   } catch (err) {
     console.error("Error fetching user preferences from MySQL:", err);
@@ -67,31 +76,33 @@ export async function saveUserPreferences(
   userId: bigint | number = 1,
   prefs: Partial<UserPreferencesDto>
 ): Promise<UserPreferencesDto> {
-  const numericId = BigInt(userId);
+  const numericId = Number(userId);
   const current = await getUserPreferences(numericId);
   const updated: UserPreferencesDto = {
     ...current,
     ...prefs,
   };
 
-  const record = await prisma.slideUserPreference.upsert({
-    where: { userId: numericId },
-    update: {
-      theme: updated.theme,
-      headerDrawerOpen: updated.headerDrawerOpen,
-      tvModeEnabled: updated.tvModeEnabled,
-      displayScaling: updated.displayScaling,
-      heatmapIntervalMinutes: updated.heatmapIntervalMinutes,
-    },
-    create: {
-      userId: numericId,
-      theme: updated.theme,
-      headerDrawerOpen: updated.headerDrawerOpen,
-      tvModeEnabled: updated.tvModeEnabled,
-      displayScaling: updated.displayScaling,
-      heatmapIntervalMinutes: updated.heatmapIntervalMinutes,
-    },
-  });
+  await execute(
+    `INSERT INTO slide_user_preferences
+       (user_id, theme, header_drawer_open, tv_mode_enabled, display_scaling, heatmap_interval_minutes, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, NOW(6))
+     ON DUPLICATE KEY UPDATE
+       theme = VALUES(theme),
+       header_drawer_open = VALUES(header_drawer_open),
+       tv_mode_enabled = VALUES(tv_mode_enabled),
+       display_scaling = VALUES(display_scaling),
+       heatmap_interval_minutes = VALUES(heatmap_interval_minutes),
+       updated_at = NOW(6)`,
+    [
+      numericId,
+      updated.theme,
+      updated.headerDrawerOpen ? 1 : 0,
+      updated.tvModeEnabled ? 1 : 0,
+      updated.displayScaling,
+      updated.heatmapIntervalMinutes,
+    ]
+  );
 
   // Record change event in audit log
   await recordSettingChangeEvent(
@@ -99,16 +110,10 @@ export async function saveUserPreferences(
     `user-${userId}`,
     current,
     updated,
-    numericId
+    BigInt(numericId)
   );
 
-  return {
-    theme: (record.theme as "dark" | "light") || "dark",
-    headerDrawerOpen: record.headerDrawerOpen,
-    tvModeEnabled: record.tvModeEnabled,
-    displayScaling: record.displayScaling,
-    heatmapIntervalMinutes: record.heatmapIntervalMinutes,
-  };
+  return updated;
 }
 
 /**
@@ -118,21 +123,31 @@ export async function getDisplayPreferences(
   displayIdentifier: string = "default"
 ): Promise<DisplayPreferencesDto> {
   try {
-    const record = await prisma.slideDisplayPreference.findUnique({
-      where: { displayIdentifier },
-    });
+    const row = await queryOne<{
+      display_identifier: string;
+      presentation_id: number | string | null;
+      tv_mode_enabled: number | boolean;
+      display_scaling: string;
+      heatmap_interval_minutes: number;
+      slide_interval_seconds: number;
+    }>(
+      `SELECT display_identifier, presentation_id, tv_mode_enabled, display_scaling, heatmap_interval_minutes, slide_interval_seconds
+       FROM slide_display_preferences
+       WHERE display_identifier = ? LIMIT 1`,
+      [displayIdentifier]
+    );
 
-    if (!record) {
+    if (!row) {
       return { ...DEFAULT_DISPLAY_PREFS, displayIdentifier };
     }
 
     return {
-      displayIdentifier: record.displayIdentifier,
-      presentationId: record.presentationId?.toString() ?? null,
-      tvModeEnabled: record.tvModeEnabled,
-      displayScaling: record.displayScaling || "normal",
-      heatmapIntervalMinutes: record.heatmapIntervalMinutes || 10,
-      slideIntervalSeconds: record.slideIntervalSeconds || 30,
+      displayIdentifier: row.display_identifier,
+      presentationId: row.presentation_id !== null && row.presentation_id !== undefined ? String(row.presentation_id) : null,
+      tvModeEnabled: Boolean(row.tv_mode_enabled),
+      displayScaling: row.display_scaling || "normal",
+      heatmapIntervalMinutes: row.heatmap_interval_minutes || 10,
+      slideIntervalSeconds: row.slide_interval_seconds || 30,
     };
   } catch (err) {
     console.error("Error fetching display preferences from MySQL:", err);
@@ -154,24 +169,28 @@ export async function saveDisplayPreferences(
     ...prefs,
   };
 
-  const record = await prisma.slideDisplayPreference.upsert({
-    where: { displayIdentifier },
-    update: {
-      presentationId: updated.presentationId ? BigInt(updated.presentationId) : undefined,
-      tvModeEnabled: updated.tvModeEnabled,
-      displayScaling: updated.displayScaling,
-      heatmapIntervalMinutes: updated.heatmapIntervalMinutes,
-      slideIntervalSeconds: updated.slideIntervalSeconds,
-    },
-    create: {
+  const presentationIdVal = updated.presentationId ? Number(updated.presentationId) : null;
+
+  await execute(
+    `INSERT INTO slide_display_preferences
+       (display_identifier, presentation_id, tv_mode_enabled, display_scaling, heatmap_interval_minutes, slide_interval_seconds, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, NOW(6))
+     ON DUPLICATE KEY UPDATE
+       presentation_id = VALUES(presentation_id),
+       tv_mode_enabled = VALUES(tv_mode_enabled),
+       display_scaling = VALUES(display_scaling),
+       heatmap_interval_minutes = VALUES(heatmap_interval_minutes),
+       slide_interval_seconds = VALUES(slide_interval_seconds),
+       updated_at = NOW(6)`,
+    [
       displayIdentifier,
-      presentationId: updated.presentationId ? BigInt(updated.presentationId) : undefined,
-      tvModeEnabled: updated.tvModeEnabled,
-      displayScaling: updated.displayScaling,
-      heatmapIntervalMinutes: updated.heatmapIntervalMinutes,
-      slideIntervalSeconds: updated.slideIntervalSeconds,
-    },
-  });
+      presentationIdVal,
+      updated.tvModeEnabled ? 1 : 0,
+      updated.displayScaling,
+      updated.heatmapIntervalMinutes,
+      updated.slideIntervalSeconds,
+    ]
+  );
 
   await recordSettingChangeEvent(
     "DISPLAY_PREFERENCE",
@@ -181,14 +200,7 @@ export async function saveDisplayPreferences(
     actorId
   );
 
-  return {
-    displayIdentifier: record.displayIdentifier,
-    presentationId: record.presentationId?.toString() ?? null,
-    tvModeEnabled: record.tvModeEnabled,
-    displayScaling: record.displayScaling,
-    heatmapIntervalMinutes: record.heatmapIntervalMinutes,
-    slideIntervalSeconds: record.slideIntervalSeconds,
-  };
+  return updated;
 }
 
 /**
@@ -203,16 +215,16 @@ export async function recordSettingChangeEvent(
   entityId?: bigint | null
 ) {
   try {
-    await prisma.slideSettingsChangeEvent.create({
-      data: {
-        settingScope,
-        settingKey,
-        entityId: entityId ?? null,
-        changedBy,
-        previousValue: previousValue ? serializeDbData(previousValue) : null,
-        newValue: newValue ? serializeDbData(newValue) : null,
-      },
-    });
+    const prevJson = previousValue ? JSON.stringify(serializeDbData(previousValue)) : null;
+    const newJson = newValue ? JSON.stringify(serializeDbData(newValue)) : null;
+    const entId = entityId !== null && entityId !== undefined ? Number(entityId) : null;
+
+    await execute(
+      `INSERT INTO slide_settings_change_events
+         (setting_scope, setting_key, entity_id, changed_by, previous_value, new_value, changed_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW(6))`,
+      [settingScope, settingKey, entId, Number(changedBy), prevJson, newJson]
+    );
   } catch (err) {
     console.error("Failed to record setting change event in MySQL:", err);
   }

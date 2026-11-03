@@ -5,7 +5,7 @@ import {
   ShiftOperationalStatus,
   ShiftTimeInterval,
 } from "@/types/shift";
-import { DEFAULT_SHIFT_CONFIG } from "./config";
+import { DEFAULT_SHIFT_CONFIG } from "./constants";
 
 /**
  * Extracts year, month, day, hours, minutes, seconds for an instant in a specific IANA timezone
@@ -134,7 +134,7 @@ export function getUsEasternTimeInfo(date: Date = new Date()): {
 
 /**
  * Calculates the authoritative business date for any instant in time
- * Shift: 5:30 PM (17:30) to 2:30 AM (02:30) IST next day
+ * Shift: 6:00 PM (18:00) to 3:00 AM (03:00) IST next day
  */
 export function getShiftBusinessDate(
   instant: Date | string = new Date(),
@@ -144,28 +144,29 @@ export function getShiftBusinessDate(
   const ist = getTimezoneParts(dt, config.timezone || "Asia/Kolkata");
   const minuteOfDay = ist.hour * 60 + ist.minute;
 
-  // 17:30 = 1050 minutes
-  // 02:30 = 150 minutes
-  const shiftStartMinutes = 17 * 60 + 30; // 1050
-  const shiftEndMinutes = 2 * 60 + 30; // 150
+  const [startH, startM] = (config.startTime || "18:00:00").split(":").map(Number);
+  const shiftStartMinutes = (startH || 18) * 60 + (startM || 0);
 
-  // Case 1: Between 17:30 and 23:59:59 IST -> Today's shift start
+  const [endH, endM] = (config.endTime || "03:00:00").split(":").map(Number);
+  const shiftEndMinutes = (endH || 3) * 60 + (endM || 0);
+
+  // Case 1: Between shift start (e.g. 18:00) and 23:59:59 IST -> Today's shift start
   if (minuteOfDay >= shiftStartMinutes) {
     return ist.dateStr;
   }
 
-  // Case 2: Between 00:00:00 and 02:29:59 IST -> Overnight extension of yesterday's shift!
+  // Case 2: Between 00:00:00 and shift end (e.g. 03:00) IST -> Overnight extension of yesterday's shift!
   if (minuteOfDay < shiftEndMinutes) {
     return addDays(ist.dateStr, -1);
   }
 
-  // Case 3: Outside shift hours (02:30 to 17:29:59 IST)
-  // If between 02:30 and 12:00 PM: belongs to the shift that just concluded at 02:30 AM
+  // Case 3: Outside shift hours (e.g. 03:00 to 17:59:59 IST)
+  // If between shift end and 12:00 PM: belongs to the shift that just concluded overnight
   if (minuteOfDay < 12 * 60) {
     return addDays(ist.dateStr, -1);
   }
 
-  // If after 12:00 PM: preparing for today's upcoming 17:30 shift
+  // If after 12:00 PM: preparing for today's upcoming shift
   return ist.dateStr;
 }
 
@@ -176,13 +177,22 @@ export function getShiftWindowForBusinessDate(
   businessDate: string,
   config: ShiftConfiguration = DEFAULT_SHIFT_CONFIG
 ): ShiftWindow {
-  // IST shift start: businessDate 17:30:00 IST (+05:30)
-  // In UTC: 17:30 - 5:30 = 12:00:00 UTC on businessDate
+  const [startH, startM] = (config.startTime || "18:00:00").split(":").map(Number);
+  // IST shift start in UTC: (startH:startM) - 5:30
+  // e.g. 18:00 IST - 5:30 = 12:30:00 UTC on businessDate
   const [y, m, d] = businessDate.split("-").map(Number);
-  const startUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)); // 17:30 IST
+  let utcMinutes = (startH * 60 + (startM || 0)) - 330;
+  let dayOffset = 0;
+  if (utcMinutes < 0) {
+    utcMinutes += 1440;
+    dayOffset = -1;
+  }
+  const utcH = Math.floor(utcMinutes / 60);
+  const utcM = utcMinutes % 60;
 
-  // IST shift end: 9 hours later = 21:00:00 UTC (02:30 IST next day)
-  const endUtc = new Date(startUtc.getTime() + 9 * 60 * 60 * 1000);
+  const startUtc = new Date(Date.UTC(y, m - 1, d + dayOffset, utcH, utcM, 0));
+  const durationMs = (config.durationMinutes || 540) * 60 * 1000;
+  const endUtc = new Date(startUtc.getTime() + durationMs);
 
   const nextDayIst = addDays(businessDate, 1);
   const shiftStartIst = `${businessDate} ${config.startTime}`;
@@ -214,8 +224,11 @@ export function getCurrentShiftState(
   const istParts = getTimezoneParts(nowDate, config.timezone || "Asia/Kolkata");
   const minuteOfDay = istParts.hour * 60 + istParts.minute;
 
-  const shiftStartMinutes = 17 * 60 + 30; // 1050 (17:30 IST)
-  const shiftEndMinutes = 2 * 60 + 30; // 150 (02:30 IST)
+  const [startH, startM] = (config.startTime || "18:00:00").split(":").map(Number);
+  const shiftStartMinutes = (startH || 18) * 60 + (startM || 0);
+
+  const [endH, endM] = (config.endTime || "03:00:00").split(":").map(Number);
+  const shiftEndMinutes = (endH || 3) * 60 + (endM || 0);
 
   const isShiftActive = minuteOfDay >= shiftStartMinutes || minuteOfDay < shiftEndMinutes;
   const businessDate = getShiftBusinessDate(nowDate, config);
@@ -278,17 +291,19 @@ export function getCurrentShiftState(
 
 /**
  * Generates the discrete time intervals for Slide 3 (QA Heatmap) and Slide 4 (Agent Heatmap)
- * across the 17:30 to 02:30 shift window crossing midnight
+ * across the 18:00 to 03:00 shift window crossing midnight
  */
 export function generateShiftIntervals(
   intervalMinutes: number = 10,
   config: ShiftConfiguration = DEFAULT_SHIFT_CONFIG
 ): ShiftTimeInterval[] {
   const intervals: ShiftTimeInterval[] = [];
-  const totalSlots = Math.floor(540 / intervalMinutes); // e.g. 54 for 10-min, 36 for 15-min
+  const duration = config.durationMinutes || 540;
+  const totalSlots = Math.floor(duration / intervalMinutes); // e.g. 54 for 10-min, 36 for 15-min
 
-  // Starting at 17:30 (1050 minutes into day)
-  let currentMinutes = 17 * 60 + 30;
+  // Starting at config.startTime (default 18:00 = 1080 minutes into day)
+  const [startH, startM] = (config.startTime || "18:00:00").split(":").map(Number);
+  let currentMinutes = (startH || 18) * 60 + (startM || 0);
 
   for (let i = 0; i < totalSlots; i++) {
     const startHour = Math.floor(currentMinutes / 60) % 24;
@@ -301,9 +316,9 @@ export function generateShiftIntervals(
     const startStr = `${String(startHour).padStart(2, "0")}:${String(startMin).padStart(2, "0")}`;
     const endStr = `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
 
-    // US Eastern calculation for slot label (approx EDT 08:00 start)
-    // 17:30 IST = 08:00 EDT (or 07:00 EST)
-    const usStartMins = 8 * 60 + (i * intervalMinutes);
+    // US Eastern calculation for slot label (approx EDT 08:30 start)
+    // 18:00 IST = 08:30 EDT (or 07:30 EST)
+    const usStartMins = 8 * 60 + 30 + (i * intervalMinutes);
     const usStartH = Math.floor(usStartMins / 60) % 24;
     const usStartM = usStartMins % 60;
     const usEndMins = usStartMins + intervalMinutes;

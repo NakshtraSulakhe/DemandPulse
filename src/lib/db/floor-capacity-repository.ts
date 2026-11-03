@@ -1,5 +1,4 @@
-import { prisma, serializeDbData } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { query, queryOne, execute } from "@/lib/db";
 
 export interface FloorDailySnapshotRecord {
   id: string;
@@ -68,57 +67,48 @@ export function computeFloorCapacityGap(
 export async function upsertFloorDailySnapshot(
   data: SaveFloorDailySnapshotInput
 ): Promise<FloorDailySnapshotRecord> {
-  const workDate = new Date(data.work_date);
   const version = data.snapshot_version ?? 1;
   const gap = Math.round((data.floor_capacity_points - data.campaign_target_points) * 1000) / 1000;
+  const totalAchieved = data.total_achieved_points || 0;
+  const lateAgents = data.late_agents || 0;
 
-  const record = await prisma.floorDailySnapshot.upsert({
-    where: {
-      workDate_snapshotVersion: {
-        workDate,
-        snapshotVersion: version,
-      },
-    },
-    update: {
-      totalAgents: data.total_agents,
-      presentAgents: data.present_agents,
-      absentAgents: data.absent_agents,
-      lateAgents: data.late_agents || 0,
-      campaignTargetPoints: new Prisma.Decimal(data.campaign_target_points),
-      floorCapacityPoints: new Prisma.Decimal(data.floor_capacity_points),
-      capacityGapPoints: new Prisma.Decimal(gap),
-      totalAchievedPoints: new Prisma.Decimal(data.total_achieved_points || 0),
-      syncedAt: new Date(),
-    },
-    create: {
-      workDate,
-      totalAgents: data.total_agents,
-      presentAgents: data.present_agents,
-      absentAgents: data.absent_agents,
-      lateAgents: data.late_agents || 0,
-      campaignTargetPoints: new Prisma.Decimal(data.campaign_target_points),
-      floorCapacityPoints: new Prisma.Decimal(data.floor_capacity_points),
-      capacityGapPoints: new Prisma.Decimal(gap),
-      totalAchievedPoints: new Prisma.Decimal(data.total_achieved_points || 0),
-      syncedAt: new Date(),
-      snapshotVersion: version,
-    },
-  });
+  const sql = `
+    INSERT INTO floor_daily_snapshots (
+      work_date, total_agents, present_agents, absent_agents, late_agents,
+      campaign_target_points, floor_capacity_points, capacity_gap_points, total_achieved_points,
+      synced_at, snapshot_version, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), ?, NOW(6), NOW(6))
+    ON DUPLICATE KEY UPDATE
+      total_agents = VALUES(total_agents),
+      present_agents = VALUES(present_agents),
+      absent_agents = VALUES(absent_agents),
+      late_agents = VALUES(late_agents),
+      campaign_target_points = VALUES(campaign_target_points),
+      floor_capacity_points = VALUES(floor_capacity_points),
+      capacity_gap_points = VALUES(capacity_gap_points),
+      total_achieved_points = VALUES(total_achieved_points),
+      synced_at = NOW(6),
+      updated_at = NOW(6)
+  `;
 
-  return {
-    id: record.id.toString(),
-    work_date: data.work_date,
-    total_agents: record.totalAgents,
-    present_agents: record.presentAgents,
-    absent_agents: record.absentAgents,
-    late_agents: record.lateAgents,
-    campaign_target_points: Number(record.campaignTargetPoints),
-    floor_capacity_points: Number(record.floorCapacityPoints),
-    capacity_gap_points: Number(record.capacityGapPoints),
-    total_achieved_points: Number(record.totalAchievedPoints),
-    synced_at: record.syncedAt.toISOString(),
-    snapshot_version: record.snapshotVersion,
-  };
+  await execute(sql, [
+    data.work_date,
+    data.total_agents,
+    data.present_agents,
+    data.absent_agents,
+    lateAgents,
+    data.campaign_target_points,
+    data.floor_capacity_points,
+    gap,
+    totalAchieved,
+    version,
+  ]);
+
+  const record = await getFloorDailySnapshotForDate(data.work_date, version);
+  if (!record) {
+    throw new Error(`Failed to retrieve floor daily snapshot for date ${data.work_date}`);
+  }
+  return record;
 }
 
 /**
@@ -128,31 +118,28 @@ export async function getFloorDailySnapshotForDate(
   workDateStr: string,
   snapshotVersion: number = 1
 ): Promise<FloorDailySnapshotRecord | null> {
-  const workDate = new Date(workDateStr);
-  const record = await prisma.floorDailySnapshot.findUnique({
-    where: {
-      workDate_snapshotVersion: {
-        workDate,
-        snapshotVersion,
-      },
-    },
-  });
+  const sql = `
+    SELECT * FROM floor_daily_snapshots
+    WHERE work_date = ? AND snapshot_version = ?
+    LIMIT 1
+  `;
 
+  const record = await queryOne<any>(sql, [workDateStr, snapshotVersion]);
   if (!record) return null;
 
   return {
     id: record.id.toString(),
     work_date: workDateStr,
-    total_agents: record.totalAgents,
-    present_agents: record.presentAgents,
-    absent_agents: record.absentAgents,
-    late_agents: record.lateAgents,
-    campaign_target_points: Number(record.campaignTargetPoints),
-    floor_capacity_points: Number(record.floorCapacityPoints),
-    capacity_gap_points: Number(record.capacityGapPoints),
-    total_achieved_points: Number(record.totalAchievedPoints),
-    synced_at: record.syncedAt.toISOString(),
-    snapshot_version: record.snapshotVersion,
+    total_agents: record.total_agents,
+    present_agents: record.present_agents,
+    absent_agents: record.absent_agents,
+    late_agents: record.late_agents,
+    campaign_target_points: Number(record.campaign_target_points),
+    floor_capacity_points: Number(record.floor_capacity_points),
+    capacity_gap_points: Number(record.capacity_gap_points),
+    total_achieved_points: Number(record.total_achieved_points),
+    synced_at: String(record.synced_at),
+    snapshot_version: record.snapshot_version,
   };
 }
 
@@ -163,31 +150,26 @@ export async function getFloorDailySnapshotsDateRange(
   startDateStr: string,
   endDateStr: string
 ): Promise<FloorDailySnapshotRecord[]> {
-  const startDate = new Date(startDateStr);
-  const endDate = new Date(endDateStr);
+  const sql = `
+    SELECT * FROM floor_daily_snapshots
+    WHERE work_date >= ? AND work_date <= ?
+    ORDER BY work_date DESC
+  `;
 
-  const rows = await prisma.floorDailySnapshot.findMany({
-    where: {
-      workDate: {
-        gte: startDate,
-        lte: endDate,
-      },
-    },
-    orderBy: { workDate: "desc" },
-  });
+  const rows = await query<any>(sql, [startDateStr, endDateStr]);
 
   return rows.map((r) => ({
     id: r.id.toString(),
-    work_date: r.workDate.toISOString().slice(0, 10),
-    total_agents: r.totalAgents,
-    present_agents: r.presentAgents,
-    absent_agents: r.absentAgents,
-    late_agents: r.lateAgents,
-    campaign_target_points: Number(r.campaignTargetPoints),
-    floor_capacity_points: Number(r.floorCapacityPoints),
-    capacity_gap_points: Number(r.capacityGapPoints),
-    total_achieved_points: Number(r.totalAchievedPoints),
-    synced_at: r.syncedAt.toISOString(),
-    snapshot_version: r.snapshotVersion,
+    work_date: typeof r.work_date === "string" ? r.work_date.slice(0, 10) : new Date(r.work_date).toISOString().slice(0, 10),
+    total_agents: r.total_agents,
+    present_agents: r.present_agents,
+    absent_agents: r.absent_agents,
+    late_agents: r.late_agents,
+    campaign_target_points: Number(r.campaign_target_points),
+    floor_capacity_points: Number(r.floor_capacity_points),
+    capacity_gap_points: Number(r.capacity_gap_points),
+    total_achieved_points: Number(r.total_achieved_points),
+    synced_at: String(r.synced_at),
+    snapshot_version: r.snapshot_version,
   }));
 }

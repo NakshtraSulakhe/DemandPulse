@@ -1,8 +1,6 @@
-import { PrismaClient, Prisma } from "@prisma/client";
+import { execute } from "@/lib/db";
 import fs from "fs";
 import path from "path";
-
-const prisma = new PrismaClient();
 
 async function runMigration() {
   console.log("🚀 Starting One-Time Migration: Local Storage & JSON Files -> MySQL (demandflow_slides)...");
@@ -13,7 +11,7 @@ async function runMigration() {
     fs.mkdirSync(backupDir, { recursive: true });
   }
 
-  // 1. Migrate CRM Config (data/crm-config.json -> slide_crm_connection_settings & slide_system_settings)
+  // 1. Migrate CRM Config
   const crmConfigFile = path.join(dataDir, "crm-config.json");
   if (fs.existsSync(crmConfigFile)) {
     console.log("📦 Migrating data/crm-config.json to MySQL...");
@@ -21,52 +19,40 @@ async function runMigration() {
       const raw = fs.readFileSync(crmConfigFile, "utf-8");
       const crmJson = JSON.parse(raw);
 
-      // Save to slide_crm_connection_settings
-      await prisma.slideCrmConnectionSetting.upsert({
-        where: { id: BigInt(1) },
-        update: {
-          connectionName: "Production Bridge CRM",
-          baseUrl: crmJson.crmApiBaseUrl || "https://app.tarajglobal.com/demandflowbridge/api/v1",
-          pollingIntervalSeconds: crmJson.analyticsSyncInterval || 30,
-          timeoutSeconds: Math.round((crmJson.crmApiTimeoutMs || 30000) / 1000),
-          mockFallback: Boolean(crmJson.crmMockFallback),
-          autoSyncEnabled: crmJson.autoSyncEnabled !== false,
-          isActive: true,
-        },
-        create: {
-          id: BigInt(1),
-          connectionName: "Production Bridge CRM",
-          baseUrl: crmJson.crmApiBaseUrl || "https://app.tarajglobal.com/demandflowbridge/api/v1",
-          pollingIntervalSeconds: crmJson.analyticsSyncInterval || 30,
-          timeoutSeconds: Math.round((crmJson.crmApiTimeoutMs || 30000) / 1000),
-          mockFallback: Boolean(crmJson.crmMockFallback),
-          autoSyncEnabled: crmJson.autoSyncEnabled !== false,
-          isActive: true,
-        },
-      });
+      await execute(
+        `INSERT INTO slide_crm_connection_settings
+           (id, connection_name, base_url, polling_interval_seconds, timeout_seconds, mock_fallback, auto_sync_enabled, is_active, updated_at)
+         VALUES (1, 'Production Bridge CRM', ?, ?, ?, ?, ?, 1, NOW(6))
+         ON DUPLICATE KEY UPDATE
+           base_url = VALUES(base_url),
+           polling_interval_seconds = VALUES(polling_interval_seconds),
+           timeout_seconds = VALUES(timeout_seconds),
+           mock_fallback = VALUES(mock_fallback),
+           auto_sync_enabled = VALUES(auto_sync_enabled),
+           updated_at = NOW(6)`,
+        [
+          crmJson.crmApiBaseUrl || "https://app.tarajglobal.com/demandflowbridge/api/v1",
+          crmJson.analyticsSyncInterval || 30,
+          Math.round((crmJson.crmApiTimeoutMs || 30000) / 1000),
+          crmJson.crmMockFallback ? 1 : 0,
+          crmJson.autoSyncEnabled !== false ? 1 : 0,
+        ]
+      );
 
-      // Save full config to slide_system_settings
-      await prisma.slideSystemSetting.upsert({
-        where: { settingKey: "crm_connection_config" },
-        update: { settingValue: crmJson },
-        create: { settingKey: "crm_connection_config", settingValue: crmJson },
-      });
+      await execute(
+        `INSERT INTO slide_system_settings (setting_key, setting_value, updated_at)
+         VALUES ('crm_connection_config', ?, NOW(6))
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = NOW(6)`,
+        [JSON.stringify(crmJson)]
+      );
 
-      // Also ensure presentation defaultSlideSeconds is updated
-      if (crmJson.slideRotationInterval) {
-        await prisma.slidePresentation.updateMany({
-          where: { slug: "executive-presentation" },
-          data: { defaultSlideSeconds: crmJson.slideRotationInterval },
-        });
-      }
-
-      console.log("✅ CRM connection settings migrated successfully to MySQL.");
-    } catch (err) {
-      console.error("⚠️ Failed to parse/migrate crm-config.json:", err);
+      console.log("✅ CRM Config successfully migrated to MySQL.");
+    } catch (e) {
+      console.error("Failed to migrate CRM config:", e);
     }
   }
 
-  // 2. Migrate Shift Config (data/shift-config.json -> slide_business_calendars)
+  // 2. Migrate Shift Config
   const shiftConfigFile = path.join(dataDir, "shift-config.json");
   if (fs.existsSync(shiftConfigFile)) {
     console.log("📦 Migrating data/shift-config.json to MySQL...");
@@ -74,50 +60,36 @@ async function runMigration() {
       const raw = fs.readFileSync(shiftConfigFile, "utf-8");
       const shiftJson = JSON.parse(raw);
 
-      await prisma.slideBusinessCalendar.upsert({
-        where: { id: BigInt(1) },
-        update: {
-          calendarName: shiftJson.shiftName || "US Shift Operations (India Delivery)",
-          shiftCode: shiftJson.shiftCode || "US_SHIFT",
-          businessTimezone: shiftJson.reportingTimezone || "America/New_York",
-          displayTimezone: shiftJson.timezone || "Asia/Kolkata",
-          shiftStartLocal: shiftJson.startTime || "17:30:00",
-          shiftEndLocal: shiftJson.endTime || "02:30:00",
-          shiftTimezone: shiftJson.timezone || "Asia/Kolkata",
-          qaCutoffMinutes: 60,
-          settlementDelayMinutes: 30,
-          scheduleMode: shiftJson.crossesMidnight ? "cross_midnight" : "same_day",
-          workingDaysJson: shiftJson.workingDays || [1, 2, 3, 4, 5],
-          gracePeriodMinutes: shiftJson.gracePeriodMinutes || 0,
-          version: shiftJson.version || 2,
-          isActive: shiftJson.isActive !== false,
-        },
-        create: {
-          id: BigInt(1),
-          calendarName: shiftJson.shiftName || "US Shift Operations (India Delivery)",
-          shiftCode: shiftJson.shiftCode || "US_SHIFT",
-          businessTimezone: shiftJson.reportingTimezone || "America/New_York",
-          displayTimezone: shiftJson.timezone || "Asia/Kolkata",
-          shiftStartLocal: shiftJson.startTime || "17:30:00",
-          shiftEndLocal: shiftJson.endTime || "02:30:00",
-          shiftTimezone: shiftJson.timezone || "Asia/Kolkata",
-          qaCutoffMinutes: 60,
-          settlementDelayMinutes: 30,
-          scheduleMode: shiftJson.crossesMidnight ? "cross_midnight" : "same_day",
-          workingDaysJson: shiftJson.workingDays || [1, 2, 3, 4, 5],
-          gracePeriodMinutes: shiftJson.gracePeriodMinutes || 0,
-          version: shiftJson.version || 2,
-          isActive: shiftJson.isActive !== false,
-        },
-      });
+      await execute(
+        `INSERT INTO slide_business_calendars
+           (calendar_name, shift_code, business_timezone, display_timezone, shift_start_local, shift_end_local,
+            shift_timezone, schedule_mode, working_days_json, grace_period_minutes, version, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NOW(6), NOW(6))
+         ON DUPLICATE KEY UPDATE
+           calendar_name = VALUES(calendar_name),
+           shift_code = VALUES(shift_code),
+           updated_at = NOW(6)`,
+        [
+          shiftJson.shiftName || "US Shift Operations",
+          shiftJson.shiftCode || "US_SHIFT",
+          shiftJson.reportingTimezone || "America/New_York",
+          shiftJson.timezone || "Asia/Kolkata",
+          shiftJson.startTime || "17:30:00",
+          shiftJson.endTime || "02:30:00",
+          shiftJson.timezone || "Asia/Kolkata",
+          shiftJson.crossesMidnight ? "cross_midnight" : "same_day",
+          JSON.stringify(shiftJson.workingDays || [1, 2, 3, 4, 5]),
+          shiftJson.gracePeriodMinutes || 0,
+        ]
+      );
 
-      console.log("✅ Shift business calendar migrated successfully to MySQL.");
-    } catch (err) {
-      console.error("⚠️ Failed to parse/migrate shift-config.json:", err);
+      console.log("✅ Shift Config successfully migrated to MySQL.");
+    } catch (e) {
+      console.error("Failed to migrate Shift config:", e);
     }
   }
 
-  // 3. Migrate Incentive Rules Config (data/incentive-rules.json -> slide_system_settings & incentive_policies)
+  // 3. Migrate Incentive Rules
   const incentiveConfigFile = path.join(dataDir, "incentive-rules.json");
   if (fs.existsSync(incentiveConfigFile)) {
     console.log("📦 Migrating data/incentive-rules.json to MySQL...");
@@ -125,59 +97,34 @@ async function runMigration() {
       const raw = fs.readFileSync(incentiveConfigFile, "utf-8");
       const incJson = JSON.parse(raw);
 
-      await prisma.slideSystemSetting.upsert({
-        where: { settingKey: "legacy_incentive_rules_config" },
-        update: { settingValue: incJson },
-        create: { settingKey: "legacy_incentive_rules_config", settingValue: incJson },
-      });
+      await execute(
+        `INSERT INTO slide_system_settings (setting_key, setting_value, updated_at)
+         VALUES ('legacy_incentive_rules_config', ?, NOW(6))
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = NOW(6)`,
+        [JSON.stringify(incJson)]
+      );
 
-      console.log("✅ Legacy incentive rules configuration backed up into slide_system_settings.");
-    } catch (err) {
-      console.error("⚠️ Failed to parse/migrate incentive-rules.json:", err);
+      console.log("✅ Incentive rules successfully migrated to MySQL.");
+    } catch (e) {
+      console.error("Failed to migrate Incentive rules:", e);
     }
   }
 
-  // 4. Initialize User & Display Default Preferences in MySQL
-  console.log("📦 Initializing slide_user_preferences and slide_display_preferences in MySQL...");
-  await prisma.slideUserPreference.upsert({
-    where: { userId: BigInt(1) },
-    update: {
-      theme: "dark",
-      headerDrawerOpen: false,
-      tvModeEnabled: false,
-      displayScaling: "normal",
-      heatmapIntervalMinutes: 10,
-    },
-    create: {
-      userId: BigInt(1),
-      theme: "dark",
-      headerDrawerOpen: false,
-      tvModeEnabled: false,
-      displayScaling: "normal",
-      heatmapIntervalMinutes: 10,
-    },
-  });
+  // 4. Default user and display preferences
+  await execute(
+    `INSERT INTO slide_user_preferences (user_id, theme, header_drawer_open, tv_mode_enabled, display_scaling, heatmap_interval_minutes, updated_at)
+     VALUES (1, 'dark', 0, 0, 'normal', 10, NOW(6))
+     ON DUPLICATE KEY UPDATE updated_at = NOW(6)`
+  );
 
-  await prisma.slideDisplayPreference.upsert({
-    where: { displayIdentifier: "default" },
-    update: {
-      tvModeEnabled: true,
-      displayScaling: "normal",
-      heatmapIntervalMinutes: 10,
-      slideIntervalSeconds: 30,
-    },
-    create: {
-      displayIdentifier: "default",
-      tvModeEnabled: true,
-      displayScaling: "normal",
-      heatmapIntervalMinutes: 10,
-      slideIntervalSeconds: 30,
-    },
-  });
+  await execute(
+    `INSERT INTO slide_display_preferences (display_identifier, tv_mode_enabled, display_scaling, heatmap_interval_minutes, slide_interval_seconds, updated_at)
+     VALUES ('default', 1, 'normal', 10, 30, NOW(6))
+     ON DUPLICATE KEY UPDATE updated_at = NOW(6)`
+  );
 
   console.log("✅ Default user & display preferences registered in MySQL.");
 
-  // 5. Create backup copies of JSON files into data/migration_backup/
   const filesToBackup = ["crm-config.json", "shift-config.json", "incentive-rules.json"];
   for (const f of filesToBackup) {
     const src = path.join(dataDir, f);
@@ -195,7 +142,4 @@ runMigration()
   .catch((e) => {
     console.error("❌ Migration failed:", e);
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });

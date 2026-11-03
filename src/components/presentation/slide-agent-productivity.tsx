@@ -22,7 +22,7 @@ import {
   Info,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getExampleBenchmarkDataset } from "@/lib/productivity/points-capacity";
+import { getExampleBenchmarkDataset, isAgentPresentForFloorCapacity } from "@/lib/productivity/points-capacity";
 import SlideDateFilter from "@/components/presentation/slide-date-filter";
 
 interface SlideAgentProductivityProps {
@@ -117,7 +117,7 @@ export default function SlideAgentProductivity({
 
   // Fallback calculation from agents if floor_capacity was not populated
   const presentAgents = useMemo(() => {
-    return agents.filter((a) => a.is_present !== false);
+    return agents.filter((a) => isAgentPresentForFloorCapacity(a.attendance_status, a.is_present));
   }, [agents]);
 
   const totalFloorCapacityPoints =
@@ -503,7 +503,7 @@ export default function SlideAgentProductivity({
               <AnimatePresence mode="wait">
                 {currentAgents.map((agent) => {
                   const isMet = agent.is_target_met || agent.completion_percentage >= 100;
-                  const isAbsent = agent.is_present === false || agent.attendance_status?.toLowerCase() === "absent";
+                  const isAbsent = !isAgentPresentForFloorCapacity(agent.attendance_status, agent.is_present);
                   const rankInfo = agentRankMap.get(agent.agent_id);
                   const isTop3 = rankInfo?.isTop3 ?? false;
                   const isBottom3 = rankInfo?.isBottom3 ?? false;

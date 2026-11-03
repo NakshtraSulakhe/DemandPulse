@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getQaDailySnapshotsForDate, getQaIntervalMetricsForDate } from "@/lib/db/qa-analytics-repository";
 import { verifyAdminSession } from "@/lib/auth";
 import { getShiftBusinessDate } from "@/lib/shift/engine";
-import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

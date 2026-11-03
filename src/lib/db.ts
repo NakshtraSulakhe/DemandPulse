@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import mysql from "mysql2/promise";
 
 /**
  * Safely cleans environment variable values:
@@ -29,7 +29,6 @@ function cleanEnvVal(raw?: string | null, isSecret = false): string {
 
 export interface DatabaseConfig {
   isValid: boolean;
-  url: string;
   host: string;
   port: number;
   user: string;
@@ -40,8 +39,8 @@ export interface DatabaseConfig {
 }
 
 /**
- * Validates discrete environment variables and constructs the internal MySQL connection URL.
- * NEVER uses hardcoded credentials or passwords.
+ * Validates discrete environment variables and extracts clean MySQL connection settings.
+ * NEVER hardcodes credentials.
  * Guarantees that the database name is valid and cannot become ':3306', '3306', or empty.
  */
 export function getDatabaseConfig(): DatabaseConfig {
@@ -117,7 +116,6 @@ export function getDatabaseConfig(): DatabaseConfig {
   if (missingVariables.length > 0) {
     return {
       isValid: false,
-      url: "",
       host: cleanHost,
       port,
       user,
@@ -132,7 +130,6 @@ export function getDatabaseConfig(): DatabaseConfig {
   if (cleanDb === "3306" || cleanDb === ":3306" || cleanDb.length === 0) {
     return {
       isValid: false,
-      url: "",
       host: cleanHost,
       port,
       user,
@@ -147,7 +144,6 @@ export function getDatabaseConfig(): DatabaseConfig {
   if (isVercel && (cleanHost === "localhost" || cleanHost === "127.0.0.1")) {
     return {
       isValid: false,
-      url: "",
       host: cleanHost,
       port,
       user,
@@ -158,16 +154,8 @@ export function getDatabaseConfig(): DatabaseConfig {
     };
   }
 
-  // Encode credentials safely to preserve special characters in URL
-  const encodedUser = encodeURIComponent(user);
-  const encodedPassword = encodeURIComponent(password);
-
-  // Serverless pooling limits: connection_limit=1 to prevent exhausting Hostinger MySQL max connections
-  const url = `mysql://${encodedUser}:${encodedPassword}@${cleanHost}:${port}/${cleanDb}?connect_timeout=15&connection_limit=1&pool_timeout=10`;
-
   return {
     isValid: true,
-    url,
     host: cleanHost,
     port,
     user,
@@ -177,55 +165,141 @@ export function getDatabaseConfig(): DatabaseConfig {
   };
 }
 
-const dbConfig = getDatabaseConfig();
-
-// Overwrite environment variables so Prisma Rust engine never falls back to an unparsed or malformed URL
-if (dbConfig.isValid) {
-  process.env.SLIDES_DATABASE_URL = dbConfig.url;
-  process.env.DATABASE_URL = dbConfig.url;
-}
-
-// Global singleton pattern for PrismaClient in Next.js development and serverless invocations
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
-
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    datasources: dbConfig.isValid ? { db: { url: dbConfig.url } } : undefined,
-    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-  });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
-
 /**
  * Returns true if valid database connection settings are configured in environment
  */
 export function isDatabaseConfigured(): boolean {
-  return dbConfig.isValid;
+  return getDatabaseConfig().isValid;
 }
 
 /**
  * Returns sanitized, non-sensitive database configuration details for diagnostics
  */
 export function getSafeDatabaseConfigSummary() {
+  const config = getDatabaseConfig();
   return {
-    isConfigured: dbConfig.isValid,
-    host: dbConfig.host || null,
-    port: dbConfig.port || null,
-    user: dbConfig.user || null,
-    database: dbConfig.database || null,
-    hasPassword: dbConfig.hasPassword,
-    missingVariables: dbConfig.missingVariables,
-    error: dbConfig.error || null,
+    isConfigured: config.isValid,
+    host: config.host || null,
+    port: config.port || null,
+    user: config.user || null,
+    database: config.database || null,
+    hasPassword: config.hasPassword,
+    missingVariables: config.missingVariables,
+    error: config.error || null,
   };
 }
 
+// Global singleton pattern for mysql2 connection pool
+const globalForMysql = globalThis as unknown as {
+  mysqlPool: mysql.Pool | undefined;
+};
+
 /**
- * Reusable database diagnostic function to test actual connectivity and verify selected database.
+ * Retrieves the singleton mysql2 Connection Pool.
+ */
+export function getPool(): mysql.Pool {
+  if (globalForMysql.mysqlPool) {
+    return globalForMysql.mysqlPool;
+  }
+
+  const config = getDatabaseConfig();
+  if (!config.isValid) {
+    throw new Error(`Cannot initialize MySQL pool: ${config.error}`);
+  }
+
+  const password = cleanEnvVal(
+    process.env.DB_PASSWORD ||
+    process.env.MYSQL_PASSWORD ||
+    process.env.DATABASE_PASSWORD ||
+    process.env.DB_PASS ||
+    "",
+    true
+  );
+
+  const pool = mysql.createPool({
+    host: config.host,
+    port: config.port,
+    user: config.user,
+    password,
+    database: config.database,
+    waitForConnections: true,
+    connectionLimit: process.env.VERCEL ? 3 : 10,
+    queueLimit: 0,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000,
+    connectTimeout: 15000,
+    dateStrings: true,
+    supportBigNumbers: true,
+    bigNumberStrings: true,
+  });
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForMysql.mysqlPool = pool;
+  }
+
+  return pool;
+}
+
+export const pool = {
+  query: (...args: any[]) => (getPool() as any).query(...args),
+  execute: (...args: any[]) => (getPool() as any).execute(...args),
+  getConnection: () => getPool().getConnection(),
+};
+
+/**
+ * Executes a parameterized SQL query and returns an array of result rows.
+ */
+export async function query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  const activePool = getPool();
+  const [rows] = await activePool.query(sql, params);
+  return rows as T[];
+}
+
+/**
+ * Executes a parameterized SQL query and returns a single row or null.
+ */
+export async function queryOne<T = any>(sql: string, params: any[] = []): Promise<T | null> {
+  const rows = await query<T>(sql, params);
+  return rows[0] ?? null;
+}
+
+/**
+ * Executes a parameterized SQL statement (INSERT, UPDATE, DELETE) and returns execution metadata.
+ */
+export async function execute(sql: string, params: any[] = []): Promise<mysql.ResultSetHeader> {
+  const activePool = getPool();
+  const [result] = await activePool.execute(sql, params);
+  return result as mysql.ResultSetHeader;
+}
+
+/**
+ * Executes a callback within a managed database transaction.
+ * Automatically handles COMMIT and ROLLBACK.
+ */
+export async function withTransaction<T>(
+  callback: (connection: mysql.PoolConnection) => Promise<T>
+): Promise<T> {
+  const activePool = getPool();
+  const connection = await activePool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    try {
+      await connection.rollback();
+    } catch (rbError) {
+      console.error("Error during transaction rollback:", rbError);
+    }
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * Database diagnostic function to test actual connectivity and verify selected database.
  * Never logs passwords or sensitive connection strings.
  */
 export async function runDatabaseDiagnostic() {
@@ -251,12 +325,12 @@ export async function runDatabaseDiagnostic() {
 
   const startTime = Date.now();
   try {
-    const rawResult = await prisma.$queryRaw<Array<{ databaseName: string; version?: string }>>`
-      SELECT DATABASE() AS databaseName, VERSION() AS version
-    `;
+    const rawResult = await query<Array<{ databaseName: string; version?: string }>>(
+      "SELECT DATABASE() AS databaseName, VERSION() AS version"
+    );
     const latencyMs = Date.now() - startTime;
-    const selectedDatabase = rawResult?.[0]?.databaseName || null;
-    const serverVersion = rawResult?.[0]?.version || null;
+    const selectedDatabase = (rawResult as any)?.[0]?.databaseName || null;
+    const serverVersion = (rawResult as any)?.[0]?.version || null;
 
     if (selectedDatabase !== config.database) {
       return {
@@ -321,7 +395,7 @@ export async function runDatabaseDiagnostic() {
 }
 
 /**
- * Helper to safely serialize database models containing BigInt or Decimal to plain JSON-compatible objects
+ * Helper to safely serialize database models containing BigInt or Date to plain JSON-compatible objects.
  */
 export function serializeDbData<T>(obj: T): any {
   if (obj === null || obj === undefined) {
@@ -332,19 +406,6 @@ export function serializeDbData<T>(obj: T): any {
     return obj.toString();
   }
 
-  // Handle Prisma Decimal
-  if (
-    typeof obj === "object" &&
-    obj !== null &&
-    "d" in obj &&
-    "e" in obj &&
-    "s" in obj &&
-    typeof (obj as any).toNumber === "function"
-  ) {
-    return (obj as any).toNumber();
-  }
-
-  // Handle Date
   if (obj instanceof Date) {
     return obj.toISOString();
   }
@@ -364,4 +425,31 @@ export function serializeDbData<T>(obj: T): any {
   return obj;
 }
 
-export default prisma;
+/**
+ * Backward compatibility export
+ */
+export const prisma = new Proxy({}, {
+  get(_target, prop) {
+    if (prop === "$queryRaw") {
+      return (strings: TemplateStringsArray, ...values: any[]) => {
+        let sql = strings[0];
+        for (let i = 0; i < values.length; i++) {
+          sql += "?" + strings[i + 1];
+        }
+        return query(sql, values);
+      };
+    }
+    if (prop === "$executeRaw") {
+      return (strings: TemplateStringsArray, ...values: any[]) => {
+        let sql = strings[0];
+        for (let i = 0; i < values.length; i++) {
+          sql += "?" + strings[i + 1];
+        }
+        return execute(sql, values);
+      };
+    }
+    return undefined;
+  }
+});
+
+export default pool;

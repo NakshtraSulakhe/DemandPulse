@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { query } from "@/lib/db";
 import { verifyAdminSession } from "@/lib/auth";
 import { getDailyFinalization, setDailyFinalizationStatus, FinalizationStatus } from "@/lib/db/finalization-repository";
 
@@ -23,44 +23,53 @@ export async function GET(req: NextRequest) {
   const statusFilter = searchParams.get("status") || "all";
 
   try {
-    const whereDate: any = {};
-    if (from) whereDate.gte = new Date(from);
-    if (to) whereDate.lte = new Date(to);
+    const whereClauses: string[] = [];
+    const params: any[] = [];
 
-    // Fetch distinct work dates from campaign snapshots or floor snapshots
-    const floorRows = await prisma.floorDailySnapshot.findMany({
-      where: Object.keys(whereDate).length > 0 ? { workDate: whereDate } : undefined,
-      orderBy: { workDate: "desc" },
-      take: 60,
-    });
+    if (from) {
+      whereClauses.push("work_date >= ?");
+      params.push(from);
+    }
+    if (to) {
+      whereClauses.push("work_date <= ?");
+      params.push(to);
+    }
 
-    // Also fetch finalization records
-    const finalizations = await prisma.analyticsDailyFinalization.findMany({
-      where: Object.keys(whereDate).length > 0 ? { workDate: whereDate } : undefined,
-    });
+    const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+    const floorRows = await query<any>(
+      `SELECT * FROM floor_daily_snapshots ${whereStr} ORDER BY work_date DESC LIMIT 60`,
+      params
+    );
+
+    const finalizations = await query<any>(
+      `SELECT * FROM analytics_daily_finalizations ${whereStr}`,
+      params
+    );
+
     const finalizationMap = new Map<string, any>();
     finalizations.forEach((f) => {
-      finalizationMap.set(f.workDate.toISOString().slice(0, 10), f);
+      const d = typeof f.work_date === "string" ? f.work_date.slice(0, 10) : new Date(f.work_date).toISOString().slice(0, 10);
+      finalizationMap.set(d, f);
     });
 
     const datesList = floorRows.map((f) => {
-      const dateStr = f.workDate.toISOString().slice(0, 10);
+      const dateStr = typeof f.work_date === "string" ? f.work_date.slice(0, 10) : new Date(f.work_date).toISOString().slice(0, 10);
       const fin = finalizationMap.get(dateStr);
 
       return {
         work_date: dateStr,
-        total_agents: f.totalAgents,
-        present_agents: f.presentAgents,
-        absent_agents: f.absentAgents,
-        late_agents: f.lateAgents,
-        campaign_target_points: Number(f.campaignTargetPoints),
-        floor_capacity_points: Number(f.floorCapacityPoints),
-        capacity_gap_points: Number(f.capacityGapPoints),
-        total_achieved_points: Number(f.totalAchievedPoints),
-        finalization_status: fin?.finalizationStatus || "provisional",
-        finalized_at: fin?.finalizedAt ? fin.finalizedAt.toISOString() : null,
-        revision_number: fin?.revisionNumber || 1,
-        synced_at: f.syncedAt.toISOString(),
+        total_agents: f.total_agents,
+        present_agents: f.present_agents,
+        absent_agents: f.absent_agents,
+        late_agents: f.late_agents,
+        campaign_target_points: Number(f.campaign_target_points),
+        floor_capacity_points: Number(f.floor_capacity_points),
+        capacity_gap_points: Number(f.capacity_gap_points),
+        total_achieved_points: Number(f.total_achieved_points),
+        finalization_status: fin?.finalization_status || "provisional",
+        finalized_at: fin?.finalized_at ? String(fin.finalized_at) : null,
+        revision_number: fin?.revision_number || 1,
+        synced_at: String(f.synced_at),
       };
     });
 
@@ -71,9 +80,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: filtered,
-      total_days: filtered.length,
-      timestamp: new Date().toISOString(),
+      count: filtered.length,
+      history: filtered,
     });
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -86,8 +94,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/admin/analytics/history
- * Body: { work_date: string, status: FinalizationStatus }
- * Updates finalization state (provisional -> finalizing -> finalized -> correction_pending)
+ * Manually finalize or update status of a date
  */
 export async function POST(req: NextRequest) {
   const auth = await verifyAdminSession(req);
@@ -97,26 +104,42 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { work_date, status } = body;
+    const { work_date, status, notes } = body;
 
     if (!work_date || !status) {
       return NextResponse.json(
-        { success: false, error: "Missing work_date or status" },
+        { success: false, error: "Missing required fields: work_date, status" },
         { status: 400 }
       );
     }
 
-    const updated = await setDailyFinalizationStatus(
+    const validStatuses: FinalizationStatus[] = [
+      "provisional",
+      "finalizing",
+      "finalized",
+      "correction_pending",
+      "reconciliation_required",
+    ];
+
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json(
+        { success: false, error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    const finalizedBy = auth.user?.id ? parseInt(String(auth.user.id), 10) : 1;
+    const result = await setDailyFinalizationStatus(
       work_date,
       status as FinalizationStatus,
-      1,
-      `admin_manual_${Date.now()}`
+      finalizedBy,
+      notes || `manual_update_by_user_${finalizedBy}`
     );
 
     return NextResponse.json({
       success: true,
-      data: updated,
-      message: `Daily report for ${work_date} marked as ${status}.`,
+      message: `Status updated to ${status} for ${work_date}`,
+      record: result,
     });
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);

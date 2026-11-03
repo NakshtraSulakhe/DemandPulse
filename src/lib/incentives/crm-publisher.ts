@@ -1,5 +1,6 @@
-import { prisma, serializeDbData } from "@/lib/db";
+import { query, queryOne, execute, withTransaction, serializeDbData } from "@/lib/db";
 import { getCrmConfig } from "@/lib/crm-config";
+import { getPolicyById } from "./policy-service";
 
 export interface PublishResult {
   success: boolean;
@@ -27,15 +28,8 @@ export async function publishPolicyToCrm(
   policyId: bigint | number | string,
   actorId: bigint = BigInt(1)
 ): Promise<PublishResult> {
-  const numericId = BigInt(policyId);
-  const policy = await prisma.incentivePolicy.findUnique({
-    where: { id: numericId },
-    include: {
-      rules: true,
-      slabs: { orderBy: { slabOrder: "asc" } },
-      assignments: true,
-    },
-  });
+  const numericId = Number(policyId);
+  const policy = await getPolicyById(numericId);
 
   if (!policy) {
     throw new Error(`Policy not found with id ${policyId}`);
@@ -57,8 +51,8 @@ export async function publishPolicyToCrm(
     policy_name: policy.policyName,
     version: policy.version,
     currency: policy.currency,
-    valid_from: policy.validFrom.toISOString().slice(0, 10),
-    valid_to: policy.validTo ? policy.validTo.toISOString().slice(0, 10) : null,
+    valid_from: policy.validFrom,
+    valid_to: policy.validTo,
     rules: policy.rules
       ? {
           minimum_target_pct: Number(policy.rules.minimumTargetPct),
@@ -72,7 +66,7 @@ export async function publishPolicyToCrm(
           rounding_mode: policy.rules.roundingMode,
         }
       : null,
-    slabs: policy.slabs.map((s) => ({
+    slabs: (policy.slabs || []).map((s: any) => ({
       slab_order: s.slabOrder,
       minimum_completion_pct: Number(s.minimumCompletionPct),
       maximum_completion_pct: s.maximumCompletionPct ? Number(s.maximumCompletionPct) : null,
@@ -117,38 +111,33 @@ export async function publishPolicyToCrm(
     const durationMs = Date.now() - startTime;
 
     // Log the integration attempt
-    await prisma.slideIntegrationLog.create({
-      data: {
-        service: "CRM_INCENTIVES_ENGINE",
-        endpointName: "publish_policy.php",
-        requestId: `pub-${policy.policyCode}-v${policy.version}-${Date.now()}`,
+    await execute(
+      `INSERT INTO slide_integration_logs (service, endpoint_name, request_id, http_status, duration_ms, result_status, created_at)
+       VALUES ('CRM_INCENTIVES_ENGINE', 'publish_policy.php', ?, ?, ?, ?, NOW(6))`,
+      [
+        `pub-${policy.policyCode}-v${policy.version}-${Date.now()}`,
         httpStatus,
         durationMs,
-        resultStatus: res.ok && crmResponseJson?.success ? "SUCCESS" : res.status === 404 ? "NOT_IMPLEMENTED" : "ERROR",
-      },
-    });
+        res.ok && crmResponseJson?.success ? "SUCCESS" : res.status === 404 ? "NOT_IMPLEMENTED" : "ERROR",
+      ]
+    );
 
     if (res.ok && crmResponseJson?.success) {
-      // CRM confirmed acceptance! Activate policy
-      await prisma.$transaction(async (tx) => {
-        await tx.incentivePolicy.update({
-          where: { id: numericId },
-          data: { status: "active" },
-        });
-
-        await tx.slideAuditLog.create({
-          data: {
-            actorId,
-            action: "POLICY_PUBLISHED_TO_CRM",
-            resourceType: "incentive_policy",
-            resourceId: numericId.toString(),
-            detailsJson: {
+      await withTransaction(async (conn) => {
+        await conn.execute(`UPDATE incentive_policies SET status = 'active', updated_at = NOW(6) WHERE id = ?`, [numericId]);
+        await conn.execute(
+          `INSERT INTO slide_audit_logs (actor_id, action, resource_type, resource_id, details_json, created_at)
+           VALUES (?, 'POLICY_PUBLISHED_TO_CRM', 'incentive_policy', ?, ?, NOW(6))`,
+          [
+            Number(actorId),
+            String(numericId),
+            JSON.stringify({
               policyCode: policy.policyCode,
               version: policy.version,
               crmReference: crmResponseJson.crm_policy_reference,
-            },
-          },
-        });
+            }),
+          ]
+        );
       });
 
       return {
@@ -166,27 +155,23 @@ export async function publishPolicyToCrm(
   }
 
   // CRM does not currently have publish_policy.php implemented.
-  // Transition safely to 'awaiting_crm_integration' and do NOT falsely activate!
-  await prisma.$transaction(async (tx) => {
-    await tx.incentivePolicy.update({
-      where: { id: numericId },
-      data: { status: "awaiting_crm_integration" },
-    });
-
-    await tx.slideAuditLog.create({
-      data: {
-        actorId,
-        action: "POLICY_AWAITING_CRM_INTEGRATION",
-        resourceType: "incentive_policy",
-        resourceId: numericId.toString(),
-        detailsJson: {
+  // Transition safely to 'awaiting_crm_integration'
+  await withTransaction(async (conn) => {
+    await conn.execute(`UPDATE incentive_policies SET status = 'awaiting_crm_integration', updated_at = NOW(6) WHERE id = ?`, [numericId]);
+    await conn.execute(
+      `INSERT INTO slide_audit_logs (actor_id, action, resource_type, resource_id, details_json, created_at)
+       VALUES (?, 'POLICY_AWAITING_CRM_INTEGRATION', 'incentive_policy', ?, ?, NOW(6))`,
+      [
+        Number(actorId),
+        String(numericId),
+        JSON.stringify({
           policyCode: policy.policyCode,
           version: policy.version,
           reason: "CRM configuration publishing API endpoint is not yet deployed upstream",
           requiredEndpoint: "POST /api/v1/incentives/publish_policy.php",
-        },
-      },
-    });
+        }),
+      ]
+    );
   });
 
   return {

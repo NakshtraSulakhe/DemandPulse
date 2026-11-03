@@ -1,5 +1,4 @@
-import { prisma, serializeDbData } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { query, queryOne, execute, withTransaction } from "@/lib/db";
 
 export interface IncentiveDailySnapshotRecord {
   id: string;
@@ -56,88 +55,76 @@ export async function upsertIncentiveDailySnapshots(
     return { success: true, count: 0 };
   }
 
-  const workDate = new Date(workDateStr);
+  const sql = `
+    INSERT INTO incentive_daily_snapshots (
+      crm_payout_id, crm_agent_id, agent_name_snapshot, work_date, target_points, achieved_points,
+      qualified_leads, base_incentive, slab_incentive, total_incentive, eligibility_status,
+      approval_status, payment_status, policy_version_reference, crm_payment_reference,
+      source_updated_at, synced_at, snapshot_version, is_final, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), ?, ?, NOW(6), NOW(6))
+    ON DUPLICATE KEY UPDATE
+      crm_payout_id = VALUES(crm_payout_id),
+      agent_name_snapshot = VALUES(agent_name_snapshot),
+      target_points = VALUES(target_points),
+      achieved_points = VALUES(achieved_points),
+      qualified_leads = VALUES(qualified_leads),
+      base_incentive = VALUES(base_incentive),
+      slab_incentive = VALUES(slab_incentive),
+      total_incentive = VALUES(total_incentive),
+      eligibility_status = VALUES(eligibility_status),
+      approval_status = VALUES(approval_status),
+      payment_status = VALUES(payment_status),
+      policy_version_reference = VALUES(policy_version_reference),
+      crm_payment_reference = VALUES(crm_payment_reference),
+      source_updated_at = VALUES(source_updated_at),
+      synced_at = NOW(6),
+      is_final = VALUES(is_final),
+      updated_at = NOW(6)
+  `;
 
-  await prisma.$transaction(
-    async (tx) => {
-      for (const r of records) {
-        const crmAgentId = BigInt(r.crm_agent_id);
-        const crmPayoutId = r.crm_payout_id ? BigInt(r.crm_payout_id) : null;
-        const sourceUpdatedAt = r.source_updated_at ? new Date(r.source_updated_at) : null;
+  await withTransaction(async (conn) => {
+    for (const r of records) {
+      const crmAgentId = Number(r.crm_agent_id);
+      const crmPayoutId = r.crm_payout_id ? Number(r.crm_payout_id) : null;
+      const sourceUpdatedAt = r.source_updated_at
+        ? new Date(r.source_updated_at).toISOString().slice(0, 19).replace("T", " ")
+        : null;
 
-        // Check existing record to avoid regressing paid amounts
-        const existing = await tx.incentiveDailySnapshot.findUnique({
-          where: {
-            crmAgentId_workDate_snapshotVersion: {
-              crmAgentId,
-              workDate,
-              snapshotVersion,
-            },
-          },
-        });
+      const [existingRows] = await conn.query(
+        `SELECT payment_status, crm_payment_reference FROM incentive_daily_snapshots
+         WHERE crm_agent_id = ? AND work_date = ? AND snapshot_version = ? LIMIT 1`,
+        [crmAgentId, workDateStr, snapshotVersion]
+      );
+      const existing = (existingRows as any[])[0];
 
-        // If existing was already paid and final, preserve payment status and reference
-        const isAlreadyPaid = existing?.paymentStatus === "paid";
-        const finalPaymentStatus = isAlreadyPaid ? "paid" : (r.payment_status || "unpaid");
-        const finalPaymentRef = isAlreadyPaid
-          ? (existing?.crmPaymentReference || r.crm_payment_reference || null)
-          : (r.crm_payment_reference || null);
+      const isAlreadyPaid = existing?.payment_status === "paid";
+      const finalPaymentStatus = isAlreadyPaid ? "paid" : (r.payment_status || "unpaid");
+      const finalPaymentRef = isAlreadyPaid
+        ? (existing?.crm_payment_reference || r.crm_payment_reference || null)
+        : (r.crm_payment_reference || null);
 
-        await tx.incentiveDailySnapshot.upsert({
-          where: {
-            crmAgentId_workDate_snapshotVersion: {
-              crmAgentId,
-              workDate,
-              snapshotVersion,
-            },
-          },
-          update: {
-            crmPayoutId,
-            agentNameSnapshot: r.agent_name || null,
-            targetPoints: new Prisma.Decimal(r.target_points),
-            achievedPoints: new Prisma.Decimal(r.achieved_points),
-            qualifiedLeads: r.qualified_leads,
-            baseIncentive: new Prisma.Decimal(r.base_incentive),
-            slabIncentive: new Prisma.Decimal(r.slab_incentive),
-            totalIncentive: new Prisma.Decimal(r.total_incentive),
-            eligibilityStatus: r.eligibility_status || "ineligible",
-            approvalStatus: r.approval_status || "pending_approval",
-            paymentStatus: finalPaymentStatus,
-            policyVersionReference: r.policy_version_reference ?? null,
-            crmPaymentReference: finalPaymentRef,
-            sourceUpdatedAt,
-            syncedAt: new Date(),
-            isFinal: isAlreadyPaid ? true : isFinal,
-          },
-          create: {
-            crmPayoutId,
-            crmAgentId,
-            agentNameSnapshot: r.agent_name || null,
-            workDate,
-            targetPoints: new Prisma.Decimal(r.target_points),
-            achievedPoints: new Prisma.Decimal(r.achieved_points),
-            qualifiedLeads: r.qualified_leads,
-            baseIncentive: new Prisma.Decimal(r.base_incentive),
-            slabIncentive: new Prisma.Decimal(r.slab_incentive),
-            totalIncentive: new Prisma.Decimal(r.total_incentive),
-            eligibilityStatus: r.eligibility_status || "ineligible",
-            approvalStatus: r.approval_status || "pending_approval",
-            paymentStatus: finalPaymentStatus,
-            policyVersionReference: r.policy_version_reference ?? null,
-            crmPaymentReference: finalPaymentRef,
-            sourceUpdatedAt,
-            syncedAt: new Date(),
-            snapshotVersion,
-            isFinal: isAlreadyPaid ? true : isFinal,
-          },
-        });
-      }
-    },
-    {
-      maxWait: 15000,
-      timeout: 45000,
+      await conn.execute(sql, [
+        crmPayoutId,
+        crmAgentId,
+        r.agent_name || null,
+        workDateStr,
+        r.target_points,
+        r.achieved_points,
+        r.qualified_leads,
+        r.base_incentive,
+        r.slab_incentive,
+        r.total_incentive,
+        r.eligibility_status || "ineligible",
+        r.approval_status || "pending_approval",
+        finalPaymentStatus,
+        r.policy_version_reference ?? null,
+        finalPaymentRef,
+        sourceUpdatedAt,
+        snapshotVersion,
+        isAlreadyPaid ? 1 : (isFinal ? 1 : 0),
+      ]);
     }
-  );
+  });
 
   return { success: true, count: records.length };
 }
@@ -154,48 +141,52 @@ export async function getIncentiveSnapshotsForDate(
     snapshotVersion?: number;
   }
 ): Promise<IncentiveDailySnapshotRecord[]> {
-  const workDate = new Date(workDateStr);
-  const where: Prisma.IncentiveDailySnapshotWhereInput = {
-    workDate,
-    snapshotVersion: filters?.snapshotVersion ?? 1,
-  };
+  const version = filters?.snapshotVersion ?? 1;
+  const whereClauses = ["work_date = ?", "snapshot_version = ?"];
+  const params: any[] = [workDateStr, version];
 
   if (filters?.paymentStatus && filters.paymentStatus !== "all") {
-    where.paymentStatus = filters.paymentStatus;
+    whereClauses.push("payment_status = ?");
+    params.push(filters.paymentStatus);
   }
   if (filters?.approvalStatus && filters.approvalStatus !== "all") {
-    where.approvalStatus = filters.approvalStatus;
+    whereClauses.push("approval_status = ?");
+    params.push(filters.approvalStatus);
   }
   if (filters?.agentId) {
-    where.crmAgentId = BigInt(filters.agentId);
+    whereClauses.push("crm_agent_id = ?");
+    params.push(filters.agentId);
   }
 
-  const rows = await prisma.incentiveDailySnapshot.findMany({
-    where,
-    orderBy: [{ totalIncentive: "desc" }, { achievedPoints: "desc" }],
-  });
+  const sql = `
+    SELECT * FROM incentive_daily_snapshots
+    WHERE ${whereClauses.join(" AND ")}
+    ORDER BY total_incentive DESC, achieved_points DESC
+  `;
+
+  const rows = await query<any>(sql, params);
 
   return rows.map((r) => ({
     id: r.id.toString(),
-    crm_payout_id: r.crmPayoutId ? Number(r.crmPayoutId) : null,
-    crm_agent_id: Number(r.crmAgentId),
-    agent_name_snapshot: r.agentNameSnapshot,
+    crm_payout_id: r.crm_payout_id ? Number(r.crm_payout_id) : null,
+    crm_agent_id: Number(r.crm_agent_id),
+    agent_name_snapshot: r.agent_name_snapshot,
     work_date: workDateStr,
-    target_points: Number(r.targetPoints),
-    achieved_points: Number(r.achievedPoints),
-    qualified_leads: r.qualifiedLeads,
-    base_incentive: Number(r.baseIncentive),
-    slab_incentive: Number(r.slabIncentive),
-    total_incentive: Number(r.totalIncentive),
-    eligibility_status: r.eligibilityStatus,
-    approval_status: r.approvalStatus,
-    payment_status: r.paymentStatus,
-    policy_version_reference: r.policyVersionReference,
-    crm_payment_reference: r.crmPaymentReference,
-    source_updated_at: r.sourceUpdatedAt ? r.sourceUpdatedAt.toISOString() : null,
-    synced_at: r.syncedAt.toISOString(),
-    snapshot_version: r.snapshotVersion,
-    is_final: r.isFinal,
+    target_points: Number(r.target_points),
+    achieved_points: Number(r.achieved_points),
+    qualified_leads: r.qualified_leads,
+    base_incentive: Number(r.base_incentive),
+    slab_incentive: Number(r.slab_incentive),
+    total_incentive: Number(r.total_incentive),
+    eligibility_status: r.eligibility_status,
+    approval_status: r.approval_status,
+    payment_status: r.payment_status,
+    policy_version_reference: r.policy_version_reference,
+    crm_payment_reference: r.crm_payment_reference,
+    source_updated_at: r.source_updated_at ? String(r.source_updated_at) : null,
+    synced_at: String(r.synced_at),
+    snapshot_version: r.snapshot_version,
+    is_final: Boolean(r.is_final),
   }));
 }
 
@@ -210,48 +201,46 @@ export async function getIncentiveSnapshotsDateRange(
     agentId?: number;
   }
 ): Promise<IncentiveDailySnapshotRecord[]> {
-  const startDate = new Date(startDateStr);
-  const endDate = new Date(endDateStr);
-
-  const where: Prisma.IncentiveDailySnapshotWhereInput = {
-    workDate: {
-      gte: startDate,
-      lte: endDate,
-    },
-  };
+  const whereClauses = ["work_date >= ?", "work_date <= ?"];
+  const params: any[] = [startDateStr, endDateStr];
 
   if (filters?.paymentStatus && filters.paymentStatus !== "all") {
-    where.paymentStatus = filters.paymentStatus;
+    whereClauses.push("payment_status = ?");
+    params.push(filters.paymentStatus);
   }
   if (filters?.agentId) {
-    where.crmAgentId = BigInt(filters.agentId);
+    whereClauses.push("crm_agent_id = ?");
+    params.push(filters.agentId);
   }
 
-  const rows = await prisma.incentiveDailySnapshot.findMany({
-    where,
-    orderBy: [{ workDate: "desc" }, { totalIncentive: "desc" }],
-  });
+  const sql = `
+    SELECT * FROM incentive_daily_snapshots
+    WHERE ${whereClauses.join(" AND ")}
+    ORDER BY work_date DESC, total_incentive DESC
+  `;
+
+  const rows = await query<any>(sql, params);
 
   return rows.map((r) => ({
     id: r.id.toString(),
-    crm_payout_id: r.crmPayoutId ? Number(r.crmPayoutId) : null,
-    crm_agent_id: Number(r.crmAgentId),
-    agent_name_snapshot: r.agentNameSnapshot,
-    work_date: r.workDate.toISOString().slice(0, 10),
-    target_points: Number(r.targetPoints),
-    achieved_points: Number(r.achievedPoints),
-    qualified_leads: r.qualifiedLeads,
-    base_incentive: Number(r.baseIncentive),
-    slab_incentive: Number(r.slabIncentive),
-    total_incentive: Number(r.totalIncentive),
-    eligibility_status: r.eligibilityStatus,
-    approval_status: r.approvalStatus,
-    payment_status: r.paymentStatus,
-    policy_version_reference: r.policyVersionReference,
-    crm_payment_reference: r.crmPaymentReference,
-    source_updated_at: r.sourceUpdatedAt ? r.sourceUpdatedAt.toISOString() : null,
-    synced_at: r.syncedAt.toISOString(),
-    snapshot_version: r.snapshotVersion,
-    is_final: r.isFinal,
+    crm_payout_id: r.crm_payout_id ? Number(r.crm_payout_id) : null,
+    crm_agent_id: Number(r.crm_agent_id),
+    agent_name_snapshot: r.agent_name_snapshot,
+    work_date: typeof r.work_date === "string" ? r.work_date.slice(0, 10) : new Date(r.work_date).toISOString().slice(0, 10),
+    target_points: Number(r.target_points),
+    achieved_points: Number(r.achieved_points),
+    qualified_leads: r.qualified_leads,
+    base_incentive: Number(r.base_incentive),
+    slab_incentive: Number(r.slab_incentive),
+    total_incentive: Number(r.total_incentive),
+    eligibility_status: r.eligibility_status,
+    approval_status: r.approval_status,
+    payment_status: r.payment_status,
+    policy_version_reference: r.policy_version_reference,
+    crm_payment_reference: r.crm_payment_reference,
+    source_updated_at: r.source_updated_at ? String(r.source_updated_at) : null,
+    synced_at: String(r.synced_at),
+    snapshot_version: r.snapshot_version,
+    is_final: Boolean(r.is_final),
   }));
 }

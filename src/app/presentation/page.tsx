@@ -350,6 +350,7 @@ export default function PresentationPage() {
                 selectedDate={slideDates[4]}
                 onDateChange={(d) => handleSlideDateChange(4, d)}
                 onApplyDateToAll={handleApplyDateToAll}
+                rowsPerPage={8}
               />
             )}
 

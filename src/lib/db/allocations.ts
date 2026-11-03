@@ -1,4 +1,4 @@
-import { prisma, serializeDbData } from "@/lib/db";
+import { query, queryOne, execute, withTransaction, serializeDbData } from "@/lib/db";
 
 export interface CampaignDailyAllocationRecord {
   allocation_id: number;
@@ -42,29 +42,32 @@ export interface SaveAllocationInput {
 }
 
 /**
- * Retrieves all saved allocations for a specific business date from MySQL (demandflow_slides).
+ * Retrieves all saved allocations for a specific business date from MySQL.
  */
 export async function getAllocationsForDate(businessDate: string): Promise<CampaignDailyAllocationRecord[]> {
   try {
-    const targetDate = new Date(businessDate);
-    const plans = await prisma.slideCampaignTargetPlan.findMany({
-      where: { targetWorkDate: targetDate },
-      orderBy: { campaignName: "asc" },
-    });
+    const sql = `
+      SELECT id, crm_campaign_id, campaign_name, client_code, target_work_date, proposed_target,
+             monthly_allocation, plan_status, notes, created_by, created_at, updated_at
+      FROM slide_campaign_target_plans
+      WHERE target_work_date = ?
+      ORDER BY campaign_name ASC
+    `;
+    const plans = await query<any>(sql, [businessDate]);
 
     return plans.map((p) => ({
       allocation_id: Number(p.id),
-      campaign_id: Number(p.crmCampaignId),
-      campaign_name: p.campaignName || "",
-      client_code: p.clientCode || "",
+      campaign_id: Number(p.crm_campaign_id),
+      campaign_name: p.campaign_name || "",
+      client_code: p.client_code || "",
       business_date: businessDate,
-      daily_target: p.proposedTarget,
-      monthly_allocation: p.monthlyAllocation || 0,
-      created_by: p.createdBy.toString(),
-      created_at: p.createdAt.toISOString(),
-      updated_by: p.createdBy.toString(),
-      updated_at: p.updatedAt.toISOString(),
-      allocation_status: p.planStatus,
+      daily_target: p.proposed_target,
+      monthly_allocation: p.monthly_allocation || 0,
+      created_by: String(p.created_by),
+      created_at: String(p.created_at),
+      updated_by: String(p.created_by),
+      updated_at: String(p.updated_at),
+      allocation_status: p.plan_status,
       notes: p.notes || "",
     }));
   } catch (err) {
@@ -122,55 +125,42 @@ export async function saveAllocationsBatch(
     }
   }
 
-  const targetDate = new Date(businessDate);
   let savedCount = 0;
 
-  await prisma.$transaction(async (tx) => {
+  await withTransaction(async (conn) => {
     for (const t of targets) {
-      const crmCampaignId = BigInt(t.campaign_id);
+      const crmCampaignId = Number(t.campaign_id);
 
-      const existing = await tx.slideCampaignTargetPlan.findFirst({
-        where: {
-          crmCampaignId,
-          targetWorkDate: targetDate,
-        },
-      });
+      const [existingRows] = await conn.query(
+        `SELECT id, proposed_target, campaign_name, client_code, monthly_allocation, notes
+         FROM slide_campaign_target_plans
+         WHERE crm_campaign_id = ? AND target_work_date = ?
+         LIMIT 1`,
+        [crmCampaignId, businessDate]
+      );
+      const existing = (existingRows as any[])[0];
 
       if (existing) {
-        const previousTarget = existing.proposedTarget;
+        const previousTarget = existing.proposed_target;
         const newTarget = t.daily_target;
-        const campaignName = t.campaign_name || existing.campaignName || null;
-        const clientCode = t.client_code || existing.clientCode || null;
-        const monthlyAlloc = t.monthly_allocation !== undefined ? t.monthly_allocation : existing.monthlyAllocation;
+        const campaignName = t.campaign_name || existing.campaign_name || null;
+        const clientCode = t.client_code || existing.client_code || null;
+        const monthlyAlloc = t.monthly_allocation !== undefined ? t.monthly_allocation : existing.monthly_allocation;
         const notes = t.notes !== undefined ? t.notes : existing.notes;
 
-        const updated = await tx.slideCampaignTargetPlan.update({
-          where: { id: existing.id },
-          data: {
-            proposedTarget: newTarget,
-            campaignName,
-            clientCode,
-            monthlyAllocation: monthlyAlloc,
-            notes,
-            planStatus: "applied",
-            submittedAt: new Date(),
-          },
-        });
+        await conn.execute(
+          `UPDATE slide_campaign_target_plans
+           SET proposed_target = ?, campaign_name = ?, client_code = ?, monthly_allocation = ?, notes = ?, plan_status = 'applied', submitted_at = NOW(6), updated_at = NOW(6)
+           WHERE id = ?`,
+          [newTarget, campaignName, clientCode, monthlyAlloc, notes, existing.id]
+        );
 
-        await tx.slideCampaignTargetAudit.create({
-          data: {
-            planId: updated.id,
-            crmCampaignId,
-            campaignName,
-            clientCode,
-            targetWorkDate: targetDate,
-            previousTarget,
-            newTarget,
-            action: "UPDATE",
-            performedBy: BigInt(1),
-            notes: notes || undefined,
-          },
-        });
+        await conn.execute(
+          `INSERT INTO slide_campaign_target_audit
+             (plan_id, crm_campaign_id, campaign_name, client_code, target_work_date, previous_target, new_target, action, performed_by, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'UPDATE', 1, ?, NOW(6))`,
+          [existing.id, crmCampaignId, campaignName, clientCode, businessDate, previousTarget, newTarget, notes || null]
+        );
 
         savedCount++;
       } else {
@@ -180,35 +170,21 @@ export async function saveAllocationsBatch(
         const monthlyAlloc = t.monthly_allocation ?? null;
         const notes = t.notes || null;
 
-        const created = await tx.slideCampaignTargetPlan.create({
-          data: {
-            crmCampaignId,
-            campaignName,
-            clientCode,
-            targetWorkDate: targetDate,
-            proposedTarget: newTarget,
-            monthlyAllocation: monthlyAlloc,
-            planStatus: "applied",
-            notes,
-            createdBy: BigInt(1),
-            submittedAt: new Date(),
-          },
-        });
+        const [insertRes] = await conn.execute(
+          `INSERT INTO slide_campaign_target_plans
+             (crm_campaign_id, campaign_name, client_code, target_work_date, proposed_target, monthly_allocation, plan_status, notes, created_by, submitted_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'applied', ?, 1, NOW(6), NOW(6), NOW(6))`,
+          [crmCampaignId, campaignName, clientCode, businessDate, newTarget, monthlyAlloc, notes]
+        );
 
-        await tx.slideCampaignTargetAudit.create({
-          data: {
-            planId: created.id,
-            crmCampaignId,
-            campaignName,
-            clientCode,
-            targetWorkDate: targetDate,
-            previousTarget: null,
-            newTarget,
-            action: "INSERT",
-            performedBy: BigInt(1),
-            notes: notes || undefined,
-          },
-        });
+        const newPlanId = (insertRes as any).insertId;
+
+        await conn.execute(
+          `INSERT INTO slide_campaign_target_audit
+             (plan_id, crm_campaign_id, campaign_name, client_code, target_work_date, previous_target, new_target, action, performed_by, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, NULL, ?, 'INSERT', 1, ?, NOW(6))`,
+          [newPlanId, crmCampaignId, campaignName, clientCode, businessDate, newTarget, notes || null]
+        );
 
         savedCount++;
       }
@@ -237,41 +213,54 @@ export async function getAllocationAuditHistory(filters?: {
   limit?: number;
 }): Promise<CampaignAllocationAuditRecord[]> {
   try {
-    const where: any = {};
+    const whereClauses: string[] = [];
+    const params: any[] = [];
 
     if (filters?.business_date) {
-      where.targetWorkDate = new Date(filters.business_date);
+      whereClauses.push("target_work_date = ?");
+      params.push(filters.business_date);
     }
     if (filters?.campaign_id) {
-      where.crmCampaignId = BigInt(filters.campaign_id);
+      whereClauses.push("crm_campaign_id = ?");
+      params.push(filters.campaign_id);
     }
     if (filters?.client_code) {
-      where.clientCode = filters.client_code;
+      whereClauses.push("client_code = ?");
+      params.push(filters.client_code);
     }
-    if (filters?.from || filters?.to) {
-      where.targetWorkDate = {
-        gte: filters.from ? new Date(filters.from) : undefined,
-        lte: filters.to ? new Date(filters.to) : undefined,
-      };
+    if (filters?.from) {
+      whereClauses.push("target_work_date >= ?");
+      params.push(filters.from);
+    }
+    if (filters?.to) {
+      whereClauses.push("target_work_date <= ?");
+      params.push(filters.to);
     }
 
-    const records = await prisma.slideCampaignTargetAudit.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: filters?.limit || 100,
-    });
+    const limitVal = filters?.limit || 100;
+    const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+    const sql = `
+      SELECT id, plan_id, crm_campaign_id, campaign_name, client_code, target_work_date, previous_target, new_target, performed_by, created_at, action, notes
+      FROM slide_campaign_target_audit
+      ${whereStr}
+      ORDER BY created_at DESC
+      LIMIT ?
+    `;
+    params.push(limitVal);
+
+    const records = await query<any>(sql, params);
 
     return records.map((r) => ({
       audit_id: Number(r.id),
-      allocation_id: r.planId ? Number(r.planId) : null,
-      campaign_id: Number(r.crmCampaignId),
-      campaign_name: r.campaignName,
-      client_code: r.clientCode,
-      business_date: r.targetWorkDate.toISOString().slice(0, 10),
-      previous_target: r.previousTarget,
-      new_target: r.newTarget,
-      changed_by: r.performedBy.toString(),
-      change_timestamp: r.createdAt.toISOString(),
+      allocation_id: r.plan_id ? Number(r.plan_id) : null,
+      campaign_id: Number(r.crm_campaign_id),
+      campaign_name: r.campaign_name,
+      client_code: r.client_code,
+      business_date: typeof r.target_work_date === "string" ? r.target_work_date.slice(0, 10) : new Date(r.target_work_date).toISOString().slice(0, 10),
+      previous_target: r.previous_target,
+      new_target: r.new_target,
+      changed_by: String(r.performed_by),
+      change_timestamp: String(r.created_at),
       operation_type: r.action as "INSERT" | "UPDATE",
       relevant_audit_details: null,
       notes: r.notes || "",

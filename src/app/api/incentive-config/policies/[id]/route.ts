@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminSession } from "@/lib/auth";
 import { getPolicyById, updatePolicy, UpdatePolicyInputSchema } from "@/lib/incentives/policy-service";
-import { prisma } from "@/lib/db";
+import { queryOne, execute } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -59,9 +59,11 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   }
 
   try {
-    const policy = await prisma.incentivePolicy.findUnique({
-      where: { id: BigInt(params.id) },
-    });
+    const numericId = Number(params.id);
+    const policy = await queryOne<{ id: number; status: string }>(
+      `SELECT id, status FROM incentive_policies WHERE id = ? LIMIT 1`,
+      [numericId]
+    );
 
     if (!policy) {
       return NextResponse.json({ success: false, error: "Policy not found" }, { status: 404 });
@@ -74,9 +76,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       );
     }
 
-    await prisma.incentivePolicy.delete({
-      where: { id: BigInt(params.id) },
-    });
+    await execute(`DELETE FROM incentive_policies WHERE id = ?`, [numericId]);
 
     return NextResponse.json({ success: true, message: "Draft policy deleted successfully" });
   } catch (err: any) {

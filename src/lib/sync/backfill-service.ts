@@ -9,7 +9,7 @@
  * 5. Guarantees zero fabricated data.
  */
 
-import { prisma } from "@/lib/db";
+import { queryOne } from "@/lib/db";
 import { runAnalyticsSync, SyncEngineResult } from "@/lib/sync/sync-engine";
 import { setDailyFinalizationStatus } from "@/lib/db/finalization-repository";
 
@@ -71,9 +71,11 @@ export async function runHistoricalBackfill(
   for (const date of dateList) {
     try {
       // Check if date already has persisted records in MySQL
-      const existingCampaignCount = await prisma.campaignDailySnapshot.count({
-        where: { workDate: new Date(date) },
-      });
+      const countRow = await queryOne<{ cnt: number }>(
+        `SELECT COUNT(*) AS cnt FROM campaign_daily_snapshots WHERE work_date = ?`,
+        [date]
+      );
+      const existingCampaignCount = countRow ? Number(countRow.cnt) : 0;
 
       if (existingCampaignCount > 0 && !options?.overwriteExisting) {
         alreadyPersistedDays++;
@@ -106,9 +108,11 @@ export async function runHistoricalBackfill(
       }
 
       // Check completeness: were intervals returned or only daily totals?
-      const intervalCount = await prisma.qaIntervalMetric.count({
-        where: { workDate: new Date(date) },
-      });
+      const intervalRow = await queryOne<{ cnt: number }>(
+        `SELECT COUNT(*) AS cnt FROM qa_interval_metrics WHERE work_date = ?`,
+        [date]
+      );
+      const intervalCount = intervalRow ? Number(intervalRow.cnt) : 0;
 
       if (intervalCount === 0) {
         // CRM only had current status, no granular 10-minute intervals
