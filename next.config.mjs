@@ -52,7 +52,7 @@ function buildUrlFromDbCredentials() {
   );
 
   const password = cleanEnvVal(
-    process.env.DB_PASSWORD ||
+    process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD :
     process.env.MYSQL_PASSWORD ||
     process.env.DATABASE_PASSWORD ||
     process.env.DB_PASS ||
@@ -69,8 +69,14 @@ function buildUrlFromDbCredentials() {
   );
   let cleanDb = rawDb.replace(/^[:/]+/, "").trim();
 
-  // If credentials are not present (e.g. in CI build step without DB secrets), provide a safe build placeholder
-  if (!cleanHost || !user || !password || !cleanDb || cleanDb === "3306" || cleanDb === ":3306") {
+  // If discrete credentials are not present, check SLIDES_DATABASE_URL or DATABASE_URL before returning placeholder
+  if (!cleanHost || !user || !cleanDb || cleanDb === "3306" || cleanDb === ":3306") {
+    if (process.env.SLIDES_DATABASE_URL && !process.env.SLIDES_DATABASE_URL.includes("unconfigured_user")) {
+      return process.env.SLIDES_DATABASE_URL;
+    }
+    if (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes("unconfigured_user")) {
+      return process.env.DATABASE_URL;
+    }
     return "mysql://unconfigured_user:unconfigured_pass@127.0.0.1:3306/u449458970_demandpulse?connect_timeout=15";
   }
 
