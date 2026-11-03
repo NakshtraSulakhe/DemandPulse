@@ -35,6 +35,7 @@ export interface DatabaseConfig {
   database: string;
   hasPassword: boolean;
   missingVariables: string[];
+  url?: string;
   error?: string;
 }
 
