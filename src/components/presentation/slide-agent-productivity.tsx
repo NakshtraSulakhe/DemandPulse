@@ -586,6 +586,14 @@ export default function SlideAgentProductivity({
                               <span className="font-mono text-[9.5px] text-slate-500 dark:text-slate-400">
                                 #{rank} of {agents.length}
                               </span>
+                              {agent.forms_submitted !== undefined && agent.forms_submitted > 0 && (
+                                <>
+                                  <span className="text-slate-400 dark:text-slate-600">•</span>
+                                  <span className="font-mono text-[9.5px] font-bold text-amber-600 dark:text-amber-400">
+                                    {agent.forms_submitted} Forms
+                                  </span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>

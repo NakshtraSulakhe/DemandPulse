@@ -47,7 +47,8 @@ const SLIDE_TITLES = [
   { id: 2, label: "Agent Productivity", short: "Agents" },
   { id: 3, label: "QA Timewise Heatmap", short: "QA Map" },
   { id: 4, label: "Agent Lead Heatmap", short: "Agent Map" },
-  { id: 5, label: "Comparative Analytics", short: "Comparison" },
+  { id: 5, label: "Form Submissions Heatmap", short: "Forms Map" },
+  { id: 6, label: "Comparative Analytics", short: "Comparison" },
 ];
 
 export default function PresentationHeader({

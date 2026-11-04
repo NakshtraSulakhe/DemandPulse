@@ -4,6 +4,7 @@ import {
   Slide3Data,
   Slide4Data,
   Slide5Data,
+  Slide6Data,
   RecognitionData,
   AdminCampaignTargetItem,
 } from "@/types";
@@ -88,8 +89,8 @@ export function getMockSlide1Data(dateStr?: string): Slide1Data {
         user_id: 12,
         full_name: "Marcus Vance",
         role: "Senior SDR",
-        punch_in: "17:47:12",
-        shift_start_time: "17:30:00",
+        punch_in: "18:18:12",
+        shift_start_time: "18:00:00",
         grace_minutes: 10,
         late_minutes: 7,
         status: "Late Present",
@@ -98,8 +99,8 @@ export function getMockSlide1Data(dateStr?: string): Slide1Data {
         user_id: 19,
         full_name: "Aaliyah Chen",
         role: "Inbound Specialist",
-        punch_in: "17:51:30",
-        shift_start_time: "17:30:00",
+        punch_in: "18:24:30",
+        shift_start_time: "18:00:00",
         grace_minutes: 10,
         late_minutes: 11,
         status: "Late Present",
@@ -235,8 +236,106 @@ export function getMockSlide5Data(): Slide5Data {
       pending_audit_gap: cumGen - cumAud,
       audit_turnaround_rate: 91.4,
       qualification_approval_rate: 82.6,
+      total_forms_submitted: 24,
     },
     comparison_timeline,
+  };
+}
+
+export function getMockSlide6Data(intervalMinutes = 10): Slide6Data {
+  const slotCount = Math.floor((9 * 60) / intervalMinutes);
+  const submitters = [
+    {
+      user_id: 12,
+      name: "Sarah Connor",
+      role: "agent",
+      total_submitted: 15,
+      intervals: Array.from({ length: Math.min(slotCount, 18) }, (_, i) => ({
+        slot_index: i,
+        time_label: `${Math.floor(18 + (i * intervalMinutes) / 60)}:${String((i * intervalMinutes) % 60).padStart(2, "0")}`,
+        submitted_count: i % 2 === 0 ? Math.floor(Math.random() * 3) + 1 : 0,
+      })),
+      leads: [
+        {
+          lead_id: "LD1010_045",
+          campaign_name: "Cloud Infra",
+          form_done: "Yes",
+          submitted_at: "2026-11-04 19:32:00",
+        },
+      ],
+    },
+    {
+      user_id: 14,
+      name: "Devon Brooks",
+      role: "agent",
+      total_submitted: 12,
+      intervals: Array.from({ length: Math.min(slotCount, 18) }, (_, i) => ({
+        slot_index: i,
+        time_label: `${Math.floor(18 + (i * intervalMinutes) / 60)}:${String((i * intervalMinutes) % 60).padStart(2, "0")}`,
+        submitted_count: i % 3 === 0 ? Math.floor(Math.random() * 2) + 1 : 0,
+      })),
+    },
+    {
+      user_id: 16,
+      name: "Maya Patel",
+      role: "agent",
+      total_submitted: 9,
+      intervals: Array.from({ length: Math.min(slotCount, 18) }, (_, i) => ({
+        slot_index: i,
+        time_label: `${Math.floor(18 + (i * intervalMinutes) / 60)}:${String((i * intervalMinutes) % 60).padStart(2, "0")}`,
+        submitted_count: i % 4 === 0 ? 2 : 0,
+      })),
+    },
+    {
+      user_id: 18,
+      name: "Alex Sterling",
+      role: "agent",
+      total_submitted: 7,
+      intervals: Array.from({ length: Math.min(slotCount, 18) }, (_, i) => ({
+        slot_index: i,
+        time_label: `${Math.floor(18 + (i * intervalMinutes) / 60)}:${String((i * intervalMinutes) % 60).padStart(2, "0")}`,
+        submitted_count: i % 5 === 0 ? 1 : 0,
+      })),
+    },
+  ];
+
+  const totalSubmitted = submitters.reduce((acc, s) => acc + s.total_submitted, 0);
+
+  return {
+    date: new Date().toISOString().split("T")[0],
+    shift_start: "17:30:00",
+    shift_end: "02:30:00",
+    interval_minutes: intervalMinutes,
+    total_intervals: slotCount,
+    total_submitters: submitters.length,
+    total_forms_submitted: totalSubmitted,
+    submitter_heatmap: submitters,
+    recent_submissions: [
+      {
+        lead_id: "LD1010_045",
+        form_done: "Yes",
+        submitted_by: 12,
+        submitter_name: "Sarah Connor",
+        submitted_at: "2026-11-04 19:32:00",
+        campaign_name: "Cloud Infra",
+      },
+      {
+        lead_id: "LD1010_042",
+        form_done: "Yes",
+        submitted_by: 14,
+        submitter_name: "Devon Brooks",
+        submitted_at: "2026-11-04 19:20:00",
+        campaign_name: "FinTech Enterprise",
+      },
+      {
+        lead_id: "LD1010_038",
+        form_done: "Yes",
+        submitted_by: 16,
+        submitter_name: "Maya Patel",
+        submitted_at: "2026-11-04 18:55:00",
+        campaign_name: "CyberSecurity Defense",
+      },
+    ],
   };
 }
 

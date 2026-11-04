@@ -4,6 +4,10 @@ import {
   Slide3Data,
   Slide4Data,
   Slide5Data,
+  Slide6Data,
+  FormSubmissionLead,
+  FormSubmitterInterval,
+  FormSubmitterHeatmapItem,
   AdminCampaignTargetItem,
   SaveDailyTargetsPayload,
   RecognitionData,
@@ -14,11 +18,14 @@ import {
   Slide3ResponseSchema,
   Slide4ResponseSchema,
   Slide5ResponseSchema,
+  Slide6ResponseSchema,
   CampaignDailyTargetsResponseSchema,
   RecognitionResponseSchema,
 } from "@/lib/validations";
 import { getCrmConfig } from "@/lib/crm-config";
-import { getShiftBusinessDate } from "@/lib/shift/engine";
+import { getShiftBusinessDate, generateShiftIntervals } from "@/lib/shift/engine";
+import { evaluateAgentLatePunch } from "@/lib/shift/late-punches";
+import { getShiftConfig } from "@/lib/shift/config";
 import { fetchIncentivePreview, fetchDailySettled } from "@/lib/incentives/api";
 import {
   getIncentiveConfig,
@@ -33,6 +40,7 @@ import {
   getMockSlide3Data,
   getMockSlide4Data,
   getMockSlide5Data,
+  getMockSlide6Data,
   getMockRecognitionData,
   getMockCampaignTargets,
 } from "@/lib/crm-mock-data";
@@ -317,61 +325,56 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
           };
         });
 
-      // Process and normalize late comers for the 6:00 PM IST (18:00:00) shift
-      const crmLateComers = (parsed.data.slide1.late_comers || []).map((l: any) => {
-        let lateMin = Number(l.late_minutes) || 0;
-        const punchInTime = String(l.punch_in || "");
+      // Fetch active shift configuration (e.g. 18:00:00, grace period)
+      const shiftConfig = await getShiftConfig();
+      const defaultShiftStart = shiftConfig.startTime || "18:00:00";
+      const defaultGrace = shiftConfig.gracePeriodMinutes ?? 0;
 
-        // If punch-in is provided, calculate late minutes against 18:00:00 IST
-        if (punchInTime) {
-          const timeMatch = punchInTime.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-          if (timeMatch) {
-            const h = parseInt(timeMatch[1], 10);
-            const m = parseInt(timeMatch[2], 10);
-            const punchMins = h * 60 + m;
-            const shiftStartMins = 18 * 60; // 18:00 IST
-            const grace = Number(l.grace_minutes) || 0;
-            if (punchMins > shiftStartMins + grace && (h >= 17 || h <= 3)) {
-              lateMin = punchMins - shiftStartMins;
-            }
-          }
+      // Evaluate late comers from CRM against their configured shift timing
+      const evaluatedCrmLate: any[] = [];
+      for (const l of parsed.data.slide1.late_comers || []) {
+        const evalResult = evaluateAgentLatePunch(l, defaultShiftStart, defaultGrace);
+        if (evalResult) {
+          evaluatedCrmLate.push(evalResult);
         }
-
-        return {
-          ...l,
-          shift_start_time: "18:00:00",
-          late_minutes: lateMin,
-          status: l.status || "Late",
-        };
-      });
+      }
 
       // Merge with MySQL attendance snapshots if available
       const dbLateSnapshots = await getAgentAttendanceSnapshotsForDate(effectiveDate).catch(() => []);
-      const dbLateComers = dbLateSnapshots
-        .filter((s: any) => s.late_minutes > 0)
-        .map((s: any) => ({
-          user_id: s.crm_agent_id,
-          full_name: s.agent_name_snapshot || `Agent #${s.crm_agent_id}`,
-          role: "operations_agent",
-          punch_in: s.punch_in_at ? String(s.punch_in_at).slice(11, 19) : "",
-          shift_start_time: "18:00:00",
-          grace_minutes: 0,
-          late_minutes: s.late_minutes,
-          status: s.attendance_status || "Late",
-        }));
+      const evaluatedDbLate: any[] = [];
+      for (const s of dbLateSnapshots) {
+        const evalResult = evaluateAgentLatePunch(
+          {
+            crm_agent_id: s.crm_agent_id,
+            agent_name_snapshot: s.agent_name_snapshot,
+            punch_in_at: s.punch_in_at,
+            shift_start_time: defaultShiftStart,
+            grace_minutes: defaultGrace,
+            late_minutes: s.late_minutes,
+            attendance_status: s.attendance_status,
+          },
+          defaultShiftStart,
+          defaultGrace
+        );
+        if (evalResult) {
+          evaluatedDbLate.push(evalResult);
+        }
+      }
 
       const seenLateIds = new Set<number>();
       const finalLateComers: any[] = [];
-      for (const item of [...crmLateComers, ...dbLateComers]) {
+      for (const item of [...evaluatedCrmLate, ...evaluatedDbLate]) {
         if (!seenLateIds.has(item.user_id)) {
           seenLateIds.add(item.user_id);
           finalLateComers.push(item);
         }
       }
 
+      finalLateComers.sort((a, b) => (b.late_minutes || 0) - (a.late_minutes || 0));
+
       const updatedKpiCards = {
         ...parsed.data.slide1.kpi_cards,
-        late_today: Math.max(parsed.data.slide1.kpi_cards?.late_today || 0, finalLateComers.length),
+        late_today: finalLateComers.length,
       };
 
       return {
@@ -854,11 +857,15 @@ export async function getCrmSlide5(
         end_time: (slot as any).end_time ? convertUtcToIstTime((slot as any).end_time) : undefined,
       }));
 
+      const rawAny = res.data as any;
+      const formSubmissions = rawAny?.form_submissions || (parsed.data as any)?.form_submissions;
+
       return {
         success: true,
         data: {
           ...parsed.data.slide5,
           comparison_timeline: mappedTimeline,
+          form_submissions: formSubmissions,
         },
         sourceUrl: res.effectiveUrl,
         timestamp,
@@ -882,6 +889,198 @@ export async function getCrmSlide5(
     timestamp,
   };
 }
+
+/**
+ * Slide 6: Form Submissions Productivity Heatmap
+ * Connects to slides/forms.php, slides_analytics.php?action=forms, or slide5 fallback.
+ * Generates exact intervals across the 9-hour shift and normalizes submitter heatmap data.
+ */
+export async function getCrmSlide6(
+  dateStr?: string,
+  interval = 10,
+  shiftStart = "17:30:00",
+  shiftEnd = "02:30:00"
+): Promise<CrmFetchResult<Slide6Data>> {
+  const config = await getCrmConfig();
+  const timestamp = new Date().toISOString();
+  const effectiveDate = dateStr || getShiftBusinessDate();
+
+  const utcShiftStart = convertIstToUtcTime(shiftStart);
+  const utcShiftEnd = convertIstToUtcTime(shiftEnd);
+
+  const configuredPath = config.endpoints?.slide6 || "slides/forms.php";
+  let res = await fetchFromCrm<unknown>(
+    buildEndpointUrl(configuredPath, { date: effectiveDate, interval, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+  );
+
+  if (!res.ok) {
+    res = await fetchFromCrm<unknown>(
+      buildEndpointUrl("slides_analytics.php?action=forms", { date: effectiveDate, interval, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+    );
+  }
+
+  if (!res.ok) {
+    res = await fetchFromCrm<unknown>(
+      buildEndpointUrl("slides_analytics.php?action=form_submissions", { date: effectiveDate, interval, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+    );
+  }
+
+  if (!res.ok) {
+    // Fallback to Slide 5 which contains form_submissions and comparison_timeline
+    const slide5Path = config.endpoints?.slide5 || "slides/slide5.php";
+    res = await fetchFromCrm<unknown>(
+      buildEndpointUrl(slide5Path, { date: effectiveDate, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+    );
+  }
+
+  if (res.ok && res.data) {
+    const rawData = res.data as any;
+    const formSubmissions = rawData.form_submissions || rawData.slide6 || rawData.forms || rawData;
+
+    // Generate intervals for this interval granularity
+    const shiftIntervals = generateShiftIntervals(interval);
+    const slotCount = shiftIntervals.length;
+
+    // Extract submitters list
+    const rawSubmitters =
+      formSubmissions.by_submitter ||
+      formSubmissions.submitter_heatmap ||
+      formSubmissions.forms_submitted_by ||
+      rawData.by_submitter ||
+      [];
+
+    const totalFormsSubmitted =
+      formSubmissions.total_forms_submitted ??
+      rawData.slide5?.summary?.total_forms_submitted ??
+      rawData.total_forms_submitted ??
+      0;
+
+    const totalSubmitters =
+      formSubmissions.total_submitters ??
+      rawSubmitters.length;
+
+    const recentSubmissions: FormSubmissionLead[] =
+      formSubmissions.recent_submissions ||
+      rawData.recent_submissions ||
+      [];
+
+    // Build or normalize submitter intervals
+    const submitterHeatmap: FormSubmitterHeatmapItem[] = rawSubmitters.map((sub: any) => {
+      const userId = Number(sub.user_id || sub.id || 0);
+      const name = String(sub.name || sub.full_name || sub.submitter_name || `Agent ${userId}`);
+      const role = String(sub.role || "agent");
+      const totalSubmitted = Number(sub.forms_submitted_count || sub.total_submitted || sub.count || 0);
+      const leads: FormSubmissionLead[] = Array.isArray(sub.leads) ? sub.leads : [];
+
+      let intervals: FormSubmitterInterval[] = [];
+
+      if (Array.isArray(sub.intervals) && sub.intervals.length > 0) {
+        // Map existing intervals
+        intervals = sub.intervals.map((inv: any) => ({
+          slot_index: Number(inv.slot_index ?? inv.index ?? 0),
+          time_label: convertUtcIntervalLabelToIst(inv.time_label || inv.label || ""),
+          submitted_count: Number(inv.submitted_count ?? inv.count ?? 0),
+        }));
+      } else {
+        // Compute intervals dynamically by bucketing leads[].submitted_at into slot buckets
+        const slotCounts = new Array(slotCount).fill(0);
+        const [startH, startM] = shiftStart.split(":").map(Number);
+        const shiftStartMins = (startH || 17) * 60 + (startM || 30);
+
+        leads.forEach((lead) => {
+          if (!lead.submitted_at) return;
+          const dateObj = new Date(lead.submitted_at.includes("T") ? lead.submitted_at : lead.submitted_at.replace(" ", "T") + "Z");
+          if (!isNaN(dateObj.getTime())) {
+            // IST time: UTC + 5h 30m
+            const istDate = new Date(dateObj.getTime() + 5.5 * 3600 * 1000);
+            const hour = istDate.getUTCHours();
+            const min = istDate.getUTCMinutes();
+            let leadMins = hour * 60 + min;
+            if (leadMins < (shiftStartMins > 720 ? shiftStartMins - 720 : 360)) {
+              leadMins += 1440;
+            }
+            const offsetMins = leadMins - shiftStartMins;
+            if (offsetMins >= 0 && offsetMins < 540) {
+              const slotIdx = Math.floor(offsetMins / interval);
+              if (slotIdx >= 0 && slotIdx < slotCount) {
+                slotCounts[slotIdx] += 1;
+              }
+            }
+          }
+        });
+
+        intervals = shiftIntervals.map((slot, idx) => ({
+          slot_index: idx,
+          time_label: slot.label,
+          submitted_count: slotCounts[idx] || 0,
+        }));
+      }
+
+      return {
+        user_id: userId,
+        name,
+        role,
+        total_submitted: totalSubmitted || intervals.reduce((acc, i) => acc + i.submitted_count, 0),
+        intervals,
+        leads,
+      };
+    });
+
+    // Sort submitters descending by total submitted
+    submitterHeatmap.sort((a, b) => b.total_submitted - a.total_submitted);
+
+    // Timeline summary from comparison_timeline if available
+    let timelineSummary: any[] | undefined = undefined;
+    if (Array.isArray(rawData.slide5?.comparison_timeline)) {
+      timelineSummary = rawData.slide5.comparison_timeline.map((slot: any) => ({
+        slot_index: slot.slot_index,
+        time_label: convertUtcIntervalLabelToIst(slot.time_label),
+        forms_submitted: Number(slot.forms_submitted || 0),
+        cumulative_forms_submitted: Number(slot.cumulative_forms_submitted || 0),
+      }));
+    }
+
+    return {
+      success: true,
+      data: {
+        date: effectiveDate,
+        interval_minutes: interval,
+        shift_start: shiftStart,
+        shift_end: shiftEnd,
+        total_intervals: slotCount,
+        total_submitters: totalSubmitters,
+        total_forms_submitted: totalFormsSubmitted || submitterHeatmap.reduce((acc, s) => acc + s.total_submitted, 0),
+        submitter_heatmap: submitterHeatmap,
+        recent_submissions: recentSubmissions,
+        timeline_summary: timelineSummary,
+        query_date: effectiveDate,
+      },
+      sourceUrl: res.effectiveUrl,
+      timestamp,
+    };
+  }
+
+  if (config.crmMockFallback) {
+    return {
+      success: true,
+      data: getMockSlide6Data(interval),
+      sourceUrl: "[Mock Fallback Mode]",
+      timestamp,
+      isMockFallback: true,
+    };
+  }
+
+  return {
+    success: false,
+    error: res.error || "Failed to fetch form submissions heatmap data from CRM API",
+    sourceUrl: res.effectiveUrl,
+    timestamp,
+  };
+}
+
+export const getCrmComparativeAnalytics = getCrmSlide5;
+export const getCrmFormsHeatmap = getCrmSlide6;
+export const getCrmFormsSlide = getCrmSlide6;
 
 /**
  * Campaign Daily Targets: GET from CRM API

@@ -7,12 +7,14 @@ import SlideAgentProductivity from "@/components/presentation/slide-agent-produc
 import SlideQaHeatmap from "@/components/presentation/slide-qa-heatmap";
 import SlideAgentHeatmap from "@/components/presentation/slide-agent-heatmap";
 import SlideComparativeAnalytics from "@/components/presentation/slide-comparative-analytics";
+import SlideFormsHeatmap from "@/components/presentation/slide-forms-heatmap";
 import {
   useSlide1,
   useSlide2,
   useSlide3,
   useSlide4,
   useSlide5,
+  useSlide6,
   useRecognitionFeed,
 } from "@/hooks/use-slide-analytics";
 import { useCrmConfig } from "@/hooks/use-crm-config";
@@ -24,7 +26,7 @@ export default function PresentationPage() {
   const { config } = useCrmConfig();
 
   // Database-backed presentation state (zero localStorage)
-  const [activeSlideIds, setActiveSlideIds] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [activeSlideIds, setActiveSlideIds] = useState<number[]>([1, 2, 3, 4, 5, 6]);
   const [currentSlide, setCurrentSlide] = useState<number>(1);
   const [autoRotate, setAutoRotate] = useState<boolean>(true);
   const [rotationInterval, setRotationInterval] = useState<number>(config.slideRotationInterval || 25);
@@ -52,6 +54,7 @@ export default function PresentationPage() {
       3: date,
       4: date,
       5: date,
+      6: date,
     });
   }, []);
 
@@ -78,7 +81,7 @@ export default function PresentationPage() {
           sorted.forEach((item: any) => {
             if (item.isEnabled !== false) {
               const id = Number(item.slideDefinitionId || item.displayOrder);
-              if (id >= 1 && id <= 5 && !enabled.includes(id)) {
+              if (id >= 1 && id <= 6 && !enabled.includes(id)) {
                 enabled.push(id);
               }
             }
@@ -159,15 +162,17 @@ export default function PresentationPage() {
   const s2Query = useSlide2(slideDates[2], 1, "all");
   const s3Query = useSlide3(slideDates[3], heatmapInterval);
   const s4Query = useSlide4(slideDates[4], heatmapInterval);
-  const s5Query = useSlide5(slideDates[5]);
+  const s5Query = useSlide5(slideDates[5], heatmapInterval);
+  const s6Query = useSlide6(slideDates[6]);
   const recogQuery = useRecognitionFeed();
 
-  const hasError = !!(s1Query.error || s2Query.error || s3Query.error || s4Query.error || s5Query.error);
-  const isLive = !hasError && !!(s1Query.data || s2Query.data || s3Query.data || s4Query.data || s5Query.data);
+  const hasError = !!(s1Query.error || s2Query.error || s3Query.error || s4Query.error || s5Query.error || s6Query.error);
+  const isLive = !hasError && !!(s1Query.data || s2Query.data || s3Query.data || s4Query.data || s5Query.data || s6Query.data);
 
   const lastRefreshed =
     s1Query.data?.timestamp ||
     s2Query.data?.timestamp ||
+    s6Query.data?.timestamp ||
     new Date().toISOString();
 
   const isFetching =
@@ -175,7 +180,8 @@ export default function PresentationPage() {
     s2Query.isFetching ||
     s3Query.isFetching ||
     s4Query.isFetching ||
-    s5Query.isFetching;
+    s5Query.isFetching ||
+    s6Query.isFetching;
 
   // Next slide handler (iterating over active database-defined playlist)
   const nextSlide = useCallback(() => {
@@ -224,7 +230,7 @@ export default function PresentationPage() {
       } else if (e.key === " ") {
         e.preventDefault();
         setAutoRotate((prev) => !prev);
-      } else if (e.key >= "1" && e.key <= "5") {
+      } else if (e.key >= "1" && e.key <= "6") {
         const target = parseInt(e.key, 10);
         if (activeSlideIds.includes(target)) {
           setCurrentSlide(target);
@@ -243,6 +249,7 @@ export default function PresentationPage() {
     s3Query.refetch();
     s4Query.refetch();
     s5Query.refetch();
+    s6Query.refetch();
     recogQuery.refetch();
     syncWithDatabase();
   };
@@ -260,7 +267,7 @@ export default function PresentationPage() {
       {/* Header bar */}
       <PresentationHeader
         currentSlide={currentSlide}
-        totalSlides={5}
+        totalSlides={6}
         onSelectSlide={(s) => {
           setCurrentSlide(s);
           setCountdown(rotationInterval);
@@ -357,13 +364,28 @@ export default function PresentationPage() {
             )}
 
             {currentSlide === 5 && (
-              <SlideComparativeAnalytics
+              <SlideFormsHeatmap
                 data={s5Query.data?.data}
                 isLoading={s5Query.isLoading}
                 error={s5Query.error as Error | null}
                 onRetry={() => s5Query.refetch()}
+                interval={heatmapInterval}
+                onIntervalChange={handleHeatmapIntervalChange}
                 selectedDate={slideDates[5]}
                 onDateChange={(d) => handleSlideDateChange(5, d)}
+                onApplyDateToAll={handleApplyDateToAll}
+                rowsPerPage={8}
+              />
+            )}
+
+            {currentSlide === 6 && (
+              <SlideComparativeAnalytics
+                data={s6Query.data?.data}
+                isLoading={s6Query.isLoading}
+                error={s6Query.error as Error | null}
+                onRetry={() => s6Query.refetch()}
+                selectedDate={slideDates[6]}
+                onDateChange={(d) => handleSlideDateChange(6, d)}
                 onApplyDateToAll={handleApplyDateToAll}
               />
             )}
@@ -389,7 +411,7 @@ export default function PresentationPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            <span className="font-medium">Controls: [Space] Pause/Play • [← / →] Slides • [1-5] Direct Jump</span>
+            <span className="font-medium">Controls: [Space] Pause/Play • [← / →] Slides • [1-6] Direct Jump</span>
             {hasError && (
               <span className="text-amber-400 font-bold flex items-center gap-1">
                 <AlertTriangle className="w-3.5 h-3.5" /> CRM Upstream API disconnected

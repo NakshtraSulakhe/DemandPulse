@@ -64,21 +64,26 @@ export default function SlideComparativeAnalytics({
   let cumGen = 0;
   let cumQual = 0;
   let cumAud = 0;
+  let cumForms = 0;
   const chartData = timeline.map((slot) => {
     const gen = slot.leads_generated ?? 0;
     const aud = slot.leads_audited ?? 0;
     const qual = slot.leads_qualified ?? 0;
+    const forms = slot.forms_submitted ?? 0;
     cumGen += gen;
     cumAud += aud;
     cumQual += qual;
+    cumForms += forms;
     return {
       time: slot.time_label ? slot.time_label.split(" - ")[0] : "",
       generated: gen,
       audited: aud,
       qualified: qual,
+      forms_submitted: forms,
       cumGenerated: cumGen,
       cumAudited: cumAud,
       cumQualified: cumQual,
+      cumFormsSubmitted: cumForms,
     };
   });
 
@@ -118,11 +123,16 @@ export default function SlideComparativeAnalytics({
       <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-slate-400">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-slate-700 dark:text-slate-300">
-            Slide 5 • Comparative Velocity & Audit Analytics
+            Slide 6 • Comparative Velocity & Audit Analytics
           </span>
           {data?.query_date && (
             <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-white/10 font-mono text-[10px] text-cyan-700 dark:text-cyan-400">
               Shift Date: {data.query_date}
+            </span>
+          )}
+          {summary.total_forms_submitted !== undefined && summary.total_forms_submitted > 0 && (
+            <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-bold font-mono text-[10px]">
+              Forms: {summary.total_forms_submitted}
             </span>
           )}
         </div>

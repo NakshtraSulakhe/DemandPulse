@@ -5,6 +5,7 @@ import {
   getCrmSlide3,
   getCrmSlide4,
   getCrmSlide5,
+  getCrmSlide6,
   getCrmRecognition,
 } from "@/lib/crm-api";
 import {
@@ -398,7 +399,29 @@ export async function GET(
         });
       }
 
-      case "slide5": {
+      // Slide 5: Form Submissions Productivity Heatmap
+      case "slide5":
+      case "forms":
+      case "form_submissions": {
+        const interval = parseInt(searchParams.get("interval") || "10", 10);
+        const shiftStart = searchParams.get("shift_start") || "17:30:00";
+        const shiftEnd = searchParams.get("shift_end") || "02:30:00";
+
+        const crmResult = await getCrmSlide6(targetDate, interval, shiftStart, shiftEnd);
+
+        return NextResponse.json(crmResult, {
+          status: crmResult.success ? 200 : 502,
+          headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "X-Data-Source": "crm-forms-heatmap",
+          },
+        });
+      }
+
+      // Slide 6: Comparative Analytics (Yesterday vs Today & Client Conversion)
+      case "slide6":
+      case "comparison":
+      case "comparative": {
         const shiftStart = searchParams.get("shift_start") || "17:30:00";
         const shiftEnd = searchParams.get("shift_end") || "02:30:00";
 
@@ -435,7 +458,7 @@ export async function GET(
               jobName: "backdated_on_demand_sync",
               isFinal: true,
             }).catch((syncErr) => {
-              console.warn(`[auto-persist] Failed to persist Slide 5 for ${targetDate}:`, syncErr?.message || syncErr);
+              console.warn(`[auto-persist] Failed to persist Slide 6 for ${targetDate}:`, syncErr?.message || syncErr);
             });
           }
 
@@ -490,15 +513,16 @@ export async function GET(
       }
 
       case "all": {
-        const [s1, s2, s3, s4, s5] = await Promise.all([
+        const [s1, s2, s3, s4, s5Forms, s6Comp] = await Promise.all([
           getCrmSlide1(targetDate),
           getCrmSlide2(targetDate, 1, 10),
           getCrmSlide3(targetDate),
           getCrmSlide4(targetDate),
-          getCrmSlide5(targetDate),
+          getCrmSlide6(targetDate), // Slide 5: Forms Heatmap
+          getCrmSlide5(targetDate), // Slide 6: Comparative Analytics
         ]);
 
-        const allSuccess = s1.success && s2.success && s3.success && s4.success && s5.success;
+        const allSuccess = s1.success && s2.success && s3.success && s4.success && s5Forms.success && s6Comp.success;
 
         return NextResponse.json(
           {
@@ -508,14 +532,16 @@ export async function GET(
               slide2: s2.data,
               slide3: s3.data,
               slide4: s4.data,
-              slide5: s5.data,
+              slide5: s5Forms.data,
+              slide6: s6Comp.data,
             },
             errors: {
               slide1: s1.error,
               slide2: s2.error,
               slide3: s3.error,
               slide4: s4.error,
-              slide5: s5.error,
+              slide5: s5Forms.error,
+              slide6: s6Comp.error,
             },
             timestamp: new Date().toISOString(),
           },
@@ -531,7 +557,7 @@ export async function GET(
       default:
         return NextResponse.json(
           {
-            error: `Unknown slide action: ${slide}. Expected slide1, slide2, slide3, slide4, slide5, or all.`,
+            error: `Unknown slide action: ${slide}. Expected slide1, slide2, slide3, slide4, slide5, slide6, or all.`,
           },
           { status: 400 }
         );

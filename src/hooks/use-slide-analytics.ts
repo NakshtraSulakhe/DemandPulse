@@ -7,6 +7,7 @@ import {
   Slide3Data,
   Slide4Data,
   Slide5Data,
+  Slide6Data,
   AdminCampaignTargetItem,
   CampaignDailyTargetsResponse,
   SaveDailyTargetsPayload,
@@ -155,9 +156,14 @@ export function useSlide4(
   });
 }
 
-// Slide 5 Hook (Comparative Analytics)
-export function useSlide5(date?: string, customPollInterval?: number | false) {
+// Slide 5 Hook (Form Submissions Productivity Heatmap)
+export function useSlide5(
+  date?: string,
+  interval?: number,
+  customPollInterval?: number | false
+) {
   const { config } = useCrmConfig();
+  const bucketInterval = interval || config.heatmapGranularity || 10;
   const refetchInterval =
     customPollInterval !== undefined
       ? customPollInterval
@@ -165,11 +171,13 @@ export function useSlide5(date?: string, customPollInterval?: number | false) {
       ? config.analyticsSyncInterval * 1000
       : false;
 
-  return useQuery<ApiResponse<Slide5Data>>({
-    queryKey: ["slide5", date || "today"],
+  return useQuery<ApiResponse<Slide6Data>>({
+    queryKey: ["slide5-forms", date || "today", bucketInterval],
     queryFn: async () => {
-      const q = date ? `?date=${encodeURIComponent(date)}` : "";
-      const res = await fetch(`/api/analytics/slide5${q}`, { cache: "no-store" });
+      const params = new URLSearchParams();
+      if (date) params.set("date", date);
+      params.set("interval", String(bucketInterval));
+      const res = await fetch(`/api/analytics/slide5?${params.toString()}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
         throw new Error(json.details ? `${json.error}: ${json.details}` : (json.error || `CRM API error ${res.status}`));
@@ -181,6 +189,36 @@ export function useSlide5(date?: string, customPollInterval?: number | false) {
     retry: 1,
   });
 }
+
+// Slide 6 Hook (Comparative Analytics)
+export function useSlide6(date?: string, customPollInterval?: number | false) {
+  const { config } = useCrmConfig();
+  const refetchInterval =
+    customPollInterval !== undefined
+      ? customPollInterval
+      : config.autoSyncEnabled
+      ? config.analyticsSyncInterval * 1000
+      : false;
+
+  return useQuery<ApiResponse<Slide5Data>>({
+    queryKey: ["slide6-comparative", date || "today"],
+    queryFn: async () => {
+      const q = date ? `?date=${encodeURIComponent(date)}` : "";
+      const res = await fetch(`/api/analytics/slide6${q}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.details ? `${json.error}: ${json.details}` : (json.error || `CRM API error ${res.status}`));
+      }
+      return json;
+    },
+    refetchInterval,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  });
+}
+
+export const useFormsHeatmap = useSlide5;
+export const useComparativeAnalytics = useSlide6;
 
 // Campaign Targets Hook
 export function useCampaignTargets(date?: string, status: string = "Live", customPollInterval?: number | false) {

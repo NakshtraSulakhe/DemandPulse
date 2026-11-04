@@ -186,6 +186,8 @@ export const Slide5SummarySchema = z.object({
   pending_audit_gap: z.number().default(0),
   audit_turnaround_rate: z.number().default(0),
   qualification_approval_rate: z.number().default(0),
+  total_forms_submitted: z.number().default(0).optional(),
+  forms_submitted_by: z.array(z.any()).default([]).optional(),
 });
 
 export const Slide5ComparisonSlotSchema = z.object({
@@ -199,17 +201,59 @@ export const Slide5ComparisonSlotSchema = z.object({
   cumulative_generated: z.number().default(0),
   cumulative_audited: z.number().default(0),
   cumulative_qualified: z.number().default(0),
+  forms_submitted: z.number().default(0).optional(),
+  cumulative_forms_submitted: z.number().default(0).optional(),
 });
 
 export const Slide5ResponseSchema = z.object({
   ok: z.boolean().default(true),
   sliders: z.any().optional(),
+  form_submissions: z.any().optional(),
   slide5: z.object({
     summary: Slide5SummarySchema,
     comparison_timeline: z.array(Slide5ComparisonSlotSchema),
     sliders: z.any().optional(),
     query_date: z.string().optional(),
   }).passthrough(),
+}).passthrough();
+
+// Slide 6 - Form Submissions Heatmap Schema
+export const FormSubmissionLeadSchema = z.object({
+  lead_id: z.union([z.string(), z.number()]).transform(String),
+  campaign_name: z.string().optional(),
+  form_done: z.string().optional(),
+  submitted_at: z.string(),
+  submitted_by: z.number().optional(),
+  submitter_name: z.string().optional(),
+}).passthrough();
+
+export const FormSubmitterIntervalSchema = z.object({
+  slot_index: z.number(),
+  time_label: z.string(),
+  submitted_count: z.number().default(0),
+});
+
+export const FormSubmitterHeatmapItemSchema = z.object({
+  user_id: z.number(),
+  name: z.string(),
+  role: z.string().optional(),
+  total_submitted: z.number().default(0),
+  intervals: z.array(FormSubmitterIntervalSchema).default([]),
+  leads: z.array(FormSubmissionLeadSchema).optional(),
+}).passthrough();
+
+export const Slide6ResponseSchema = z.object({
+  ok: z.boolean().default(true),
+  action: z.string().optional(),
+  query_date: z.string().optional(),
+  total_forms_submitted: z.number().optional(),
+  total_submitters: z.number().optional(),
+  form_submissions: z.any().optional(),
+  slide6: z.any().optional(),
+  forms: z.any().optional(),
+  by_submitter: z.array(z.any()).optional(),
+  recent_submissions: z.array(z.any()).optional(),
+  comparison_timeline: z.array(z.any()).optional(),
 }).passthrough();
 
 // Admin Campaign Daily Targets Schema

@@ -72,6 +72,7 @@ export interface AgentSlide2 {
   expected_points_at_snapshot?: number;
   productivity_pace_pct?: number | null;
   pace_status?: "slow" | "steady" | "ahead" | "pre_shift" | null;
+  forms_submitted?: number;
 }
 
 export interface CampaignPointBreakdownItem {
@@ -109,6 +110,8 @@ export interface Slide2Data {
   sliders?: RecognitionData;
   campaign_target_points?: CampaignTargetPointsSummary;
   floor_capacity?: FloorCapacitySummary;
+  total_forms_submitted?: number;
+  forms_submitted_by?: any[];
   query_date?: string;
 }
 
@@ -176,6 +179,8 @@ export interface Slide5Summary {
   pending_audit_gap: number;
   audit_turnaround_rate: number;
   qualification_approval_rate: number;
+  total_forms_submitted?: number;
+  forms_submitted_by?: any[];
 }
 
 export interface Slide5ComparisonSlot {
@@ -189,21 +194,86 @@ export interface Slide5ComparisonSlot {
   cumulative_generated: number;
   cumulative_audited: number;
   cumulative_qualified: number;
+  forms_submitted?: number;
+  cumulative_forms_submitted?: number;
+}
+
+export interface FormSubmissionLead {
+  lead_id: string;
+  campaign_name?: string;
+  form_done?: string;
+  submitted_at: string;
+  submitted_by?: number;
+  submitter_name?: string;
+}
+
+export interface FormSubmissionsPayload {
+  total_forms_submitted: number;
+  total_submitters: number;
+  by_submitter: Array<{
+    user_id: number;
+    name: string;
+    role?: string;
+    forms_submitted_count: number;
+    leads?: FormSubmissionLead[];
+  }>;
+  recent_submissions?: FormSubmissionLead[];
 }
 
 export interface Slide5Data {
   summary: Slide5Summary;
   comparison_timeline: Slide5ComparisonSlot[];
+  form_submissions?: FormSubmissionsPayload;
   sliders?: RecognitionData;
   query_date?: string;
 }
+
+// Slide 6 - Form Submissions Productivity Heatmap Types
+export interface FormSubmitterInterval {
+  slot_index: number;
+  time_label: string;
+  submitted_count: number;
+}
+
+export interface FormSubmitterHeatmapItem {
+  user_id: number;
+  name: string;
+  role?: string;
+  total_submitted: number;
+  intervals: FormSubmitterInterval[];
+  leads?: FormSubmissionLead[];
+}
+
+export interface Slide6Data {
+  date: string;
+  interval_minutes: number;
+  shift_start?: string;
+  shift_end?: string;
+  total_intervals: number;
+  total_submitters: number;
+  total_forms_submitted: number;
+  submitter_heatmap: FormSubmitterHeatmapItem[];
+  recent_submissions?: FormSubmissionLead[];
+  timeline_summary?: Array<{
+    slot_index: number;
+    time_label: string;
+    forms_submitted: number;
+    cumulative_forms_submitted?: number;
+  }>;
+  sliders?: RecognitionData;
+  query_date?: string;
+}
+
+export type FormsHeatmapData = Slide6Data;
+export type ComparativeAnalyticsData = Slide5Data;
 
 export interface AllSlidesData {
   slide1: Slide1Data;
   slide2: Slide2Data;
   slide3: Slide3Data;
   slide4: Slide4Data;
-  slide5: Slide5Data;
+  slide5: FormsHeatmapData | ComparativeAnalyticsData;
+  slide6?: ComparativeAnalyticsData | FormsHeatmapData;
   sliders?: RecognitionData;
 }
 
@@ -312,7 +382,9 @@ export interface RecognitionData {
     profile_pic?: string | null;
     generated_leads: number | string;
     qualified_leads: number | string;
+    forms_submitted?: number | string;
   }>;
+  total_forms_submitted?: number;
   birthdays: Array<{
     user_id: number | string;
     full_name: string;

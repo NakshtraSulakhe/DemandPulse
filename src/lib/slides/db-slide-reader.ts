@@ -6,6 +6,7 @@ import { getQaDailySnapshotsForDate, getQaIntervalMetricsForDate } from "@/lib/d
 import { getAttendanceDailySnapshotForDate, getAgentAttendanceSnapshotsForDate } from "@/lib/db/attendance-repository";
 import { getDailyFinalization } from "@/lib/db/finalization-repository";
 import { isAgentPresentForFloorCapacity } from "@/lib/productivity/points-capacity";
+import { evaluateAgentLatePunch } from "@/lib/shift/late-punches";
 
 function convertUtcToIstTime(timeStr: string): string {
   if (!timeStr) return timeStr;
@@ -97,18 +98,26 @@ export async function getDbSlide1(targetDate?: string): Promise<DbSlideReadResul
       target_achieved: c.target_achieved,
     }));
 
-    const mappedLate = lateComers
-      .filter((l) => l.late_minutes > 0)
-      .map((l) => ({
-        user_id: l.crm_agent_id,
-        full_name: l.agent_name_snapshot || `Agent #${l.crm_agent_id}`,
-        role: "SDR",
-        punch_in: l.punch_in_at || "",
-        shift_start_time: "18:00:00",
-        grace_minutes: 0,
-        late_minutes: l.late_minutes,
-        status: l.attendance_status,
-      }));
+    const evaluatedDbLate: any[] = [];
+    for (const l of lateComers) {
+      const evalResult = evaluateAgentLatePunch(
+        {
+          crm_agent_id: l.crm_agent_id,
+          agent_name_snapshot: l.agent_name_snapshot,
+          punch_in_at: l.punch_in_at,
+          shift_start_time: "18:00:00",
+          late_minutes: l.late_minutes,
+          attendance_status: l.attendance_status,
+        },
+        "18:00:00",
+        0
+      );
+      if (evalResult) {
+        evaluatedDbLate.push(evalResult);
+      }
+    }
+    evaluatedDbLate.sort((a, b) => (b.late_minutes || 0) - (a.late_minutes || 0));
+    const mappedLate = evaluatedDbLate;
 
     const kpiCards = {
       total_agents: attendance?.total_agents || 0,

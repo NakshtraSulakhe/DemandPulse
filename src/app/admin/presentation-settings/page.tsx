@@ -29,6 +29,7 @@ import {
   ArrowRight,
   Maximize2,
   Loader2,
+  FileText,
 } from "lucide-react";
 import { useTheme } from "@/components/providers/theme-provider";
 import { useCrmConfig } from "@/hooks/use-crm-config";
@@ -49,6 +50,7 @@ export default function PresentationSettingsPage() {
     3: true,
     4: true,
     5: true,
+    6: true,
   });
   const [displayScaling, setDisplayScaling] = useState<string>("tv-1080p");
   const [scrollerEnabled, setScrollerEnabled] = useState(true);
@@ -231,7 +233,7 @@ export default function PresentationSettingsPage() {
       setSlideInterval(25);
       setCustomInputValue("25");
       setHeatmapInterval(10);
-      setEnabledSlides({ 1: true, 2: true, 3: true, 4: true, 5: true });
+      setEnabledSlides({ 1: true, 2: true, 3: true, 4: true, 5: true, 6: true });
       setDisplayScaling("tv-1080p");
       setScrollerEnabled(true);
       setScrollerMode("marquee");
@@ -576,7 +578,7 @@ export default function PresentationSettingsPage() {
 
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {activeSlidesCount} of 5 slides participating
+                {activeSlidesCount} of 6 slides participating
               </span>
               <span className="font-mono text-xs px-2 py-0.5 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 font-bold">
                 {formatIntervalDisplay(totalLoopDurationSec)} cycle
@@ -584,7 +586,7 @@ export default function PresentationSettingsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
             {[
               {
                 id: 1,
@@ -620,6 +622,14 @@ export default function PresentationSettingsPage() {
               },
               {
                 id: 5,
+                name: "Forms Heatmap",
+                sub: "Form submissions productivity & interval output",
+                icon: FileText,
+                color: "text-amber-500",
+                bg: "bg-amber-500/10",
+              },
+              {
+                id: 6,
                 name: "Comparative Analytics",
                 sub: "Yesterday vs Today & Client Conversion",
                 icon: Sliders,
@@ -789,14 +799,14 @@ export default function PresentationSettingsPage() {
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2 text-cyan-700 dark:text-cyan-400 text-sm font-bold">
                 <Flame className="w-4 h-4 text-cyan-500" />
-                <span>QA & Agent Heatmap Time Granularity</span>
+                <span>Heatmap Time Granularity (QA, Agent & Forms)</span>
               </div>
               <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
                 {heatmapInterval} min slots
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              Shift time bucket width for both Slide 3 (QA Heatmap) and Slide 4 (Agent Heatmap).
+              Shift time bucket width for Slide 3 (QA Heatmap), Slide 4 (Agent Heatmap), and Slide 5 (Forms Heatmap).
             </p>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
