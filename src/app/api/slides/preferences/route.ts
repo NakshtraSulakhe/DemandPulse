@@ -75,26 +75,28 @@ export async function POST(req: NextRequest) {
     const auth = await verifyAdminSession(req);
     const actorId = BigInt(auth.user?.id === "admin-api" ? 1 : 1);
 
-    // Save user preferences
-    const updatedUser = await saveUserPreferences(1, {
-      theme: data.theme,
-      headerDrawerOpen: data.headerDrawerOpen,
-      tvModeEnabled: data.tvModeEnabled,
-      displayScaling: data.displayScaling,
-      heatmapIntervalMinutes: data.heatmapIntervalMinutes,
-    });
+    // Save user preferences (only pass defined fields to avoid passing undefined down to SQL)
+    const userPrefsUpdate: any = {};
+    if (data.theme !== undefined) userPrefsUpdate.theme = data.theme;
+    if (data.headerDrawerOpen !== undefined) userPrefsUpdate.headerDrawerOpen = data.headerDrawerOpen;
+    if (data.tvModeEnabled !== undefined) userPrefsUpdate.tvModeEnabled = data.tvModeEnabled;
+    if (data.displayScaling !== undefined) userPrefsUpdate.displayScaling = data.displayScaling;
+    if (data.heatmapIntervalMinutes !== undefined) userPrefsUpdate.heatmapIntervalMinutes = data.heatmapIntervalMinutes;
+
+    const updatedUser = await saveUserPreferences(1, userPrefsUpdate);
 
     // If displayIdentifier is provided or scaling/interval changed, save display prefs
     let updatedDisplay = null;
-    if (data.displayIdentifier || data.slideIntervalSeconds || data.heatmapIntervalMinutes || data.tvModeEnabled !== undefined) {
+    const displayPrefsUpdate: any = {};
+    if (data.tvModeEnabled !== undefined) displayPrefsUpdate.tvModeEnabled = data.tvModeEnabled;
+    if (data.displayScaling !== undefined) displayPrefsUpdate.displayScaling = data.displayScaling;
+    if (data.heatmapIntervalMinutes !== undefined) displayPrefsUpdate.heatmapIntervalMinutes = data.heatmapIntervalMinutes;
+    if (data.slideIntervalSeconds !== undefined) displayPrefsUpdate.slideIntervalSeconds = data.slideIntervalSeconds;
+
+    if (data.displayIdentifier || Object.keys(displayPrefsUpdate).length > 0) {
       updatedDisplay = await saveDisplayPreferences(
         data.displayIdentifier || "default",
-        {
-          tvModeEnabled: data.tvModeEnabled,
-          displayScaling: data.displayScaling,
-          heatmapIntervalMinutes: data.heatmapIntervalMinutes,
-          slideIntervalSeconds: data.slideIntervalSeconds,
-        },
+        displayPrefsUpdate,
         actorId
       );
     }

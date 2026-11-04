@@ -105,10 +105,10 @@ export default function IncentiveDashboardPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Coins className="w-5 h-5 text-amber-500" />
-            Automated Daily Incentive & Payout Dashboard
+            Daily Incentive Audit Dashboard
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Real-time QA lead audit calculations, target achievement thresholds, settlement cutoff, and payout execution
+            Real-time QA lead audit calculations, target achievement thresholds, and daily performance metrics
           </p>
         </div>
 
@@ -554,15 +554,9 @@ export default function IncentiveDashboardPage() {
             <div className="pt-2 flex items-center gap-2">
               <Link
                 href="/admin/incentives/approvals"
-                className="flex-1 py-2 px-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold text-center transition-colors"
+                className="w-full py-2 px-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold text-center transition-colors"
               >
-                Approvals
-              </Link>
-              <Link
-                href="/admin/incentives/disbursements"
-                className="flex-1 py-2 px-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold text-center transition-colors"
-              >
-                Disbursements
+                View Approvals
               </Link>
             </div>
           </div>

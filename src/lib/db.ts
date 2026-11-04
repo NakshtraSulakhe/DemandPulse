@@ -219,12 +219,19 @@ const globalForMysql = globalThis as unknown as {
   mysqlPool: mysql.Pool | undefined;
 };
 
+let modulePool: mysql.Pool | undefined;
+
 /**
  * Retrieves the singleton mysql2 Connection Pool.
+ * Reuses existing pool across serverless invocations and prevents connection leaks.
  */
 export function getPool(): mysql.Pool {
+  if (modulePool) {
+    return modulePool;
+  }
   if (globalForMysql.mysqlPool) {
-    return globalForMysql.mysqlPool;
+    modulePool = globalForMysql.mysqlPool;
+    return modulePool;
   }
 
   const config = getDatabaseConfig();
@@ -248,7 +255,9 @@ export function getPool(): mysql.Pool {
     password,
     database: config.database,
     waitForConnections: true,
-    connectionLimit: process.env.VERCEL ? 3 : 10,
+    connectionLimit: process.env.VERCEL ? 2 : 5,
+    maxIdle: 2,
+    idleTimeout: 60000,
     queueLimit: 0,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
@@ -258,16 +267,36 @@ export function getPool(): mysql.Pool {
     bigNumberStrings: true,
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    globalForMysql.mysqlPool = pool;
-  }
+  // Always retain the pool in both module and global scope to reuse across queries/requests
+  modulePool = pool;
+  globalForMysql.mysqlPool = pool;
 
   return pool;
 }
 
+/**
+ * Recursively converts any `undefined` values in SQL query parameter arrays to `null`.
+ * Prevents: "Bind parameters must not contain undefined. To pass SQL NULL specify JS null"
+ */
+export function sanitizeParams(params: any): any {
+  if (params === undefined) return null;
+  if (!Array.isArray(params)) return params;
+  return params.map((p) => {
+    if (p === undefined) return null;
+    if (Array.isArray(p)) return sanitizeParams(p);
+    return p;
+  });
+}
+
 export const pool = {
-  query: (...args: any[]) => (getPool() as any).query(...args),
-  execute: (...args: any[]) => (getPool() as any).execute(...args),
+  query: (sql: string, values?: any, ...rest: any[]) => {
+    const safeValues = values !== undefined ? sanitizeParams(values) : values;
+    return (getPool() as any).query(sql, safeValues, ...rest);
+  },
+  execute: (sql: string, values?: any, ...rest: any[]) => {
+    const safeValues = values !== undefined ? sanitizeParams(values) : values;
+    return (getPool() as any).execute(sql, safeValues, ...rest);
+  },
   getConnection: () => getPool().getConnection(),
 };
 
@@ -276,7 +305,7 @@ export const pool = {
  */
 export async function query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
   const activePool = getPool();
-  const [rows] = await activePool.query(sql, params);
+  const [rows] = await activePool.query(sql, sanitizeParams(params));
   return rows as T[];
 }
 
@@ -293,19 +322,31 @@ export async function queryOne<T = any>(sql: string, params: any[] = []): Promis
  */
 export async function execute(sql: string, params: any[] = []): Promise<mysql.ResultSetHeader> {
   const activePool = getPool();
-  const [result] = await activePool.execute(sql, params);
+  const [result] = await activePool.execute(sql, sanitizeParams(params));
   return result as mysql.ResultSetHeader;
 }
 
 /**
  * Executes a callback within a managed database transaction.
- * Automatically handles COMMIT and ROLLBACK.
+ * Automatically handles COMMIT and ROLLBACK, and sanitizes bind parameters.
  */
 export async function withTransaction<T>(
   callback: (connection: mysql.PoolConnection) => Promise<T>
 ): Promise<T> {
   const activePool = getPool();
   const connection = await activePool.getConnection();
+
+  const origExecute = connection.execute.bind(connection);
+  const origQuery = connection.query.bind(connection);
+  (connection as any).execute = (sql: any, values?: any, ...rest: any[]) => {
+    const safeValues = values !== undefined ? sanitizeParams(values) : values;
+    return (origExecute as any)(sql, safeValues, ...rest);
+  };
+  (connection as any).query = (sql: any, values?: any, ...rest: any[]) => {
+    const safeValues = values !== undefined ? sanitizeParams(values) : values;
+    return (origQuery as any)(sql, safeValues, ...rest);
+  };
+
   try {
     await connection.beginTransaction();
     const result = await callback(connection);

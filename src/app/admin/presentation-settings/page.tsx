@@ -28,6 +28,7 @@ import {
   Activity,
   ArrowRight,
   Maximize2,
+  Loader2,
 } from "lucide-react";
 import { useTheme } from "@/components/providers/theme-provider";
 import { useCrmConfig } from "@/hooks/use-crm-config";
@@ -57,6 +58,7 @@ export default function PresentationSettingsPage() {
   const [showBirthdays, setShowBirthdays] = useState(true);
   const [showAnniversaries, setShowAnniversaries] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [unit, setUnit] = useState<"sec" | "min">("sec");
   const [customInputValue, setCustomInputValue] = useState<string>("25");
 
@@ -146,9 +148,11 @@ export default function PresentationSettingsPage() {
   };
 
   const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
     try {
       // 1. Save presentation rotation interval in MySQL
-      await fetch("/api/slides/presentations", {
+      const presRes = await fetch("/api/slides/presentations", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -156,6 +160,10 @@ export default function PresentationSettingsPage() {
           defaultSlideSeconds: slideInterval,
         }),
       });
+      const presJson = await presRes.json();
+      if (!presRes.ok || !presJson.success) {
+        console.warn("Presentation save warning:", presJson?.error);
+      }
 
       // 2. Save playlist items (enabled/disabled states) in MySQL
       if (playlistItems.length > 0) {
@@ -166,15 +174,19 @@ export default function PresentationSettingsPage() {
           isEnabled: enabledSlides[idx + 1] !== false,
         }));
 
-        await fetch("/api/slides/playlists", {
+        const plRes = await fetch("/api/slides/playlists", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updatedPlaylist),
         });
+        const plJson = await plRes.json();
+        if (!plRes.ok || !plJson.success) {
+          console.warn("Playlists save warning:", plJson?.error);
+        }
       }
 
       // 3. Save display preferences (scaling, heatmap interval) in MySQL
-      await fetch("/api/slides/preferences", {
+      const prefRes = await fetch("/api/slides/preferences", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -183,6 +195,10 @@ export default function PresentationSettingsPage() {
           slideIntervalSeconds: slideInterval,
         }),
       });
+      const prefJson = await prefRes.json();
+      if (!prefRes.ok || !prefJson.success) {
+        throw new Error(prefJson?.error || "Failed to save preferences to database");
+      }
 
       // 4. Update CRM sync config in MySQL
       if (updateConfig) {
@@ -202,9 +218,11 @@ export default function PresentationSettingsPage() {
 
       setSaved(true);
       setTimeout(() => setSaved(false), 3500);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to persist presentation settings to MySQL:", err);
-      alert("Error saving settings to database. Please check server logs.");
+      alert(err.message || "Error saving settings to database. Please check server logs.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -269,10 +287,27 @@ export default function PresentationSettingsPage() {
 
           <button
             onClick={handleSave}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 border border-emerald-400/30 transition-all flex items-center gap-2 cursor-pointer"
+            disabled={saving}
+            className={`px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 border border-emerald-400/30 transition-all flex items-center gap-2 ${
+              saving ? "opacity-75 cursor-wait" : "cursor-pointer"
+            }`}
           >
-            <CheckCircle2 className="w-4 h-4" />
-            <span>Save Settings</span>
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : saved ? (
+              <>
+                <Check className="w-4 h-4" />
+                <span>Saved!</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Save Settings</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -1025,10 +1060,27 @@ export default function PresentationSettingsPage() {
           <button
             type="button"
             onClick={handleSave}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/20 border border-emerald-400/30 transition-all flex items-center gap-1.5 cursor-pointer"
+            disabled={saving}
+            className={`px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/20 border border-emerald-400/30 transition-all flex items-center gap-1.5 ${
+              saving ? "opacity-75 cursor-wait" : "cursor-pointer"
+            }`}
           >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Save Settings</span>
+            {saving ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : saved ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                <span>Saved!</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Save Settings</span>
+              </>
+            )}
           </button>
         </div>
       </div>

@@ -7,7 +7,6 @@ import {
   Calculator,
   CalendarCheck2,
   UserCheck,
-  SendHorizontal,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -84,19 +83,11 @@ export default function IncentiveWorkflowStepper({
       metric: `${approvedCount} Signed`,
     },
     {
-      id: "disbursement",
-      label: "Bank / UPI Payout",
-      sublabel: processingCount > 0 ? "Processing Transfers" : paidCount > 0 ? `${paidCount} Disbursed` : "Ready to Pay",
-      icon: SendHorizontal,
-      status: processingCount > 0 ? "in_progress" : paidCount > 0 ? "completed" : "pending",
-      metric: processingCount > 0 ? "In Flight" : `${paidCount} Paid`,
-    },
-    {
       id: "reconciled",
       label: "Payroll Reconciled",
       sublabel: "Monthly Salary Offset",
       icon: CheckCircle2,
-      status: paidCount > 0 ? "completed" : "pending",
+      status: approvedCount > 0 ? "completed" : "pending",
       metric: "hr/payroll.php",
     },
   ];

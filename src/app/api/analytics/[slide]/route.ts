@@ -104,14 +104,16 @@ export async function GET(
         const crmResult = await getCrmSlide1(targetDate);
 
         if (crmResult.success && crmResult.data) {
-          // Asynchronously persist to MySQL so this date is stored in the database!
-          runAnalyticsSync(targetDate, {
-            force: false,
-            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
-            isFinal: isHistoricalDate,
-          }).catch((syncErr) => {
-            console.warn(`[auto-persist] Failed to persist Slide 1 for ${targetDate}:`, syncErr?.message || syncErr);
-          });
+          // Asynchronously persist to MySQL only for historical backfills missing from DB
+          if (isHistoricalDate) {
+            runAnalyticsSync(targetDate, {
+              force: false,
+              jobName: "backdated_on_demand_sync",
+              isFinal: true,
+            }).catch((syncErr) => {
+              console.warn(`[auto-persist] Failed to persist Slide 1 for ${targetDate}:`, syncErr?.message || syncErr);
+            });
+          }
 
           return NextResponse.json(crmResult, {
             status: 200,
@@ -184,14 +186,16 @@ export async function GET(
         const crmResult = await getCrmSlide2(targetDate, page, limit, dataset);
 
         if (crmResult.success && crmResult.data && dataset !== "example") {
-          // Asynchronously persist to MySQL so this date is stored in the database!
-          runAnalyticsSync(targetDate, {
-            force: false,
-            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
-            isFinal: isHistoricalDate,
-          }).catch((syncErr) => {
-            console.warn(`[auto-persist] Failed to persist Slide 2 for ${targetDate}:`, syncErr?.message || syncErr);
-          });
+          // Asynchronously persist to MySQL only for historical backfills missing from DB
+          if (isHistoricalDate) {
+            runAnalyticsSync(targetDate, {
+              force: false,
+              jobName: "backdated_on_demand_sync",
+              isFinal: true,
+            }).catch((syncErr) => {
+              console.warn(`[auto-persist] Failed to persist Slide 2 for ${targetDate}:`, syncErr?.message || syncErr);
+            });
+          }
 
           return NextResponse.json(crmResult, {
             status: 200,
@@ -264,13 +268,15 @@ export async function GET(
         const crmResult = await getCrmSlide3(targetDate, interval, shiftStart, shiftEnd);
 
         if (crmResult.success && crmResult.data) {
-          runAnalyticsSync(targetDate, {
-            force: false,
-            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
-            isFinal: isHistoricalDate,
-          }).catch((syncErr) => {
-            console.warn(`[auto-persist] Failed to persist Slide 3 for ${targetDate}:`, syncErr?.message || syncErr);
-          });
+          if (isHistoricalDate) {
+            runAnalyticsSync(targetDate, {
+              force: false,
+              jobName: "backdated_on_demand_sync",
+              isFinal: true,
+            }).catch((syncErr) => {
+              console.warn(`[auto-persist] Failed to persist Slide 3 for ${targetDate}:`, syncErr?.message || syncErr);
+            });
+          }
 
           return NextResponse.json(crmResult, {
             status: 200,
@@ -343,13 +349,15 @@ export async function GET(
         const crmResult = await getCrmSlide4(targetDate, interval, shiftStart, shiftEnd);
 
         if (crmResult.success && crmResult.data) {
-          runAnalyticsSync(targetDate, {
-            force: false,
-            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
-            isFinal: isHistoricalDate,
-          }).catch((syncErr) => {
-            console.warn(`[auto-persist] Failed to persist Slide 4 for ${targetDate}:`, syncErr?.message || syncErr);
-          });
+          if (isHistoricalDate) {
+            runAnalyticsSync(targetDate, {
+              force: false,
+              jobName: "backdated_on_demand_sync",
+              isFinal: true,
+            }).catch((syncErr) => {
+              console.warn(`[auto-persist] Failed to persist Slide 4 for ${targetDate}:`, syncErr?.message || syncErr);
+            });
+          }
 
           return NextResponse.json(crmResult, {
             status: 200,
@@ -421,13 +429,15 @@ export async function GET(
         const crmResult = await getCrmSlide5(targetDate, shiftStart, shiftEnd);
 
         if (crmResult.success && crmResult.data) {
-          runAnalyticsSync(targetDate, {
-            force: false,
-            jobName: isHistoricalDate ? "backdated_on_demand_sync" : "live_shift_auto_persist",
-            isFinal: isHistoricalDate,
-          }).catch((syncErr) => {
-            console.warn(`[auto-persist] Failed to persist Slide 5 for ${targetDate}:`, syncErr?.message || syncErr);
-          });
+          if (isHistoricalDate) {
+            runAnalyticsSync(targetDate, {
+              force: false,
+              jobName: "backdated_on_demand_sync",
+              isFinal: true,
+            }).catch((syncErr) => {
+              console.warn(`[auto-persist] Failed to persist Slide 5 for ${targetDate}:`, syncErr?.message || syncErr);
+            });
+          }
 
           return NextResponse.json(crmResult, {
             status: 200,

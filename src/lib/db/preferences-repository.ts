@@ -37,7 +37,7 @@ const DEFAULT_DISPLAY_PREFS: DisplayPreferencesDto = {
  * Get preferences for a specific user ID or default user (ID 1)
  */
 export async function getUserPreferences(userId: bigint | number = 1): Promise<UserPreferencesDto> {
-  const numericId = Number(userId);
+  const numericId = Number(userId) || 1;
   try {
     const row = await queryOne<{
       theme: string;
@@ -76,11 +76,14 @@ export async function saveUserPreferences(
   userId: bigint | number = 1,
   prefs: Partial<UserPreferencesDto>
 ): Promise<UserPreferencesDto> {
-  const numericId = Number(userId);
+  const numericId = Number(userId) || 1;
   const current = await getUserPreferences(numericId);
   const updated: UserPreferencesDto = {
-    ...current,
-    ...prefs,
+    theme: (prefs.theme ?? current.theme) || "dark",
+    headerDrawerOpen: prefs.headerDrawerOpen !== undefined ? Boolean(prefs.headerDrawerOpen) : current.headerDrawerOpen,
+    tvModeEnabled: prefs.tvModeEnabled !== undefined ? Boolean(prefs.tvModeEnabled) : current.tvModeEnabled,
+    displayScaling: (prefs.displayScaling ?? current.displayScaling) || "normal",
+    heatmapIntervalMinutes: (prefs.heatmapIntervalMinutes ?? current.heatmapIntervalMinutes) || 10,
   };
 
   await execute(
@@ -107,7 +110,7 @@ export async function saveUserPreferences(
   // Record change event in audit log
   await recordSettingChangeEvent(
     "USER_PREFERENCE",
-    `user-${userId}`,
+    `user-${numericId}`,
     current,
     updated,
     BigInt(numericId)
@@ -165,8 +168,12 @@ export async function saveDisplayPreferences(
 ): Promise<DisplayPreferencesDto> {
   const current = await getDisplayPreferences(displayIdentifier);
   const updated: DisplayPreferencesDto = {
-    ...current,
-    ...prefs,
+    displayIdentifier,
+    presentationId: prefs.presentationId !== undefined ? (prefs.presentationId ? String(prefs.presentationId) : null) : (current.presentationId ?? null),
+    tvModeEnabled: prefs.tvModeEnabled !== undefined ? Boolean(prefs.tvModeEnabled) : current.tvModeEnabled,
+    displayScaling: (prefs.displayScaling ?? current.displayScaling) || "normal",
+    heatmapIntervalMinutes: (prefs.heatmapIntervalMinutes ?? current.heatmapIntervalMinutes) || 10,
+    slideIntervalSeconds: (prefs.slideIntervalSeconds ?? current.slideIntervalSeconds) || 30,
   };
 
   const presentationIdVal = updated.presentationId ? Number(updated.presentationId) : null;
@@ -211,19 +218,20 @@ export async function recordSettingChangeEvent(
   settingKey: string,
   previousValue: any,
   newValue: any,
-  changedBy: bigint = BigInt(1),
-  entityId?: bigint | null
+  changedBy: bigint | number = 1,
+  entityId?: bigint | number | null
 ) {
   try {
-    const prevJson = previousValue ? JSON.stringify(serializeDbData(previousValue)) : null;
-    const newJson = newValue ? JSON.stringify(serializeDbData(newValue)) : null;
+    const prevJson = previousValue !== undefined && previousValue !== null ? JSON.stringify(serializeDbData(previousValue)) : null;
+    const newJson = newValue !== undefined && newValue !== null ? JSON.stringify(serializeDbData(newValue)) : null;
     const entId = entityId !== null && entityId !== undefined ? Number(entityId) : null;
+    const actorId = changedBy !== null && changedBy !== undefined ? Number(changedBy) : 1;
 
     await execute(
       `INSERT INTO slide_settings_change_events
          (setting_scope, setting_key, entity_id, changed_by, previous_value, new_value, changed_at)
        VALUES (?, ?, ?, ?, ?, ?, NOW(6))`,
-      [settingScope, settingKey, entId, Number(changedBy), prevJson, newJson]
+      [settingScope || "GLOBAL", settingKey || "settings", entId, actorId, prevJson, newJson]
     );
   } catch (err) {
     console.error("Failed to record setting change event in MySQL:", err);
