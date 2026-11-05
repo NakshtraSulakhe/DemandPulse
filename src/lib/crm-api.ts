@@ -34,6 +34,7 @@ import {
 } from "@/lib/incentives/rules-config";
 import { getAllocationsMapForDate } from "@/lib/db/allocations";
 import { getAgentAttendanceSnapshotsForDate } from "@/lib/db/attendance-repository";
+import { getAgentSnapshotsForDate } from "@/lib/db/agent-productivity-repository";
 import {
   getMockSlide1Data,
   getMockSlide2Data,
@@ -515,17 +516,57 @@ export async function getCrmSlide2(
 
       // 2. Process Floor Capacity Points:
       // SUM(Daily Target Points of Present Agents)
-      const attendanceMap = new Map<number, { attendance_status: string; is_present: boolean }>();
+      const attendanceMap = new Map<number | string, { attendance_status: string; is_present: boolean }>();
       if (incentiveRes?.success && Array.isArray(incentiveRes.data?.agents)) {
         for (const ag of incentiveRes.data.agents) {
           if (ag.agent_id != null) {
             const isPres = isAgentPresentForFloorCapacity(ag.attendance_status, ag.is_present);
-            attendanceMap.set(Number(ag.agent_id), {
+            const entry = {
               attendance_status: ag.attendance_status || (isPres ? "Present" : "Absent"),
               is_present: isPres,
-            });
+            };
+            attendanceMap.set(Number(ag.agent_id), entry);
+            if (ag.agent_name) {
+              attendanceMap.set(ag.agent_name.toLowerCase().trim(), entry);
+            }
           }
         }
+      }
+
+      // Fallback 1: Database agent snapshots if attendanceMap is empty
+      if (attendanceMap.size === 0) {
+        try {
+          const dbSnaps = await getAgentSnapshotsForDate(effectiveDate).catch(() => []);
+          for (const s of dbSnaps) {
+            const isPres = isAgentPresentForFloorCapacity(s.attendance_status_snapshot);
+            const entry = {
+              attendance_status: s.attendance_status_snapshot || (isPres ? "Present" : "Absent"),
+              is_present: isPres,
+            };
+            attendanceMap.set(s.crm_agent_id, entry);
+            if (s.agent_name_snapshot) {
+              attendanceMap.set(s.agent_name_snapshot.toLowerCase().trim(), entry);
+            }
+          }
+        } catch {}
+      }
+
+      // Fallback 2: Database attendance snapshots if attendanceMap is still empty
+      if (attendanceMap.size === 0) {
+        try {
+          const dbAtt = await getAgentAttendanceSnapshotsForDate(effectiveDate).catch(() => []);
+          for (const a of dbAtt) {
+            const isPres = isAgentPresentForFloorCapacity(a.attendance_status);
+            const entry = {
+              attendance_status: a.attendance_status || (isPres ? "Present" : "Absent"),
+              is_present: isPres,
+            };
+            attendanceMap.set(a.crm_agent_id, entry);
+            if (a.agent_name_snapshot) {
+              attendanceMap.set(a.agent_name_snapshot.toLowerCase().trim(), entry);
+            }
+          }
+        } catch {}
       }
 
       const floorCapacityResult = calculateFloorCapacityPoints(

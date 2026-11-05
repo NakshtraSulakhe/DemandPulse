@@ -244,7 +244,7 @@ export function calculateFloorCapacityPoints<
   }
 >(
   agents: T[],
-  attendanceMap?: Map<number, { attendance_status: string; is_present: boolean }>
+  attendanceMap?: Map<number | string, { attendance_status: string; is_present: boolean }>
 ): {
   total_capacity_points: number;
   total_agents: number;
@@ -263,12 +263,30 @@ export function calculateFloorCapacityPoints<
     if (!a.agent_id || seenIds.has(a.agent_id)) continue;
     seenIds.add(a.agent_id);
 
-    const attInfo = attendanceMap?.get(a.agent_id);
-    const attendanceStatus = attInfo?.attendance_status || a.attendance_status || "Present";
-    const isPresent = isAgentPresentForFloorCapacity(
-      attendanceStatus,
-      attInfo?.is_present !== undefined ? attInfo.is_present : a.is_present
-    );
+    // Check attendance map by numeric agent_id or normalized agent_name
+    const normalizedName = (a.agent_name || "").toLowerCase().trim();
+    const attInfo =
+      attendanceMap?.get(a.agent_id) ||
+      (normalizedName ? attendanceMap?.get(normalizedName) : undefined);
+
+    let attendanceStatus: string;
+    let isPresent: boolean;
+
+    if (attInfo) {
+      attendanceStatus = attInfo.attendance_status;
+      isPresent = isAgentPresentForFloorCapacity(attendanceStatus, attInfo.is_present);
+    } else if (a.attendance_status) {
+      attendanceStatus = a.attendance_status;
+      isPresent = isAgentPresentForFloorCapacity(attendanceStatus, a.is_present);
+    } else if (attendanceMap && attendanceMap.size > 0) {
+      // If attendance data was loaded but this agent was not marked present in records, mark absent
+      attendanceStatus = "Absent";
+      isPresent = false;
+    } else {
+      // Default to Present only if zero attendance data source was available
+      attendanceStatus = "Present";
+      isPresent = true;
+    }
 
     const target = Number(a.daily_target_points ?? a.target_points ?? 0);
 

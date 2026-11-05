@@ -249,7 +249,15 @@ export async function runAnalyticsSync(
       let floorCapacityPoints = 0;
       let totalAchievedPoints = 0;
 
-      if (s2Result.success && s2Result.data && Array.isArray(s2Result.data.agents)) {
+      if (s2Result.success && s2Result.data?.floor_capacity) {
+        totalAgents = s2Result.data.floor_capacity.total_agents || s2Result.data.agents?.length || 0;
+        presentAgents = s2Result.data.floor_capacity.present_agents_count || 0;
+        absentAgents = s2Result.data.floor_capacity.absent_agents_count || 0;
+        floorCapacityPoints = s2Result.data.floor_capacity.total_capacity_points || 0;
+        if (Array.isArray(s2Result.data.agents)) {
+          totalAchievedPoints = s2Result.data.agents.reduce((sum, a) => sum + (a.achieved_points || 0), 0);
+        }
+      } else if (s2Result.success && s2Result.data && Array.isArray(s2Result.data.agents)) {
         totalAgents = s2Result.data.agents.length;
         s2Result.data.agents.forEach((a) => {
           const isPresent = isAgentPresentForFloorCapacity(a.attendance_status, a.is_present);
@@ -266,6 +274,16 @@ export async function runAnalyticsSync(
         totalAgents = s1Result.data.kpi_cards.total_agents || 0;
         presentAgents = s1Result.data.kpi_cards.present_today || 0;
         absentAgents = s1Result.data.kpi_cards.absent_today || 0;
+      }
+
+      // Reconcile with Slide 1 attendance if Slide 2 had no attendance metadata
+      if (s1Result.success && s1Result.data?.kpi_cards && s1Result.data.kpi_cards.present_today > 0) {
+        const s1Present = s1Result.data.kpi_cards.present_today;
+        const s1Absent = s1Result.data.kpi_cards.absent_today;
+        if (presentAgents > s1Present) {
+          presentAgents = s1Present;
+          absentAgents = s1Absent;
+        }
       }
 
       const lateCount = s1Result.data?.late_comers?.length || 0;
