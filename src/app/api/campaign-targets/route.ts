@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCrmCampaignTargets, saveCrmCampaignTargets } from "@/lib/crm-api";
 import { SaveDailyTargetsPayloadSchema } from "@/lib/validations";
-import { verifyCsrf } from "@/lib/auth";
+import { verifyCsrf, verifyOperationsSession } from "@/lib/auth";
 import {
   getAllocationsMapForDate,
   saveAllocationsBatch,
@@ -138,6 +138,14 @@ export async function GET(req: NextRequest) {
  * and syncs to upstream CRM API. Resilient to serverless environments where local MySQL may be unreachable.
  */
 export async function POST(req: NextRequest) {
+  const auth = await verifyOperationsSession(req);
+  if (!auth.authorized) {
+    return NextResponse.json(
+      { ok: false, error: auth.error || "Unauthorized", error_code: "UNAUTHORIZED" },
+      { status: 403 }
+    );
+  }
+
   // CSRF validation
   if (!verifyCsrf(req)) {
     return NextResponse.json(

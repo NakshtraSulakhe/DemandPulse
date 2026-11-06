@@ -134,7 +134,7 @@ export function getUsEasternTimeInfo(date: Date = new Date()): {
 
 /**
  * Calculates the authoritative business date for any instant in time
- * Shift: 6:00 PM (18:00) to 3:00 AM (03:00) IST next day
+ * Shift: 5:30 PM (17:30) to 2:30 AM (02:30) IST next day (12:00:00 UTC to 21:00:00 UTC)
  */
 export function getShiftBusinessDate(
   instant: Date | string = new Date(),
@@ -144,23 +144,23 @@ export function getShiftBusinessDate(
   const ist = getTimezoneParts(dt, config.timezone || "Asia/Kolkata");
   const minuteOfDay = ist.hour * 60 + ist.minute;
 
-  const [startH, startM] = (config.startTime || "18:00:00").split(":").map(Number);
-  const shiftStartMinutes = (startH || 18) * 60 + (startM || 0);
+  const [startH, startM] = (config.startTime || "17:30:00").split(":").map(Number);
+  const shiftStartMinutes = (startH ?? 17) * 60 + (startM ?? 30);
 
-  const [endH, endM] = (config.endTime || "03:00:00").split(":").map(Number);
-  const shiftEndMinutes = (endH || 3) * 60 + (endM || 0);
+  const [endH, endM] = (config.endTime || "02:30:00").split(":").map(Number);
+  const shiftEndMinutes = (endH ?? 2) * 60 + (endM ?? 30);
 
-  // Case 1: Between shift start (e.g. 18:00) and 23:59:59 IST -> Today's shift start
+  // Case 1: Between shift start (e.g. 17:30) and 23:59:59 IST -> Today's shift start
   if (minuteOfDay >= shiftStartMinutes) {
     return ist.dateStr;
   }
 
-  // Case 2: Between 00:00:00 and shift end (e.g. 03:00) IST -> Overnight extension of yesterday's shift!
+  // Case 2: Between 00:00:00 and shift end (e.g. 02:30) IST -> Overnight extension of yesterday's shift!
   if (minuteOfDay < shiftEndMinutes) {
     return addDays(ist.dateStr, -1);
   }
 
-  // Case 3: Outside shift hours (e.g. 03:00 to 17:59:59 IST)
+  // Case 3: Outside shift hours (e.g. 02:30 to 17:29:59 IST)
   // If between shift end and 12:00 PM: belongs to the shift that just concluded overnight
   if (minuteOfDay < 12 * 60) {
     return addDays(ist.dateStr, -1);
@@ -177,11 +177,11 @@ export function getShiftWindowForBusinessDate(
   businessDate: string,
   config: ShiftConfiguration = DEFAULT_SHIFT_CONFIG
 ): ShiftWindow {
-  const [startH, startM] = (config.startTime || "18:00:00").split(":").map(Number);
+  const [startH, startM] = (config.startTime || "17:30:00").split(":").map(Number);
   // IST shift start in UTC: (startH:startM) - 5:30
-  // e.g. 18:00 IST - 5:30 = 12:30:00 UTC on businessDate
+  // e.g. 17:30 IST - 5:30 = 12:00:00 UTC on businessDate
   const [y, m, d] = businessDate.split("-").map(Number);
-  let utcMinutes = (startH * 60 + (startM || 0)) - 330;
+  let utcMinutes = (startH * 60 + (startM ?? 30)) - 330;
   let dayOffset = 0;
   if (utcMinutes < 0) {
     utcMinutes += 1440;
@@ -195,8 +195,8 @@ export function getShiftWindowForBusinessDate(
   const endUtc = new Date(startUtc.getTime() + durationMs);
 
   const nextDayIst = addDays(businessDate, 1);
-  const shiftStartIst = `${businessDate} ${config.startTime}`;
-  const shiftEndIst = `${nextDayIst} ${config.endTime}`;
+  const shiftStartIst = `${businessDate} ${config.startTime || "17:30:00"}`;
+  const shiftEndIst = `${nextDayIst} ${config.endTime || "02:30:00"}`;
 
   const usStartInfo = getUsEasternTimeInfo(startUtc);
   const usEndInfo = getUsEasternTimeInfo(endUtc);
@@ -224,11 +224,11 @@ export function getCurrentShiftState(
   const istParts = getTimezoneParts(nowDate, config.timezone || "Asia/Kolkata");
   const minuteOfDay = istParts.hour * 60 + istParts.minute;
 
-  const [startH, startM] = (config.startTime || "18:00:00").split(":").map(Number);
-  const shiftStartMinutes = (startH || 18) * 60 + (startM || 0);
+  const [startH, startM] = (config.startTime || "17:30:00").split(":").map(Number);
+  const shiftStartMinutes = (startH ?? 17) * 60 + (startM ?? 30);
 
-  const [endH, endM] = (config.endTime || "03:00:00").split(":").map(Number);
-  const shiftEndMinutes = (endH || 3) * 60 + (endM || 0);
+  const [endH, endM] = (config.endTime || "02:30:00").split(":").map(Number);
+  const shiftEndMinutes = (endH ?? 2) * 60 + (endM ?? 30);
 
   const isShiftActive = minuteOfDay >= shiftStartMinutes || minuteOfDay < shiftEndMinutes;
   const businessDate = getShiftBusinessDate(nowDate, config);
@@ -269,7 +269,7 @@ export function getCurrentShiftState(
   if (minuteOfDay >= shiftStartMinutes) {
     nextShiftDate = addDays(istParts.dateStr, 1);
   }
-  const nextShiftStartIst = `${nextShiftDate} ${config.startTime} IST`;
+  const nextShiftStartIst = `${nextShiftDate} ${config.startTime || "17:30:00"} IST`;
 
   return {
     isShiftActive,
@@ -290,8 +290,8 @@ export function getCurrentShiftState(
 }
 
 /**
- * Generates the discrete time intervals for Slide 3 (QA Heatmap) and Slide 4 (Agent Heatmap)
- * across the 18:00 to 03:00 shift window crossing midnight
+ * Generates the discrete time intervals for Slide 3 (QA Heatmap), Slide 4 (Agent Heatmap),
+ * and Slide 5 (Form Submissions) across the 17:30 to 02:30 operational shift window crossing midnight
  */
 export function generateShiftIntervals(
   intervalMinutes: number = 10,
@@ -299,11 +299,16 @@ export function generateShiftIntervals(
 ): ShiftTimeInterval[] {
   const intervals: ShiftTimeInterval[] = [];
   const duration = config.durationMinutes || 540;
-  const totalSlots = Math.floor(duration / intervalMinutes); // e.g. 54 for 10-min, 36 for 15-min
+  const totalSlots = Math.floor(duration / intervalMinutes); // 18 for 30-min, 36 for 15-min, 54 for 10-min
 
-  // Starting at config.startTime (default 18:00 = 1080 minutes into day)
-  const [startH, startM] = (config.startTime || "18:00:00").split(":").map(Number);
-  let currentMinutes = (startH || 18) * 60 + (startM || 0);
+  // Starting at config.startTime (default 17:30 = 1050 minutes into day)
+  const [startH, startM] = (config.startTime || "17:30:00").split(":").map(Number);
+  let currentMinutes = (startH ?? 17) * 60 + (startM ?? 30);
+
+  // 17:30 IST is 12:00:00 UTC
+  // In US Eastern (EST UTC-5 / EDT UTC-4), 12:00 UTC corresponds to 07:00 EST / 08:00 EDT
+  const usInfo = getUsEasternTimeInfo();
+  const usBaseStartMinutes = usInfo.abbr === "EDT" ? 8 * 60 : 7 * 60;
 
   for (let i = 0; i < totalSlots; i++) {
     const startHour = Math.floor(currentMinutes / 60) % 24;
@@ -316,16 +321,14 @@ export function generateShiftIntervals(
     const startStr = `${String(startHour).padStart(2, "0")}:${String(startMin).padStart(2, "0")}`;
     const endStr = `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
 
-    // US Eastern calculation for slot label (approx EDT 08:30 start)
-    // 18:00 IST = 08:30 EDT (or 07:30 EST)
-    const usStartMins = 8 * 60 + 30 + (i * intervalMinutes);
+    const usStartMins = usBaseStartMinutes + (i * intervalMinutes);
     const usStartH = Math.floor(usStartMins / 60) % 24;
     const usStartM = usStartMins % 60;
     const usEndMins = usStartMins + intervalMinutes;
     const usEndH = Math.floor(usEndMins / 60) % 24;
     const usEndM = usEndMins % 60;
 
-    const usLabel = `${String(usStartH).padStart(2, "0")}:${String(usStartM).padStart(2, "0")} - ${String(usEndH).padStart(2, "0")}:${String(usEndM).padStart(2, "0")} US`;
+    const usLabel = `${String(usStartH).padStart(2, "0")}:${String(usStartM).padStart(2, "0")} - ${String(usEndH).padStart(2, "0")}:${String(usEndM).padStart(2, "0")} ${usInfo.abbr}`;
 
     intervals.push({
       index: i,

@@ -205,6 +205,7 @@ export interface FormSubmissionLead {
   submitted_at: string;
   submitted_by?: number;
   submitter_name?: string;
+  department?: string;
 }
 
 export interface FormSubmissionsPayload {
@@ -214,6 +215,7 @@ export interface FormSubmissionsPayload {
     user_id: number;
     name: string;
     role?: string;
+    department?: string;
     forms_submitted_count: number;
     leads?: FormSubmissionLead[];
   }>;
@@ -239,6 +241,7 @@ export interface FormSubmitterHeatmapItem {
   user_id: number;
   name: string;
   role?: string;
+  department?: string;
   total_submitted: number;
   intervals: FormSubmitterInterval[];
   leads?: FormSubmissionLead[];

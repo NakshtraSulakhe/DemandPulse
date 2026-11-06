@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getShiftConfig, saveShiftConfig } from "@/lib/shift/config";
-import { verifyAdminSession } from "@/lib/auth";
+import { verifyOperationsSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function GET() {
  * Update shift configuration in MySQL slide_business_calendars
  */
 export async function PUT(req: NextRequest) {
-  const auth = await verifyAdminSession(req);
+  const auth = await verifyOperationsSession(req);
   if (!auth.authorized) {
     return NextResponse.json(
       { success: false, error: "Unauthorized access", error_code: "UNAUTHORIZED" },

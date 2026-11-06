@@ -357,3 +357,45 @@ export function useRecognitionFeed(date?: string, customPollInterval?: number | 
     retry: 1,
   });
 }
+
+// Live QA Audits & Incentive Stream Hook (/api/v1/slides/qa_audits.php)
+export function useQaAuditsFeed(params?: {
+  date?: string;
+  frequency?: "daily" | "monthly";
+  base_target?: number;
+  base_reward?: number;
+  tiers?: any;
+  customPollInterval?: number | false;
+}) {
+  const { config } = useCrmConfig();
+  const refetchInterval =
+    params?.customPollInterval !== undefined
+      ? params.customPollInterval
+      : config.autoSyncEnabled
+      ? config.analyticsSyncInterval * 1000
+      : false;
+
+  return useQuery<ApiResponse<any>>({
+    queryKey: ["qa-audits-feed", params?.date || "today", params?.frequency || "daily"],
+    queryFn: async () => {
+      const q = new URLSearchParams();
+      if (params?.date) q.set("date", params.date);
+      if (params?.frequency) q.set("frequency", params.frequency);
+      if (params?.base_target !== undefined) q.set("base_target", String(params.base_target));
+      if (params?.base_reward !== undefined) q.set("base_reward", String(params.base_reward));
+      if (params?.tiers) {
+        q.set("tiers", typeof params.tiers === "string" ? params.tiers : JSON.stringify(params.tiers));
+      }
+
+      const res = await fetch(`/api/analytics/qa_audits?${q.toString()}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `CRM QA Audits API error ${res.status}`);
+      }
+      return json;
+    },
+    refetchInterval,
+    placeholderData: (prev) => prev,
+    retry: 1,
+  });
+}

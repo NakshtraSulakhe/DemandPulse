@@ -225,6 +225,7 @@ export const FormSubmissionLeadSchema = z.object({
   submitted_at: z.string(),
   submitted_by: z.number().optional(),
   submitter_name: z.string().optional(),
+  department: z.string().optional().nullable(),
 }).passthrough();
 
 export const FormSubmitterIntervalSchema = z.object({
@@ -237,6 +238,7 @@ export const FormSubmitterHeatmapItemSchema = z.object({
   user_id: z.number(),
   name: z.string(),
   role: z.string().optional(),
+  department: z.string().optional().nullable(),
   total_submitted: z.number().default(0),
   intervals: z.array(FormSubmitterIntervalSchema).default([]),
   leads: z.array(FormSubmissionLeadSchema).optional(),

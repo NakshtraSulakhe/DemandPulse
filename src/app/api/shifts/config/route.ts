@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getShiftConfig, saveShiftConfig } from "@/lib/shift/config";
-import { verifyCsrf, verifyAdminSession } from "@/lib/auth";
+import { verifyCsrf, verifyOperationsSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  const auth = await verifyAdminSession(req);
+  const auth = await verifyOperationsSession(req);
   if (!auth.authorized) {
     return NextResponse.json(
       { success: false, error: auth.error, error_code: "UNAUTHORIZED" },

@@ -20,13 +20,20 @@ import {
   Sparkles,
   ShieldCheck,
   ChevronRight,
+  Sliders,
+  FileCheck2,
+  Trophy,
 } from "lucide-react";
 import { useDailyIncentives } from "@/hooks/useDailyIncentives";
 import { useIncentivePreview } from "@/hooks/useIncentivePreview";
 import { formatINR, formatPercentage, formatPoints, getEligibilityBadgeClass } from "@/lib/incentives/formatters";
 import IncentiveWorkflowStepper from "@/components/incentives/workflow-stepper";
+import AgentIncentiveAchievers from "@/components/incentives/agent-incentive-achievers";
+import QaIncentivePlanCreator from "@/components/incentives/qa-incentive-plan-creator";
+import QaIncentiveCalculatorView from "@/components/incentives/qa-incentive-calculator-view";
 
 export default function IncentiveDashboardPage() {
+  const [mainTab, setMainTab] = useState<"achievers" | "qa_builder" | "qa_audits" | "pipeline">("achievers");
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "eligible" | "ineligible">("all");
@@ -99,52 +106,130 @@ export default function IncentiveDashboardPage() {
   };
 
   return (
-    <div className="w-full flex flex-col gap-6 animate-fadeIn">
+    <div className="w-full flex flex-col gap-6 animate-fadeIn pb-12">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+              Incentive Pipeline
+            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">Agent Performance & QA Audit Administration</span>
+          </div>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2 mt-1">
             <Coins className="w-5 h-5 text-amber-500" />
-            Daily Incentive Audit Dashboard
+            Incentive Management Console
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Real-time QA lead audit calculations, target achievement thresholds, and daily performance metrics
+            Track daily agent incentive achievers from CRM and configure multi-tier QA team audit incentive plans.
           </p>
         </div>
 
-        {/* Date Selector & Action Buttons */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-xs">
-            <Calendar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => {
-                setSelectedDate(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="bg-transparent text-slate-800 dark:text-slate-200 outline-none text-xs cursor-pointer font-mono"
-            />
-          </div>
-
-          <button
-            onClick={handleRefresh}
-            disabled={isFetching}
-            className="p-2 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
-            title="Refresh Incentive Pipeline"
+        {/* Global Navigation Shortcuts */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href="/admin/incentives/qa-plans"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin text-cyan-500" : ""}`} />
-          </button>
-
+            <Sliders className="w-3.5 h-3.5" />
+            <span>QA Plans Console</span>
+          </Link>
           <Link
             href="/admin/incentives/settlements"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold shadow-md shadow-cyan-600/20 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold shadow-md shadow-cyan-600/20 transition-all cursor-pointer"
           >
             <span>Settlement Console</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       </div>
+
+      {/* Main Top Navigation Tabs */}
+      <div className="flex items-center gap-2 p-1.5 rounded-2xl glass-panel border border-slate-200/80 dark:border-white/10 flex-wrap">
+        <button
+          onClick={() => setMainTab("achievers")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "achievers"
+              ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Trophy className="w-4 h-4" />
+          <span>Agent Achievers (CRM Live Feed)</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab("qa_builder")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "qa_builder"
+              ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/20"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Sliders className="w-4 h-4" />
+          <span>QA Incentive Plan Creator</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab("qa_audits")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "qa_audits"
+              ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <FileCheck2 className="w-4 h-4" />
+          <span>QA Team Audit Calculations</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab("pipeline")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "pipeline"
+              ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Coins className="w-4 h-4" />
+          <span>All Agents & Settlement Pipeline</span>
+        </button>
+      </div>
+
+      {/* Conditional Tab Rendering */}
+      {mainTab === "achievers" && <AgentIncentiveAchievers />}
+
+      {mainTab === "qa_builder" && (
+        <QaIncentivePlanCreator onPlanSaved={() => setMainTab("qa_audits")} />
+      )}
+
+      {mainTab === "qa_audits" && <QaIncentiveCalculatorView />}
+
+      {mainTab === "pipeline" && (
+        <div className="flex flex-col gap-6 animate-fadeIn">
+          {/* Date Selector & Refresh */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-xs">
+              <Calendar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="bg-transparent text-slate-800 dark:text-slate-200 outline-none text-xs cursor-pointer font-mono"
+              />
+            </div>
+
+            <button
+              onClick={handleRefresh}
+              disabled={isFetching}
+              className="p-2 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              title="Refresh Incentive Pipeline"
+            >
+              <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin text-cyan-500" : ""}`} />
+            </button>
+          </div>
 
       {/* 7 Top KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
@@ -562,6 +647,8 @@ export default function IncentiveDashboardPage() {
           </div>
         </div>
       </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,74 @@
+[
+  {
+    "id": "4",
+    "plan_name": "QA Lead Audit Incentive Plan (50 Base + Tier 1 & 2 Accelerators)",
+    "qa_agent_id": null,
+    "qa_agent_name": "All QA Members",
+    "client_code": "ALL",
+    "campaign_id": null,
+    "campaign_name": "All Campaigns (All Clients)",
+    "frequency": "DAILY",
+    "base_target_leads": 10,
+    "base_incentive_amount": 500,
+    "tiers": [
+      {
+        "tier_order": 1,
+        "tier_name": "Tier 1 (+10 Leads Beyond Base)",
+        "extra_leads": 10,
+        "rate_per_lead": 15,
+        "cumulative_leads": 20,
+        "tier_reward": 150,
+        "total_cumulative_reward": 650
+      },
+      {
+        "tier_order": 2,
+        "tier_name": "Tier 2 (+10 Leads Beyond Tier 1)",
+        "extra_leads": 10,
+        "rate_per_lead": 20,
+        "cumulative_leads": 30,
+        "tier_reward": 200,
+        "total_cumulative_reward": 850
+      }
+    ],
+    "is_active": true,
+    "notes": "Configured tier plan for QA lead audits with dynamic slab accelerators.",
+    "created_at": "2026-11-06 16:18:42.177866",
+    "updated_at": "2026-11-06 19:00:29.156546"
+  },
+  {
+    "id": "3",
+    "plan_name": "QA Lead Audit Incentive Plan (50 Base + Tier 1 & 2 Accelerators)",
+    "qa_agent_id": null,
+    "qa_agent_name": "All QA Members",
+    "client_code": "ALL",
+    "campaign_id": null,
+    "campaign_name": "All Campaigns (All Clients)",
+    "frequency": "DAILY",
+    "base_target_leads": 10,
+    "base_incentive_amount": 500,
+    "tiers": [
+      {
+        "tier_order": 1,
+        "tier_name": "Tier 1 (+10 Leads Beyond Base)",
+        "extra_leads": 10,
+        "rate_per_lead": 15,
+        "cumulative_leads": 20,
+        "tier_reward": 150,
+        "total_cumulative_reward": 650
+      },
+      {
+        "tier_order": 2,
+        "tier_name": "Tier 2 (+10 Leads Beyond Tier 1)",
+        "extra_leads": 10,
+        "rate_per_lead": 20,
+        "cumulative_leads": 30,
+        "tier_reward": 200,
+        "total_cumulative_reward": 850
+      }
+    ],
+    "is_active": true,
+    "notes": "Configured tier plan for QA lead audits with dynamic slab accelerators.",
+    "created_at": "2026-11-06 16:17:58.689819",
+    "updated_at": "2026-11-06 16:17:58.689819"
+  }
+]

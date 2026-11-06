@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCrmConfig, saveCrmConfig, resetCrmConfig } from "@/lib/crm-config";
-import { verifyCsrf } from "@/lib/auth";
+import { verifyCsrf, verifyAdminSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -31,6 +31,11 @@ export async function GET() {
  * Updates CRM API and interval settings
  */
 export async function POST(req: NextRequest) {
+  const auth = await verifyAdminSession(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ ok: false, error: auth.error }, { status: 403 });
+  }
+
   if (!verifyCsrf(req)) {
     return NextResponse.json(
       { ok: false, error: "CSRF token/origin validation failed" },
@@ -73,6 +78,11 @@ export async function POST(req: NextRequest) {
  * Resets configuration back to environment variable defaults
  */
 export async function DELETE(req: NextRequest) {
+  const auth = await verifyAdminSession(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ ok: false, error: auth.error }, { status: 403 });
+  }
+
   if (!verifyCsrf(req)) {
     return NextResponse.json(
       { ok: false, error: "CSRF token/origin validation failed" },

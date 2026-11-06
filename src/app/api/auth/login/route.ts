@@ -1,41 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSessionCookie } from "@/lib/auth";
+import { getUserByEmailOrUsername, verifyPassword } from "@/lib/db/user-repository";
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json();
+    const body = await req.json();
+    const identifier = String(body.email || body.username || "").trim();
+    const password = String(body.password || "").trim();
 
-    // Default admin credentials for DemandFlow Operations
-    // In production, can verify against CRM users table or hashed credential
-    if (
-      (email === "admin@demandflow.io" && password === "DemandFlow2026!") ||
-      (email === "admin" && password === "admin123")
-    ) {
-      const response = NextResponse.json({
-        ok: true,
-        user: {
-          id: "admin-1",
-          name: "Operations Director",
-          email: "admin@demandflow.io",
-          role: "admin",
-        },
-      });
+    if (!identifier || !password) {
+      return NextResponse.json(
+        { ok: false, error: "Username/Email and Password are required." },
+        { status: 400 }
+      );
+    }
 
-      createSessionCookie(response, {
-        id: "admin-1",
-        name: "Operations Director",
-        email: "admin@demandflow.io",
-        role: "admin",
-      });
+    // 1. Authenticate against database records (slide_app_users)
+    const user = await getUserByEmailOrUsername(identifier);
 
-      return response;
+    if (user) {
+      if (!user.is_active) {
+        return NextResponse.json(
+          { ok: false, error: "This account has been deactivated. Please contact an Administrator." },
+          { status: 403 }
+        );
+      }
+
+      const isValidPassword = verifyPassword(password, user.password_hash);
+
+      if (isValidPassword) {
+        const sessionUser = {
+          id: user.id,
+          name: user.display_name,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+        };
+
+        const response = NextResponse.json({
+          ok: true,
+          message: `Logged in successfully as ${user.role.toUpperCase()}`,
+          user: sessionUser,
+        });
+
+        createSessionCookie(response, sessionUser);
+        return response;
+      }
     }
 
     return NextResponse.json(
-      { ok: false, error: "Invalid email or password" },
+      { ok: false, error: "Invalid username/email or password" },
       { status: 401 }
     );
-  } catch {
+  } catch (err: unknown) {
+    console.error("[auth/login] Login processing error:", err);
     return NextResponse.json(
       { ok: false, error: "Authentication processing failed" },
       { status: 500 }

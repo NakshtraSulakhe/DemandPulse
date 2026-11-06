@@ -49,7 +49,7 @@ export async function getShiftConfig(): Promise<ShiftConfiguration> {
       durationMinutes: 540,
       reportingTimezone: calendar.business_timezone || "America/New_York",
       businessDateRule: "SHIFT_START_DATE",
-      gracePeriodMinutes: calendar.grace_period_minutes ?? 0,
+      gracePeriodMinutes: calendar.grace_period_minutes ?? 1,
       workingDays,
       isActive: Boolean(calendar.is_active),
       version: calendar.version || 1,

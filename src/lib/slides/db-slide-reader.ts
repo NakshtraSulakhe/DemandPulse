@@ -105,11 +105,11 @@ export async function getDbSlide1(targetDate?: string): Promise<DbSlideReadResul
           crm_agent_id: l.crm_agent_id,
           agent_name_snapshot: l.agent_name_snapshot,
           punch_in_at: l.punch_in_at,
-          shift_start_time: "18:00:00",
+          shift_start_time: "17:30:00",
           late_minutes: l.late_minutes,
           attendance_status: l.attendance_status,
         },
-        "18:00:00",
+        "17:30:00",
         0
       );
       if (evalResult) {

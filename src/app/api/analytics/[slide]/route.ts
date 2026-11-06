@@ -7,6 +7,7 @@ import {
   getCrmSlide5,
   getCrmSlide6,
   getCrmRecognition,
+  getCrmQaAudits,
 } from "@/lib/crm-api";
 import {
   getDbSlide1,
@@ -508,6 +509,40 @@ export async function GET(
           headers: {
             "Cache-Control": "no-store, no-cache, must-revalidate",
             "X-Data-Source": "live-crm-api",
+          },
+        });
+      }
+
+      case "qa_audits":
+      case "qa-audits": {
+        const frequency = searchParams.get("frequency") || "daily";
+        const baseTarget = searchParams.get("base_target") ? parseInt(searchParams.get("base_target")!, 10) : undefined;
+        const baseReward = searchParams.get("base_reward") ? parseFloat(searchParams.get("base_reward")!) : undefined;
+        const tiers = searchParams.get("tiers") || undefined;
+        const qaId = searchParams.get("qa_id") ? parseInt(searchParams.get("qa_id")!, 10) : undefined;
+        const clientCode = searchParams.get("client_code") || undefined;
+        const campaignId = searchParams.get("campaign_id") ? parseInt(searchParams.get("campaign_id")!, 10) : undefined;
+        const status = searchParams.get("status") || undefined;
+        const includeLeads = searchParams.get("include_leads") ? parseInt(searchParams.get("include_leads")!, 10) : 1;
+
+        const result = await getCrmQaAudits({
+          date: targetDate,
+          frequency: frequency as any,
+          base_target: baseTarget,
+          base_reward: baseReward,
+          tiers,
+          qa_id: qaId,
+          client_code: clientCode,
+          campaign_id: campaignId,
+          status,
+          include_leads: includeLeads,
+        });
+
+        return NextResponse.json(result, {
+          status: result.success ? 200 : 502,
+          headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "X-Data-Source": "live-crm-qa-audits",
           },
         });
       }

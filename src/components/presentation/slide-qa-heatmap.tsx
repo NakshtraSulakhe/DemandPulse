@@ -61,28 +61,10 @@ export default function SlideQaHeatmap({
   const totalQualified = analysts.reduce((acc: number, a: QaHeatmapAnalyst) => acc + (a.total_qualified || 0), 0);
   const totalAudited = analysts.reduce((acc: number, a: QaHeatmapAnalyst) => acc + (a.total_audited || 0), 0);
 
-  // Live campaign QA metrics (matching CRM Admin Dashboard Today count: Qualified + Disqualified = Audited, and Pending QA)
-  const campaignTotals = useMemo(() => {
-    if (!campaignsData || campaignsData.length === 0) return null;
-    let qual = 0;
-    let disq = 0;
-    let pending = 0;
-    for (const c of campaignsData) {
-      qual += Number(c.qualified_leads || 0);
-      disq += Number(c.disqualified_leads || 0);
-      pending += Number(c.pending_qa || 0);
-    }
-    return {
-      audited: qual + disq,
-      qualified: qual,
-      disqualified: disq,
-      pending_qa: pending,
-    };
-  }, [campaignsData]);
-
-  const displayQualified = campaignTotals?.qualified ?? data?.today_qualified ?? totalQualified;
-  const displayAudited = campaignTotals?.audited ?? data?.today_audited ?? totalAudited;
-  const displayPendingQa = campaignTotals?.pending_qa ?? data?.today_pending_qa;
+  // Authoritative QA metrics strictly synchronized with the shift audit evaluation
+  const displayQualified = data?.today_qualified ?? totalQualified;
+  const displayAudited = data?.today_audited ?? totalAudited;
+  const displayPendingQa = data?.today_pending_qa ?? (campaignsData ? campaignsData.reduce((acc, c) => acc + Number(c.pending_qa || 0), 0) : undefined);
   const acceptanceRate = displayAudited > 0 ? Math.round((displayQualified / displayAudited) * 100) : 0;
 
   const intervalMinutes = data?.interval_minutes || interval;
@@ -412,7 +394,12 @@ export default function SlideQaHeatmap({
                   <th className="py-2 px-2.5 sticky left-0 bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-300 z-20 min-w-[130px]">
                     QA Analyst
                   </th>
-                  <th className="py-2 px-2 text-center text-emerald-600 dark:text-emerald-400 bg-slate-100 dark:bg-slate-900 font-bold">Total</th>
+                  <th className="py-2 px-2 text-center text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-900 font-bold" title="Total Audited Leads (Qualified + Disqualified)">
+                    Audited
+                  </th>
+                  <th className="py-2 px-2 text-center text-emerald-600 dark:text-emerald-400 bg-slate-100 dark:bg-slate-900 font-bold" title="Verified Qualified Leads">
+                    Qualified
+                  </th>
                   {intervals.map((inv: QaHeatmapInterval) => (
                     <th
                       key={inv.slot_index}
@@ -424,45 +411,51 @@ export default function SlideQaHeatmap({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-white/5 font-mono">
-                {analysts.map((a: QaHeatmapAnalyst) => (
-                  <tr key={a.user_id} className="hover:bg-slate-100/50 dark:hover:bg-white/[0.02]">
-                    <td className="py-1.5 px-2.5 font-semibold text-xs text-slate-900 dark:text-white sticky left-0 bg-white dark:bg-slate-950/90 z-10 whitespace-nowrap border-r border-slate-200 dark:border-transparent">
-                      {a.full_name}
-                    </td>
-                    <td className="py-1.5 px-2 text-center font-bold text-xs text-emerald-600 dark:text-emerald-400 bg-slate-50 dark:bg-slate-950/90">
-                      {a.total_qualified}
-                    </td>
-                    {a.intervals.map((inv: QaHeatmapInterval) => {
-                      const count = inv.qualified_count;
-                      let cellClass = "";
-                      
-                      if (count >= 5) {
-                        cellClass = "bg-gradient-to-br from-emerald-500 to-green-600 text-white font-black shadow-sm shadow-emerald-500/30 border border-emerald-400/60";
-                      } else if (count === 4) {
-                        cellClass = "bg-gradient-to-br from-lime-400 to-emerald-500 text-slate-950 font-bold shadow-sm shadow-lime-500/25 border border-lime-300/60";
-                      } else if (count === 3) {
-                        cellClass = "bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-sm shadow-amber-500/25 border border-amber-300/60";
-                      } else if (count === 2) {
-                        cellClass = "bg-gradient-to-br from-orange-500 to-amber-600 text-white font-bold shadow-sm shadow-orange-500/30 border border-orange-400/60";
-                      } else if (count === 1) {
-                        cellClass = "bg-gradient-to-br from-rose-500 to-red-600 text-white font-bold shadow-sm shadow-red-500/30 border border-red-400/50";
-                      } else {
-                        // 0 (Quiet): Subtle, clean neutral background without glaring neon green
-                        cellClass = "text-slate-400/50 dark:text-slate-600/60 bg-slate-100/50 dark:bg-slate-900/30 border border-slate-200/50 dark:border-white/[0.03] hover:bg-slate-200/50 dark:hover:bg-white/[0.05]";
-                      }
-                      
-                      return (
-                        <td
-                          key={inv.slot_index}
-                          className={`py-1 px-0.5 text-center text-[9.5px] rounded transition-all font-mono ${cellClass}`}
-                          title={`${inv.time_label}: ${count} qualified / ${inv.audited_count} audited`}
-                        >
-                          {count > 0 ? count : "·"}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {analysts.map((a: QaHeatmapAnalyst) => {
+                  const auditedCount = a.total_audited ?? a.intervals.reduce((s, i) => s + (i.audited_count || 0), 0);
+                  return (
+                    <tr key={a.user_id} className="hover:bg-slate-100/50 dark:hover:bg-white/[0.02]">
+                      <td className="py-1.5 px-2.5 font-semibold text-xs text-slate-900 dark:text-white sticky left-0 bg-white dark:bg-slate-950/90 z-10 whitespace-nowrap border-r border-slate-200 dark:border-transparent">
+                        {a.full_name}
+                      </td>
+                      <td className="py-1.5 px-2 text-center font-bold text-xs text-slate-900 dark:text-slate-100 bg-slate-100/70 dark:bg-slate-900/60 border-r border-slate-200/50 dark:border-white/5">
+                        {auditedCount}
+                      </td>
+                      <td className="py-1.5 px-2 text-center font-bold text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 dark:bg-emerald-950/20 border-r border-slate-200/50 dark:border-white/5">
+                        {a.total_qualified}
+                      </td>
+                      {a.intervals.map((inv: QaHeatmapInterval) => {
+                        const count = inv.qualified_count;
+                        let cellClass = "";
+                        
+                        if (count >= 5) {
+                          cellClass = "bg-gradient-to-br from-emerald-500 to-green-600 text-white font-black shadow-sm shadow-emerald-500/30 border border-emerald-400/60";
+                        } else if (count === 4) {
+                          cellClass = "bg-gradient-to-br from-lime-400 to-emerald-500 text-slate-950 font-bold shadow-sm shadow-lime-500/25 border border-lime-300/60";
+                        } else if (count === 3) {
+                          cellClass = "bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-sm shadow-amber-500/25 border border-amber-300/60";
+                        } else if (count === 2) {
+                          cellClass = "bg-gradient-to-br from-orange-500 to-amber-600 text-white font-bold shadow-sm shadow-orange-500/30 border border-orange-400/60";
+                        } else if (count === 1) {
+                          cellClass = "bg-gradient-to-br from-rose-500 to-red-600 text-white font-bold shadow-sm shadow-red-500/30 border border-red-400/50";
+                        } else {
+                          // 0 (Quiet): Subtle, clean neutral background without glaring neon green
+                          cellClass = "text-slate-400/50 dark:text-slate-600/60 bg-slate-100/50 dark:bg-slate-900/30 border border-slate-200/50 dark:border-white/[0.03] hover:bg-slate-200/50 dark:hover:bg-white/[0.05]";
+                        }
+                        
+                        return (
+                          <td
+                            key={inv.slot_index}
+                            className={`py-1 px-0.5 text-center text-[9.5px] rounded transition-all font-mono ${cellClass}`}
+                            title={`${inv.time_label}: ${count} qualified / ${inv.audited_count} audited`}
+                          >
+                            {count > 0 ? count : "·"}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

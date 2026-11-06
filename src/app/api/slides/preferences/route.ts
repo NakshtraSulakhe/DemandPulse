@@ -5,7 +5,7 @@ import {
   getDisplayPreferences,
   saveDisplayPreferences,
 } from "@/lib/db/preferences-repository";
-import { verifyAdminSession } from "@/lib/auth";
+import { verifyOperationsSession } from "@/lib/auth";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     }
 
     const data = validated.data;
-    const auth = await verifyAdminSession(req);
+    const auth = await verifyOperationsSession(req);
     const actorId = BigInt(auth.user?.id === "admin-api" ? 1 : 1);
 
     // Save user preferences (only pass defined fields to avoid passing undefined down to SQL)

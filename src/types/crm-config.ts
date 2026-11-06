@@ -110,6 +110,37 @@ export const DEFAULT_CRM_ENDPOINTS: CrmCustomEndpoint[] = [
     isBuiltIn: true,
     enabled: true,
   },
+  {
+    id: "qa_audits",
+    name: "QA Audits & Live Incentive Feed",
+    path: "slides/qa_audits.php",
+    fallbackPath: "slides_analytics.php?action=qa_audits",
+    method: "GET",
+    category: "operations",
+    description: "Main feed for TV slides & calculation engine with dynamic volume accelerator tier calculations",
+    isBuiltIn: true,
+    enabled: true,
+  },
+  {
+    id: "qa_plans",
+    name: "QA Incentive Plans Management",
+    path: "qa-incentives/plans.php",
+    method: "GET",
+    category: "operations",
+    description: "Database plan CRUD endpoint for QA incentive tiers",
+    isBuiltIn: true,
+    enabled: true,
+  },
+  {
+    id: "qa_calculate",
+    name: "QA Live Incentive Calculator",
+    path: "qa-incentives/calculate.php",
+    method: "GET",
+    category: "operations",
+    description: "Computes QA payout using custom or saved plan rules",
+    isBuiltIn: true,
+    enabled: true,
+  },
 ];
 
 export interface CrmConfig {

@@ -89,8 +89,8 @@ export function getMockSlide1Data(dateStr?: string): Slide1Data {
         user_id: 12,
         full_name: "Marcus Vance",
         role: "Senior SDR",
-        punch_in: "18:18:12",
-        shift_start_time: "18:00:00",
+        punch_in: "17:48:12",
+        shift_start_time: "17:30:00",
         grace_minutes: 10,
         late_minutes: 7,
         status: "Late Present",
@@ -99,8 +99,8 @@ export function getMockSlide1Data(dateStr?: string): Slide1Data {
         user_id: 19,
         full_name: "Aaliyah Chen",
         role: "Inbound Specialist",
-        punch_in: "18:24:30",
-        shift_start_time: "18:00:00",
+        punch_in: "17:54:30",
+        shift_start_time: "17:30:00",
         grace_minutes: 10,
         late_minutes: 11,
         status: "Late Present",
@@ -200,7 +200,7 @@ export function getMockSlide4Data(intervalMinutes = 10): Slide4Data {
 }
 
 export function getMockSlide5Data(): Slide5Data {
-  const times = ["18:00", "19:00", "20:00", "21:00", "22:00", "23:00", "00:00", "01:00", "02:00"];
+  const times = ["17:30", "18:30", "19:30", "20:30", "21:30", "22:30", "23:30", "00:30", "01:30"];
   let cumGen = 0;
   let cumAud = 0;
   let cumQual = 0;
@@ -246,9 +246,10 @@ export function getMockSlide6Data(intervalMinutes = 10): Slide6Data {
   const slotCount = Math.floor((9 * 60) / intervalMinutes);
   const submitters = [
     {
-      user_id: 12,
-      name: "Sarah Connor",
-      role: "agent",
+      user_id: 99,
+      name: "Sagar Machale",
+      role: "email_marketing_agent",
+      department: "Email Marketing",
       total_submitted: 15,
       intervals: Array.from({ length: Math.min(slotCount, 18) }, (_, i) => ({
         slot_index: i,
@@ -261,13 +262,16 @@ export function getMockSlide6Data(intervalMinutes = 10): Slide6Data {
           campaign_name: "Cloud Infra",
           form_done: "Yes",
           submitted_at: "2026-11-04 19:32:00",
+          submitter_name: "Sagar Machale",
+          department: "Email Marketing",
         },
       ],
     },
     {
-      user_id: 14,
-      name: "Devon Brooks",
-      role: "agent",
+      user_id: 104,
+      name: "Pooja Sharma",
+      role: "email_marketing_agent",
+      department: "Email Marketing",
       total_submitted: 12,
       intervals: Array.from({ length: Math.min(slotCount, 18) }, (_, i) => ({
         slot_index: i,
@@ -276,9 +280,10 @@ export function getMockSlide6Data(intervalMinutes = 10): Slide6Data {
       })),
     },
     {
-      user_id: 16,
-      name: "Maya Patel",
-      role: "agent",
+      user_id: 108,
+      name: "Amit Verma",
+      role: "email_marketing_agent",
+      department: "Email Marketing",
       total_submitted: 9,
       intervals: Array.from({ length: Math.min(slotCount, 18) }, (_, i) => ({
         slot_index: i,
@@ -287,9 +292,10 @@ export function getMockSlide6Data(intervalMinutes = 10): Slide6Data {
       })),
     },
     {
-      user_id: 18,
-      name: "Alex Sterling",
-      role: "agent",
+      user_id: 112,
+      name: "Neha Kulkarni",
+      role: "email_marketing_agent",
+      department: "Email Marketing",
       total_submitted: 7,
       intervals: Array.from({ length: Math.min(slotCount, 18) }, (_, i) => ({
         slot_index: i,
@@ -314,26 +320,29 @@ export function getMockSlide6Data(intervalMinutes = 10): Slide6Data {
       {
         lead_id: "LD1010_045",
         form_done: "Yes",
-        submitted_by: 12,
-        submitter_name: "Sarah Connor",
+        submitted_by: 99,
+        submitter_name: "Sagar Machale",
         submitted_at: "2026-11-04 19:32:00",
         campaign_name: "Cloud Infra",
+        department: "Email Marketing",
       },
       {
         lead_id: "LD1010_042",
         form_done: "Yes",
-        submitted_by: 14,
-        submitter_name: "Devon Brooks",
+        submitted_by: 104,
+        submitter_name: "Pooja Sharma",
         submitted_at: "2026-11-04 19:20:00",
         campaign_name: "FinTech Enterprise",
+        department: "Email Marketing",
       },
       {
         lead_id: "LD1010_038",
         form_done: "Yes",
-        submitted_by: 16,
-        submitter_name: "Maya Patel",
+        submitted_by: 108,
+        submitter_name: "Amit Verma",
         submitted_at: "2026-11-04 18:55:00",
         campaign_name: "CyberSecurity Defense",
+        department: "Email Marketing",
       },
     ],
   };

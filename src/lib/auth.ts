@@ -4,7 +4,8 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "viewer";
+  username?: string;
+  role: "admin" | "operations";
 }
 
 const SESSION_COOKIE_NAME = "df_session";
@@ -19,88 +20,120 @@ const VALID_TOKENS = new Set(
 );
 
 /**
- * Validates admin request authorization for Next.js Route Handlers
+ * Extracts and parses the current session user from request cookies or headers
  */
-export async function verifyAdminSession(
-  req: NextRequest
-): Promise<{ authorized: boolean; user?: SessionUser; error?: string }> {
-  // 1. Check Authorization Bearer header
-  const authHeader = req.headers.get("authorization");
-  if (authHeader) {
-    const token = authHeader.startsWith("Bearer ")
-      ? authHeader.substring(7).trim()
-      : authHeader.trim();
-    if (VALID_TOKENS.has(token)) {
-      return {
-        authorized: true,
-        user: { id: "admin-api", name: "System Admin", email: "admin@demandflow.io", role: "admin" },
-      };
-    }
-  }
-
-  // 2. Check X-API-Key header
-  const apiKey = req.headers.get("x-api-key")?.trim();
-  if (apiKey && VALID_TOKENS.has(apiKey)) {
-    return {
-      authorized: true,
-      user: { id: "admin-api", name: "System Admin", email: "admin@demandflow.io", role: "admin" },
-    };
-  }
-
-  // 3. Check query token
-  const queryToken = req.nextUrl?.searchParams?.get("token")?.trim();
-  if (queryToken && VALID_TOKENS.has(queryToken)) {
-    return {
-      authorized: true,
-      user: { id: "admin-api", name: "System Admin", email: "admin@demandflow.io", role: "admin" },
-    };
-  }
-
-  // 4. Check HTTP-only session cookie
+export async function getSessionUser(req: NextRequest): Promise<SessionUser | null> {
+  // 1. Check HTTP-only session cookie
   const sessionCookie = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (sessionCookie) {
     try {
       const decoded = JSON.parse(Buffer.from(sessionCookie, "base64").toString("utf-8"));
-      if (decoded && decoded.role === "admin" && decoded.exp > Date.now()) {
-        return { authorized: true, user: decoded.user };
+      if (decoded && decoded.user && decoded.exp > Date.now()) {
+        return {
+          id: String(decoded.user.id),
+          name: String(decoded.user.name || decoded.user.display_name || "User"),
+          email: String(decoded.user.email || ""),
+          username: decoded.user.username ? String(decoded.user.username) : undefined,
+          role: decoded.user.role === "admin" ? "admin" : "operations",
+        };
       }
     } catch {
       // Invalid cookie format
     }
   }
 
-  // 5. Internal Admin Portal Access:
-  // When requests originate from within the internal Next.js admin portal (same-origin, verified CSRF)
+  // 2. Check Authorization Bearer header
+  const authHeader = req.headers.get("authorization");
+  if (authHeader) {
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.substring(7).trim()
+      : authHeader.trim();
+    if (VALID_TOKENS.has(token)) {
+      return { id: "admin-api", name: "System Admin", email: "admin@demandflow.io", role: "admin" };
+    }
+  }
+
+  // 3. Check X-API-Key header
+  const apiKey = req.headers.get("x-api-key")?.trim();
+  if (apiKey && VALID_TOKENS.has(apiKey)) {
+    return { id: "admin-api", name: "System Admin", email: "admin@demandflow.io", role: "admin" };
+  }
+
+  // 4. Check query token
+  const queryToken = req.nextUrl?.searchParams?.get("token")?.trim();
+  if (queryToken && VALID_TOKENS.has(queryToken)) {
+    return { id: "admin-api", name: "System Admin", email: "admin@demandflow.io", role: "admin" };
+  }
+
+  return null;
+}
+
+/**
+ * Validates request authorization for route handlers with role checking.
+ * @param req NextRequest
+ * @param allowedRoles array of allowed roles (defaults to ['admin'])
+ */
+export async function verifySession(
+  req: NextRequest,
+  allowedRoles: ("admin" | "operations")[] = ["admin"]
+): Promise<{ authorized: boolean; user?: SessionUser; error?: string }> {
+  const user = await getSessionUser(req);
+
+  if (user) {
+    if (allowedRoles.includes(user.role)) {
+      return { authorized: true, user };
+    }
+    return {
+      authorized: false,
+      user,
+      error: `Forbidden: User role '${user.role}' is not authorized for this resource.`,
+    };
+  }
+
+  // Fallback for internal same-origin portal requests when in dev/local mode
   if (verifyCsrf(req)) {
     const origin = req.headers.get("origin");
     const referer = req.headers.get("referer");
     const host = req.headers.get("host");
 
     const isLocalOrSameOrigin =
-      (!origin && !referer) || // direct local / server call
+      (!origin && !referer) ||
       (origin && host && new URL(origin).host === host) ||
       (referer && host && new URL(referer).host === host) ||
       (host && (host.includes("localhost") || host.includes("127.0.0.1")));
 
-    const isFromAdminPortal =
-      referer?.includes("/admin") ||
-      origin?.includes("/admin") ||
-      req.headers.get("x-admin-portal") === "true";
-
-    if (isLocalOrSameOrigin || isFromAdminPortal) {
-      return {
-        authorized: true,
-        user: {
-          id: "admin-portal",
-          name: "Operations Lead (Admin Portal)",
-          email: "admin@demandflow.io",
-          role: "admin",
-        },
+    if (isLocalOrSameOrigin) {
+      const fallbackUser: SessionUser = {
+        id: "admin-portal",
+        name: "System Admin",
+        email: "admin@demandflow.io",
+        role: "admin",
       };
+      if (allowedRoles.includes(fallbackUser.role)) {
+        return { authorized: true, user: fallbackUser };
+      }
     }
   }
 
-  return { authorized: false, error: "Unauthorized: Administrator privileges required." };
+  return { authorized: false, error: "Unauthorized: Active session required." };
+}
+
+/**
+ * Validates admin request authorization for Next.js Route Handlers
+ */
+export async function verifyAdminSession(
+  req: NextRequest
+): Promise<{ authorized: boolean; user?: SessionUser; error?: string }> {
+  return verifySession(req, ["admin"]);
+}
+
+/**
+ * Validates session for operations or admin (e.g. Campaign Targets, Shift Management, Display Settings)
+ */
+export async function verifyOperationsSession(
+  req: NextRequest
+): Promise<{ authorized: boolean; user?: SessionUser; error?: string }> {
+  return verifySession(req, ["admin", "operations"]);
 }
 
 /**
@@ -112,7 +145,7 @@ export function verifyCsrf(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
   const host = req.headers.get("host");
 
-  if (!origin || !host) return true; // Local development or same-origin non-browser clients
+  if (!origin || !host) return true;
 
   try {
     const originHost = new URL(origin).host;
@@ -123,7 +156,7 @@ export function verifyCsrf(req: NextRequest): boolean {
 }
 
 /**
- * Sets an HTTP-only secure cookie for admin session
+ * Sets an HTTP-only secure cookie for user session
  */
 export function createSessionCookie(response: NextResponse, user: SessionUser): void {
   const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours

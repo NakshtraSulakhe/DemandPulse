@@ -46,6 +46,10 @@ import {
   getMockCampaignTargets,
 } from "@/lib/crm-mock-data";
 import {
+  QaAuditsApiResponse,
+  QaAnalystAuditData,
+} from "@/types/qa-incentives";
+import {
   calculateCampaignTargetPoints,
   calculateFloorCapacityPoints,
   calculateCapacityGap,
@@ -144,7 +148,10 @@ async function fetchFromCrm<T>(
   const baseUrl = config.crmApiBaseUrl.replace(/\/+$/, "");
   const effectiveTimeout = timeoutMs || config.crmApiTimeoutMs || 30000;
 
-  const cleanPath = endpointOrPath.replace(/^\/+/, "");
+  let cleanPath = endpointOrPath.replace(/^\/+/, "");
+  if (cleanPath.startsWith("api/v1/") && baseUrl.endsWith("/api/v1")) {
+    cleanPath = cleanPath.substring(7);
+  }
   let fullUrl = cleanPath.startsWith("http://") || cleanPath.startsWith("https://")
     ? cleanPath
     : `${baseUrl}/${cleanPath}`;
@@ -326,9 +333,9 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
           };
         });
 
-      // Fetch active shift configuration (e.g. 18:00:00, grace period)
+      // Fetch active shift configuration (e.g. 17:30:00, grace period)
       const shiftConfig = await getShiftConfig();
-      const defaultShiftStart = shiftConfig.startTime || "18:00:00";
+      const defaultShiftStart = shiftConfig.startTime || "17:30:00";
       const defaultGrace = shiftConfig.gracePeriodMinutes ?? 0;
 
       // Evaluate late comers from CRM against their configured shift timing
@@ -645,8 +652,8 @@ export async function getCrmSlide2(
 export async function getCrmSlide3(
   dateStr?: string,
   interval = 10,
-  shiftStart = "18:00:00",
-  shiftEnd = "03:00:00"
+  shiftStart = "17:30:00",
+  shiftEnd = "02:30:00"
 ): Promise<CrmFetchResult<Slide3Data>> {
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();
@@ -696,17 +703,79 @@ export async function getCrmSlide3(
       const activeAnalysts = parsed.data.slide3.qa_heatmap.filter(isActualQaReviewer);
       const targetHeatmap = activeAnalysts;
 
-      // Map UTC interval labels back to IST display labels ("12:00 - 12:10" -> "17:30 - 17:40")
-      const mappedHeatmap = targetHeatmap.map((analyst) => ({
-        ...analyst,
-        intervals: analyst.intervals.map((inv) => ({
-          ...inv,
-          time_label: convertUtcIntervalLabelToIst(inv.time_label),
-        })),
+      // Synchronize with authoritative operational shift audit metrics from qa_audits.php
+      // Ensures Slide 3 and the Incentive Calculation page (/admin/incentives) show identical counts
+      const shiftStartUtcStr = `${effectiveDate} ${utcShiftStart}`;
+      const shiftEndUtcStr = `${effectiveDate} ${utcShiftEnd}`;
+
+      const qaAuditsRes = await getCrmQaAudits({ date: effectiveDate, include_leads: 1 }).catch(() => ({
+        success: false,
+        data: undefined,
       }));
 
-      // Sort analysts by total audited / qualified descending
+      const rawQa =
+        (qaAuditsRes?.data as any)?.qa_audits ||
+        (qaAuditsRes?.data as any)?.data ||
+        qaAuditsRes?.data;
+      const qaAnalystsList = rawQa?.qa_analysts || rawQa?.qa_users || [];
+      const qaMetricsMap = new Map<number, { totalAudited: number; qualified: number; disqualified: number }>();
+
+      if (Array.isArray(qaAnalystsList) && qaAnalystsList.length > 0) {
+        for (const a of qaAnalystsList) {
+          const id = Number(a.user_id || a.qa_id || a.id);
+          if (!id || id === 151 || id === 99) continue;
+          let leads = (a.audited_leads || []).filter((l: any) => {
+            const t = l.reviewed_at || l.created_at || "";
+            return t >= shiftStartUtcStr && t <= shiftEndUtcStr;
+          });
+
+          // Sort ascending chronologically so newest action defines final state
+          leads.sort((x: any, y: any) =>
+            (x.reviewed_at || x.created_at || "").localeCompare(y.reviewed_at || y.created_at || "")
+          );
+
+          const uniqueMap = new Map<number | string, any>();
+          leads.forEach((l: any) => {
+            const leadKey = l.lead_id || l.lead_code || l.id;
+            if (leadKey) uniqueMap.set(leadKey, l);
+          });
+
+          const uniqueList = Array.from(uniqueMap.values());
+          const qual = uniqueList.filter((l: any) => String(l.qa_status).toLowerCase() === "qualified").length;
+          const disq = uniqueList.filter((l: any) => String(l.qa_status).toLowerCase() === "disqualified").length;
+
+          qaMetricsMap.set(id, {
+            totalAudited: uniqueMap.size,
+            qualified: qual,
+            disqualified: disq,
+          });
+        }
+      }
+
+      // Map UTC interval labels back to IST display labels ("12:00 - 12:10" -> "17:30 - 17:40")
+      // and attach verified shift audit counts
+      const mappedHeatmap = targetHeatmap.map((analyst) => {
+        const stats = qaMetricsMap.get(Number(analyst.user_id));
+        const totalAudited = stats ? stats.totalAudited : (analyst.total_audited || 0);
+        const totalQualified = stats ? stats.qualified : (analyst.total_qualified || 0);
+
+        return {
+          ...analyst,
+          total_audited: totalAudited,
+          total_qualified: totalQualified,
+          intervals: analyst.intervals.map((inv) => ({
+            ...inv,
+            time_label: convertUtcIntervalLabelToIst(inv.time_label),
+          })),
+        };
+      });
+
+      // Sort analysts by verified shift total audited descending
       mappedHeatmap.sort((a, b) => (b.total_audited || 0) - (a.total_audited || 0));
+
+      const floorTotalAudited = mappedHeatmap.reduce((sum, a) => sum + (a.total_audited || 0), 0);
+      const floorTotalQualified = mappedHeatmap.reduce((sum, a) => sum + (a.total_qualified || 0), 0);
+      const floorTotalDisqualified = Array.from(qaMetricsMap.values()).reduce((sum, v) => sum + v.disqualified, 0);
 
       // Extract today's floor audited metrics if slide1 campaigns was returned in payload
       let todayAudited: number | undefined;
@@ -737,9 +806,9 @@ export async function getCrmSlide3(
           total_intervals: mappedHeatmap[0]?.intervals.length || parsed.data.slide3.total_intervals,
           total_qa_analysts: mappedHeatmap.length,
           qa_heatmap: mappedHeatmap,
-          today_audited: todayAudited,
-          today_qualified: todayQualified,
-          today_disqualified: todayDisqualified,
+          today_audited: floorTotalAudited > 0 ? floorTotalAudited : todayAudited,
+          today_qualified: floorTotalQualified > 0 ? floorTotalQualified : todayQualified,
+          today_disqualified: floorTotalDisqualified > 0 ? floorTotalDisqualified : todayDisqualified,
           today_pending_qa: todayPendingQa,
         },
         sourceUrl: res.effectiveUrl,
@@ -772,8 +841,8 @@ export async function getCrmSlide3(
 export async function getCrmSlide4(
   dateStr?: string,
   interval = 10,
-  shiftStart = "18:00:00",
-  shiftEnd = "03:00:00"
+  shiftStart = "17:30:00",
+  shiftEnd = "02:30:00"
 ): Promise<CrmFetchResult<Slide4Data>> {
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();
@@ -990,26 +1059,53 @@ export async function getCrmSlide6(
       rawData.by_submitter ||
       [];
 
-    const totalFormsSubmitted =
-      formSubmissions.total_forms_submitted ??
-      rawData.slide5?.summary?.total_forms_submitted ??
-      rawData.total_forms_submitted ??
-      0;
+    // Filter submitters strictly to Department Email Marketing
+    const emailMarketingSubmitters = rawSubmitters.filter((sub: any) => {
+      const dept = String(sub.department || sub.dept || "").toLowerCase();
+      const role = String(sub.role || "").toLowerCase();
+      const name = String(sub.name || sub.full_name || sub.submitter_name || "").toLowerCase();
 
-    const totalSubmitters =
-      formSubmissions.total_submitters ??
-      rawSubmitters.length;
+      // If department is specified and not email marketing, exclude
+      if (dept && !dept.includes("email") && !dept.includes("marketing")) {
+        return false;
+      }
+      // If role indicates operations calling / QA / SDR without email, exclude
+      if (role && (role.includes("qa") || role.includes("sdr") || role.includes("operations") || role.includes("telemarketer"))) {
+        if (!role.includes("email")) return false;
+      }
+      return true;
+    });
 
-    const recentSubmissions: FormSubmissionLead[] =
+    const recentSubmissions: FormSubmissionLead[] = (
       formSubmissions.recent_submissions ||
       rawData.recent_submissions ||
-      [];
+      []
+    )
+      .filter((lead: any) => {
+        const dept = String(lead.department || lead.submitter_department || "").toLowerCase();
+        const role = String(lead.role || lead.submitter_role || "").toLowerCase();
+        if (dept && !dept.includes("email") && !dept.includes("marketing")) return false;
+        if (role && (role.includes("qa") || role.includes("sdr") || role.includes("operations"))) {
+          if (!role.includes("email")) return false;
+        }
+        return true;
+      })
+      .map((lead: any) => ({
+        lead_id: String(lead.lead_id || lead.id || ""),
+        campaign_name: lead.campaign_name || "",
+        form_done: lead.form_done || "Yes",
+        submitted_at: lead.submitted_at || "",
+        submitted_by: lead.submitted_by ? Number(lead.submitted_by) : undefined,
+        submitter_name: lead.submitter_name || "",
+        department: lead.department || "Email Marketing",
+      }));
 
-    // Build or normalize submitter intervals
-    const submitterHeatmap: FormSubmitterHeatmapItem[] = rawSubmitters.map((sub: any) => {
+    // Build or normalize submitter intervals for Email Marketing agents
+    const submitterHeatmap: FormSubmitterHeatmapItem[] = emailMarketingSubmitters.map((sub: any) => {
       const userId = Number(sub.user_id || sub.id || 0);
       const name = String(sub.name || sub.full_name || sub.submitter_name || `Agent ${userId}`);
-      const role = String(sub.role || "agent");
+      const role = String(sub.role || "email_marketing_agent");
+      const department = String(sub.department || "Email Marketing");
       const totalSubmitted = Number(sub.forms_submitted_count || sub.total_submitted || sub.count || 0);
       const leads: FormSubmissionLead[] = Array.isArray(sub.leads) ? sub.leads : [];
 
@@ -1061,11 +1157,18 @@ export async function getCrmSlide6(
         user_id: userId,
         name,
         role,
+        department,
         total_submitted: totalSubmitted || intervals.reduce((acc, i) => acc + i.submitted_count, 0),
         intervals,
         leads,
       };
     });
+
+    const totalFormsSubmitted =
+      submitterHeatmap.reduce((acc, s) => acc + s.total_submitted, 0) ||
+      (formSubmissions.total_forms_submitted ?? 0);
+
+    const totalSubmitters = submitterHeatmap.length;
 
     // Sort submitters descending by total submitted
     submitterHeatmap.sort((a, b) => b.total_submitted - a.total_submitted);
@@ -1602,9 +1705,29 @@ export async function getCrmCustomApi<T = unknown>(
   }
 
   if (res.ok && res.data) {
+    const raw: any = res.data;
+    const unwrapped = raw.qa_audits || raw.data || raw;
+    const analysts =
+      unwrapped.qa_analysts ||
+      unwrapped.qa_users ||
+      raw.qa_analysts ||
+      raw.qa_users ||
+      [];
+
+    const normalizedData = {
+      ...unwrapped,
+      ok: unwrapped.ok ?? raw.ok,
+      action: unwrapped.action ?? raw.action,
+      frequency: unwrapped.frequency ?? raw.frequency ?? "daily",
+      date: unwrapped.date ?? raw.query_date ?? (extraParams?.date ? String(extraParams.date) : ""),
+      summary: unwrapped.summary ?? raw.summary,
+      qa_analysts: analysts,
+      total_qa_analysts: analysts.length || unwrapped.total_qa_analysts || raw.total_qa_analysts || 0,
+    };
+
     return {
       success: true,
-      data: res.data,
+      data: normalizedData,
       sourceUrl: res.effectiveUrl,
       timestamp,
     };
@@ -1616,4 +1739,297 @@ export async function getCrmCustomApi<T = unknown>(
     timestamp,
   };
 }
+
+export interface CrmQaAuditsParams {
+  date?: string;
+  date_from?: string;
+  date_to?: string;
+  frequency?: "daily" | "monthly" | "custom";
+  qa_id?: number;
+  client_code?: string;
+  campaign_id?: number;
+  status?: string;
+  include_leads?: number;
+  plan_id?: number;
+  base_target?: number;
+  base_reward?: number;
+  tiers?: string | Array<{ min: number; max?: number | null; rate: number }>;
+}
+
+/**
+ * Fetches live QA Audits & Incentive calculation stream from upstream CRM API.
+ * Primary: /api/v1/slides/qa_audits.php
+ * Fallbacks:
+ *  - /api/v1/slides_analytics.php?action=qa_audits
+ *  - /api/v1/slides/qa_incentives.php
+ *  - /api/v1/qa_audits.php
+ */
+export async function getCrmQaAudits(
+  params?: CrmQaAuditsParams
+): Promise<CrmFetchResult<QaAuditsApiResponse>> {
+  const config = await getCrmConfig();
+  const timestamp = new Date().toISOString();
+  const effectiveDate = params?.date || getShiftBusinessDate();
+
+  // Strict operational shift bounds: 17:30 IST (12:00:00 UTC) -> 02:30 IST (21:00:00 UTC)
+  const shiftStartUtc = "12:00:00";
+  const shiftEndUtc = "21:00:00";
+
+  const queryParams: Record<string, string | number | undefined> = {
+    date: effectiveDate,
+    frequency: params?.frequency || "daily",
+    shift_start: shiftStartUtc,
+    shift_end: shiftEndUtc,
+    date_from: params?.date_from || `${effectiveDate} ${shiftStartUtc}`,
+    date_to: params?.date_to || `${effectiveDate} ${shiftEndUtc}`,
+  };
+
+  if (params?.qa_id) queryParams.qa_id = params.qa_id;
+  if (params?.client_code) queryParams.client_code = params.client_code;
+  if (params?.campaign_id) queryParams.campaign_id = params.campaign_id;
+  if (params?.status) queryParams.status = params.status;
+  if (params?.include_leads !== undefined) queryParams.include_leads = params.include_leads;
+  if (params?.plan_id) queryParams.plan_id = params.plan_id;
+  if (params?.base_target !== undefined) queryParams.base_target = params.base_target;
+  if (params?.base_reward !== undefined) queryParams.base_reward = params.base_reward;
+  if (params?.tiers) {
+    queryParams.tiers = typeof params.tiers === "string" ? params.tiers : JSON.stringify(params.tiers);
+  }
+
+  const primaryPath = config.endpoints?.qa_audits || "slides/qa_audits.php";
+  let res = await fetchFromCrm<QaAuditsApiResponse>(buildEndpointUrl(primaryPath, queryParams));
+
+  // Fallback 1: slides_analytics.php?action=qa_audits
+  if (!res.ok) {
+    res = await fetchFromCrm<QaAuditsApiResponse>(
+      buildEndpointUrl("slides_analytics.php?action=qa_audits", queryParams)
+    );
+  }
+
+  // Fallback 2: slides/qa_incentives.php
+  if (!res.ok) {
+    res = await fetchFromCrm<QaAuditsApiResponse>(
+      buildEndpointUrl("slides/qa_incentives.php", queryParams)
+    );
+  }
+
+  // Fallback 3: qa_audits.php
+  if (!res.ok) {
+    res = await fetchFromCrm<QaAuditsApiResponse>(
+      buildEndpointUrl("qa_audits.php", queryParams)
+    );
+  }
+
+  if (res.ok && res.data) {
+    const raw: any = res.data;
+    const unwrapped = raw.qa_audits || raw.data || raw;
+    const analysts =
+      unwrapped.qa_analysts ||
+      unwrapped.qa_users ||
+      raw.qa_analysts ||
+      raw.qa_users ||
+      [];
+
+    const normalizedData = {
+      ...unwrapped,
+      ok: unwrapped.ok ?? raw.ok,
+      action: unwrapped.action ?? raw.action,
+      frequency: unwrapped.frequency ?? raw.frequency ?? "daily",
+      date: unwrapped.date ?? raw.query_date ?? (queryParams?.date ? String(queryParams.date) : ""),
+      summary: unwrapped.summary ?? raw.summary,
+      qa_analysts: analysts,
+      total_qa_analysts: analysts.length || unwrapped.total_qa_analysts || raw.total_qa_analysts || 0,
+    };
+
+    return {
+      success: true,
+      data: normalizedData,
+      sourceUrl: res.effectiveUrl,
+      timestamp,
+    };
+  }
+
+  return {
+    success: false,
+    error: res.error || "Failed to fetch QA audits feed from CRM API",
+    sourceUrl: res.effectiveUrl,
+    timestamp,
+  };
+}
+
+/**
+ * Fetches all active QA incentive plans from CRM API (qa-incentives/plans.php)
+ */
+export async function getCrmQaPlans(): Promise<CrmFetchResult<any[]>> {
+  const timestamp = new Date().toISOString();
+  let res = await fetchFromCrm<any>("qa-incentives/plans.php");
+
+  if (!res.ok) {
+    res = await fetchFromCrm<any>("slides_analytics.php?action=qa_plans");
+  }
+
+  if (res.ok && res.data) {
+    const raw = res.data;
+    const plansList = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw.plans)
+      ? raw.plans
+      : Array.isArray(raw.data)
+      ? raw.data
+      : [];
+    return {
+      success: true,
+      data: plansList,
+      sourceUrl: res.effectiveUrl,
+      timestamp,
+    };
+  }
+
+  return {
+    success: false,
+    error: res.error || "Failed to fetch QA plans from CRM API",
+    timestamp,
+  };
+}
+
+/**
+ * Creates a new QA incentive plan on the CRM API (POST /api/v1/qa-incentives/plans.php)
+ */
+export async function createCrmQaPlan(payload: any): Promise<CrmFetchResult<any>> {
+  const timestamp = new Date().toISOString();
+  const res = await fetchFromCrm<any>("qa-incentives/plans.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.ok && res.data) {
+    return {
+      success: true,
+      data: res.data.plan || res.data,
+      sourceUrl: res.effectiveUrl,
+      timestamp,
+    };
+  }
+
+  return {
+    success: false,
+    error: res.error || "Failed to create QA plan on CRM API",
+    timestamp,
+  };
+}
+
+/**
+ * Updates a QA incentive plan on the CRM API (PUT /api/v1/qa-incentives/plans.php?id=...)
+ */
+export async function updateCrmQaPlan(id: string | number, payload: any): Promise<CrmFetchResult<any>> {
+  const timestamp = new Date().toISOString();
+  const res = await fetchFromCrm<any>(`qa-incentives/plans.php?id=${encodeURIComponent(String(id))}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.ok && res.data) {
+    return {
+      success: true,
+      data: res.data.plan || res.data,
+      sourceUrl: res.effectiveUrl,
+      timestamp,
+    };
+  }
+
+  return {
+    success: false,
+    error: res.error || `Failed to update QA plan #${id} on CRM API`,
+    timestamp,
+  };
+}
+
+/**
+ * Deactivates/deletes a QA incentive plan on the CRM API (DELETE /api/v1/qa-incentives/plans.php?id=...)
+ */
+export async function deleteCrmQaPlan(id: string | number): Promise<CrmFetchResult<any>> {
+  const timestamp = new Date().toISOString();
+  const res = await fetchFromCrm<any>(`qa-incentives/plans.php?id=${encodeURIComponent(String(id))}`, {
+    method: "DELETE",
+  });
+
+  if (res.ok) {
+    return {
+      success: true,
+      data: res.data,
+      sourceUrl: res.effectiveUrl,
+      timestamp,
+    };
+  }
+
+  return {
+    success: false,
+    error: res.error || `Failed to delete QA plan #${id} on CRM API`,
+    timestamp,
+  };
+}
+
+/**
+ * Invokes live QA calculation engine on CRM API (/api/v1/qa-incentives/calculate.php)
+ */
+export async function calculateCrmQaIncentives(params?: {
+  date?: string;
+  frequency?: string;
+  plan_id?: string | number;
+  base_target?: number;
+  base_reward?: number;
+  tiers?: any;
+}): Promise<CrmFetchResult<any>> {
+  const timestamp = new Date().toISOString();
+  const queryParams: Record<string, string | number | undefined> = {
+    date: params?.date || getShiftBusinessDate(),
+    frequency: params?.frequency || "daily",
+  };
+  if (params?.plan_id) queryParams.plan_id = params.plan_id;
+  if (params?.base_target !== undefined) queryParams.base_target = params.base_target;
+  if (params?.base_reward !== undefined) queryParams.base_reward = params.base_reward;
+  if (params?.tiers) {
+    queryParams.tiers = typeof params.tiers === "string" ? params.tiers : JSON.stringify(params.tiers);
+  }
+
+  const res = await fetchFromCrm<any>(buildEndpointUrl("qa-incentives/calculate.php", queryParams));
+
+  if (res.ok && res.data) {
+    const raw: any = res.data;
+    const unwrapped = raw.qa_audits || raw.data || raw;
+    const analysts =
+      unwrapped.qa_analysts ||
+      unwrapped.qa_users ||
+      raw.qa_analysts ||
+      raw.qa_users ||
+      [];
+
+    const normalizedData = {
+      ...unwrapped,
+      ok: unwrapped.ok ?? raw.ok,
+      action: unwrapped.action ?? raw.action,
+      frequency: unwrapped.frequency ?? raw.frequency ?? "daily",
+      date: unwrapped.date ?? raw.query_date ?? (queryParams?.date ? String(queryParams.date) : ""),
+      summary: unwrapped.summary ?? raw.summary,
+      qa_analysts: analysts,
+      total_qa_analysts: analysts.length || unwrapped.total_qa_analysts || raw.total_qa_analysts || 0,
+    };
+
+    return {
+      success: true,
+      data: normalizedData,
+      sourceUrl: res.effectiveUrl,
+      timestamp,
+    };
+  }
+
+  return {
+    success: false,
+    error: res.error || "Failed to calculate QA incentives via CRM API",
+    timestamp,
+  };
+}
+
 

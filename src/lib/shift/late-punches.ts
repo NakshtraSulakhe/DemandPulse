@@ -37,8 +37,8 @@ export interface AgentPunchInput {
  */
 export function evaluateAgentLatePunch(
   agent: AgentPunchInput,
-  defaultShiftStart: string = "18:00:00",
-  defaultGraceMinutes: number = 0
+  defaultShiftStart: string = "17:30:00",
+  defaultGraceMinutes: number = 1
 ): EvaluatedLateAgent | null {
   const userId = Number(agent.user_id ?? agent.crm_agent_id ?? 0);
   if (!userId) return null;
@@ -51,12 +51,12 @@ export function evaluateAgentLatePunch(
   // 1. Resolve shift start time from agent's CRM configuration, falling back to calendar default
   let shiftStart = (agent.shift_start_time || "").trim();
   if (!shiftStart || shiftStart === "00:00:00" || shiftStart === "00:00") {
-    shiftStart = defaultShiftStart || "18:00:00";
+    shiftStart = defaultShiftStart || "17:30:00";
   }
 
   const shiftMatch = shiftStart.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  let shiftHours = 18;
-  let shiftMinutes = 0;
+  let shiftHours = 17;
+  let shiftMinutes = 30;
   if (shiftMatch) {
     shiftHours = parseInt(shiftMatch[1], 10);
     shiftMinutes = parseInt(shiftMatch[2], 10);

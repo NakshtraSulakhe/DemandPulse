@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllocationAuditHistory } from "@/lib/db/allocations";
 import { getShiftBusinessDate } from "@/lib/shift/engine";
+import { verifyOperationsSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,6 +17,14 @@ export const revalidate = 0;
  *   &limit=100
  */
 export async function GET(req: NextRequest) {
+  const auth = await verifyOperationsSession(req);
+  if (!auth.authorized) {
+    return NextResponse.json(
+      { ok: false, error: auth.error || "Unauthorized", error_code: "UNAUTHORIZED" },
+      { status: 401 }
+    );
+  }
+
   const searchParams = req.nextUrl.searchParams;
   const businessDate = searchParams.get("date") || undefined;
   const campaignIdStr = searchParams.get("campaign_id");

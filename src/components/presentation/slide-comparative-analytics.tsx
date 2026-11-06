@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/components/providers/theme-provider";
 import SlideDateFilter from "@/components/presentation/slide-date-filter";
+import { getShiftBusinessDate } from "@/lib/shift/engine";
 
 interface SlideComparativeAnalyticsProps {
   data?: Slide5Data;
@@ -59,6 +60,7 @@ export default function SlideComparativeAnalytics({
   };
 
   const timeline = data?.comparison_timeline || [];
+  const queryDate = data?.query_date || selectedDate || getShiftBusinessDate();
 
   // Cumulative timeline tracking for the shift
   let cumGen = 0;
@@ -86,6 +88,57 @@ export default function SlideComparativeAnalytics({
       cumFormsSubmitted: cumForms,
     };
   });
+
+  // Determines whether a slot is at or before the current wall-clock instant in IST
+  const isSlotUpToCurrent = React.useCallback(
+    (timeLabel: string, baseDate: string, nowMs: number) => {
+      if (!timeLabel) return true;
+      const todayShift = getShiftBusinessDate();
+      if (baseDate < todayShift) return true; // Completed historical shift
+      if (baseDate > todayShift) return false; // Unstarted future date
+
+      const startPart = timeLabel.split(" - ")[0].trim();
+      const [hStr, mStr] = startPart.split(":");
+      const h = parseInt(hStr, 10);
+      const m = parseInt(mStr || "0", 10);
+      if (isNaN(h)) return true;
+
+      // Overnight shift: hours < 12 belong to the next calendar day
+      let slotDate = baseDate;
+      if (h < 12) {
+        const [y, mon, d] = baseDate.split("-").map(Number);
+        const dt = new Date(Date.UTC(y, mon - 1, d + 1, 12, 0, 0));
+        slotDate = dt.toISOString().split("T")[0];
+      }
+
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const slotTimeMs = new Date(`${slotDate}T${pad(h)}:${pad(m)}:00+05:30`).getTime();
+      return slotTimeMs <= nowMs + 60000;
+    },
+    []
+  );
+
+  // Filter cumulative trajectory data to only plot up to current timing
+  const cumulativeChartData = React.useMemo(() => {
+    const todayShift = getShiftBusinessDate();
+    const isHistorical = queryDate < todayShift;
+    if (isHistorical) {
+      return chartData;
+    }
+
+    const nowMs = Date.now();
+    const filtered = chartData.filter((slot, idx) => {
+      const rawLabel = timeline[idx]?.time_label || slot.time;
+      return isSlotUpToCurrent(rawLabel, queryDate, nowMs);
+    });
+
+    return filtered.length > 0 ? filtered : chartData.slice(0, 1);
+  }, [chartData, timeline, queryDate, isSlotUpToCurrent]);
+
+  const latestCumulativeTime =
+    cumulativeChartData.length > 0
+      ? cumulativeChartData[cumulativeChartData.length - 1].time
+      : undefined;
 
   if (error && !data) {
     return (
@@ -338,24 +391,31 @@ export default function SlideComparativeAnalytics({
 
         {/* Cumulative Funnel Trajectory */}
         <div className="lg:col-span-4 glass-panel rounded-xl p-4 border border-slate-200/80 dark:border-white/10 shadow-lg flex flex-col">
-          <div className="pb-2.5 border-b border-slate-200/80 dark:border-white/10 mb-2">
-            <h2 className="text-xs lg:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-              <TrendingUp className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-              Cumulative Funnel Trajectory
-            </h2>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Production vs verified qualification</p>
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/80 dark:border-white/10 mb-2 gap-2">
+            <div>
+              <h2 className="text-xs lg:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <TrendingUp className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                Cumulative Funnel Trajectory
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Production vs verified qualification</p>
+            </div>
+            {latestCumulativeTime && (
+              <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold font-mono text-[10px] shrink-0">
+                Till {latestCumulativeTime}
+              </span>
+            )}
           </div>
 
           <div className="w-full h-[320px] xl:h-[360px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+              <LineChart data={cumulativeChartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} />
                 <XAxis
                   dataKey="time"
                   stroke={isDark ? "#94a3b8" : "#475569"}
                   fontSize={10.5}
                   fontWeight={600}
-                  interval={6}
+                  interval={cumulativeChartData.length > 20 ? 4 : 2}
                   tickLine={false}
                 />
                 <YAxis stroke={isDark ? "#94a3b8" : "#475569"} fontSize={10.5} fontWeight={600} tickLine={false} />
