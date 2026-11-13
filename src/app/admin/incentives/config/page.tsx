@@ -305,6 +305,50 @@ export default function IncentiveConfigurationPage() {
                 <p className="text-[10px] text-slate-400 mt-1">Protects historical shift records</p>
               </div>
             </div>
+
+            {/* Calculation Mode Selector */}
+            <div className="pt-3 border-t border-slate-200/60 dark:border-white/5">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">
+                Daily Slabs Calculation Mode
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfig((prev) => ({ ...prev, calculationMode: "incremental" }))}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    config.calculationMode !== "whole_band"
+                      ? "bg-cyan-500/10 border-cyan-500/50 text-cyan-900 dark:text-cyan-200 shadow-sm"
+                      : "bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold">Incremental Slabs (Marginal)</span>
+                    {config.calculationMode !== "whole_band" && <Check className="w-3.5 h-3.5 text-cyan-500" />}
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    Standard demand engine: Points inside each band (100–150%, 150–200%, &gt;200%) earn their respective tier rates.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConfig((prev) => ({ ...prev, calculationMode: "whole_band" }))}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    config.calculationMode === "whole_band"
+                      ? "bg-purple-500/10 border-purple-500/50 text-purple-900 dark:text-purple-200 shadow-sm"
+                      : "bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold">Whole-Achievement Band</span>
+                    {config.calculationMode === "whole_band" && <Check className="w-3.5 h-3.5 text-purple-500" />}
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    All extra points above target earn the highest reached tier's per-point accelerator rate.
+                  </p>
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Section 2: Tiered Performance Slabs */}

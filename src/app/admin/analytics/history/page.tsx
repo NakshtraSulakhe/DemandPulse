@@ -131,8 +131,8 @@ export default function AnalyticsHistoryPage() {
 
         <div className="glass-panel p-4 rounded-2xl border border-slate-200/80 dark:border-white/10">
           <div className="text-xs text-indigo-600 font-semibold mb-1">Analytics Shift Engine</div>
-          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1">5:30 PM – 2:30 AM IST</div>
-          <div className="text-[11px] text-slate-400 mt-1">465 Effective Working Mins</div>
+          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1">5:30 PM – 2:30 AM IST (Refreshes at 9:00 AM)</div>
+          <div className="text-[11px] text-slate-400 mt-1">465 Effective Working Mins (Extendable)</div>
         </div>
       </div>
 

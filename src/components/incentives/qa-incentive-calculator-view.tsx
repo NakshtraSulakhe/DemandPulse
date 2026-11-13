@@ -217,16 +217,16 @@ export default function QaIncentiveCalculatorView() {
 
         <div className="glass-panel p-4 rounded-2xl border border-slate-200/80 dark:border-white/10">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-semibold">
-            <span>Total Leads Audited</span>
+            <span>Total Points Achieved</span>
             <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-              <FileCheck2 className="w-4 h-4" />
+              <Sparkles className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2 text-2xl font-extrabold font-mono text-purple-600 dark:text-purple-400">
-            {summary?.total_audits || 0} Leads
+            {summary?.total_points_achieved !== undefined ? summary.total_points_achieved : summary?.total_audits || 0} pts
           </div>
           <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-            {summary?.total_qualified || 0} Qualified • {summary?.total_disqualified || 0} Disqualified
+            From {summary?.total_audits || 0} audits ({summary?.total_qualified || 0} qual • {summary?.total_disqualified || 0} disq)
           </p>
         </div>
 
@@ -241,7 +241,22 @@ export default function QaIncentiveCalculatorView() {
             {summary?.overall_qualification_rate_pct || 0}%
           </div>
           <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-            {summary?.eligible_count || 0} of {summary?.total_qa_analysts || 0} achieved base quota
+            {summary?.eligible_count || 0} of {summary?.total_qa_analysts || 0} achieved points quota
+          </p>
+        </div>
+
+        <div className="glass-panel p-4 rounded-2xl border border-slate-200/80 dark:border-white/10">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-semibold">
+            <span>Rectified Leads</span>
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              <Sparkles className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+            {summary?.total_rectified || 0}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            +{formatINR(summary?.total_additional_incentive || 0)} extra bonus earned
           </p>
         </div>
 
@@ -256,7 +271,7 @@ export default function QaIncentiveCalculatorView() {
             {plans.filter((p) => p.is_active).length} Plans
           </div>
           <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-            Synced with QA database
+            Points & status accelerators
           </p>
         </div>
 
@@ -274,7 +289,9 @@ export default function QaIncentiveCalculatorView() {
             {summary?.top_performer?.qa_name || "—"}
           </div>
           <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-            {summary?.top_performer ? `${summary.top_performer.total_audited} audits (${summary.top_performer.qualification_rate_pct}%)` : "Evaluating..."}
+            {summary?.top_performer
+              ? `${summary.top_performer.total_points || summary.top_performer.total_audited} pts (${summary.top_performer.total_audited} audits)`
+              : "Evaluating..."}
           </p>
         </div>
       </div>
@@ -335,13 +352,16 @@ export default function QaIncentiveCalculatorView() {
                 <tr>
                   <th className="py-2.5 px-3">QA Analyst</th>
                   <th className="py-2.5 px-2 text-center">Applied Plan</th>
-                  <th className="py-2.5 px-2 text-center">Base Target</th>
+                  <th className="py-2.5 px-2 text-center">Base Target (PTS)</th>
                   <th className="py-2.5 px-2 text-center text-purple-600 dark:text-purple-400 font-bold">
-                    Actual Audited
+                    Actual Points Achieved
                   </th>
-                  <th className="py-2.5 px-2 text-center">Base Quota</th>
+                  <th className="py-2.5 px-2 text-center">Base Quota (PTS)</th>
                   <th className="py-2.5 px-2 text-right">Base Cash (₹)</th>
                   <th className="py-2.5 px-2 text-right">Tier Slabs (₹)</th>
+                  <th className="py-2.5 px-2 text-right text-emerald-600 dark:text-emerald-400 font-bold">
+                    Rectified Bonus (₹)
+                  </th>
                   <th className="py-2.5 px-3 text-right text-amber-600 dark:text-amber-400 font-bold">
                     Total Incentive (₹)
                   </th>
@@ -351,7 +371,7 @@ export default function QaIncentiveCalculatorView() {
               <tbody className="divide-y divide-slate-200 dark:divide-white/5">
                 {filteredCalculations.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-8 text-center text-slate-500 font-medium">
+                    <td colSpan={10} className="py-8 text-center text-slate-500 font-medium">
                       No QA analysts found matching search criteria.
                     </td>
                   </tr>
@@ -391,27 +411,27 @@ export default function QaIncentiveCalculatorView() {
                             </span>
                           </td>
 
-                          <td className="py-3 px-2 text-center font-mono font-semibold text-slate-600 dark:text-slate-300">
-                            {item.base_target_leads} leads
+                          <td className="py-3 px-2 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
+                            {item.target_points !== undefined ? item.target_points : item.base_target_leads} pts
                           </td>
 
                           <td className="py-3 px-2 text-center">
-                            <div className="font-mono font-extrabold text-purple-600 dark:text-purple-400">
-                              {item.actual_leads_audited} leads
+                            <div className="font-mono font-extrabold text-purple-600 dark:text-purple-400 text-sm">
+                              {item.actual_points !== undefined ? item.actual_points : item.actual_leads_audited} pts
                             </div>
-                            <div className="text-[10px] text-slate-400">
-                              {item.qualified_leads} qual • {item.disqualified_leads} disq ({item.qualification_rate_pct ?? 0}%)
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {item.actual_leads_audited} audits ({item.qualified_leads} qual) • {item.achievement_pct || 0}%
                             </div>
                           </td>
 
                           <td className="py-3 px-2 text-center">
                             {item.base_target_achieved ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                <CheckCircle2 className="w-3 h-3" /> Achieved
+                                <CheckCircle2 className="w-3 h-3" /> Achieved ({item.actual_points !== undefined ? item.actual_points : item.actual_leads_audited} pts)
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/10 text-slate-500 border border-slate-500/20">
-                                <Clock className="w-3 h-3" /> In Progress
+                                <Clock className="w-3 h-3" /> In Progress (Need {item.remaining_points || 0} pts)
                               </span>
                             )}
                           </td>
@@ -424,6 +444,25 @@ export default function QaIncentiveCalculatorView() {
                             {item.total_tier_incentive > 0 ? (
                               <span className="font-mono font-bold text-cyan-600 dark:text-cyan-400">
                                 +{formatINR(item.total_tier_incentive)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-mono">—</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-2 text-right">
+                            {item.total_additional_incentive && item.total_additional_incentive > 0 ? (
+                              <div>
+                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                  +{formatINR(item.total_additional_incentive)}
+                                </span>
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  {item.rectified_count || 0} rectified
+                                </div>
+                              </div>
+                            ) : item.rectified_count && item.rectified_count > 0 ? (
+                              <span className="text-[11px] text-slate-500 font-mono">
+                                {item.rectified_count} rectified
                               </span>
                             ) : (
                               <span className="text-slate-400 font-mono">—</span>
@@ -459,13 +498,56 @@ export default function QaIncentiveCalculatorView() {
                         {/* Expandable Breakdown Drawer */}
                         {isExpanded && (
                           <tr className="bg-slate-50/80 dark:bg-white/[0.02]">
-                            <td colSpan={9} className="p-4 border-y border-slate-200/80 dark:border-white/10">
-                              <div className="flex flex-col gap-3">
+                            <td colSpan={10} className="p-4 border-y border-slate-200/80 dark:border-white/10">
+                              <div className="flex flex-col gap-4">
+                                {/* Campaign Points Breakdown Table */}
+                                {item.campaign_breakdown && item.campaign_breakdown.length > 0 && (
+                                  <div className="rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden bg-white dark:bg-slate-900/80 shadow-sm">
+                                    <div className="p-2.5 bg-slate-100 dark:bg-white/5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+                                      <div className="font-bold text-[11px] text-slate-900 dark:text-white flex items-center gap-1.5">
+                                        <Layers className="w-3.5 h-3.5 text-cyan-500" />
+                                        <span>Audited Campaign Types & Points Breakdown (5:30 AM to 9:00 AM Shift)</span>
+                                      </div>
+                                      <span className="text-[10px] font-mono font-bold text-purple-600 dark:text-purple-400">
+                                        Total Earned: {item.actual_points || 0} pts
+                                      </span>
+                                    </div>
+                                    <table className="w-full text-left text-[11px]">
+                                      <thead className="bg-slate-50 dark:bg-white/[0.02] text-slate-500 uppercase text-[9px] font-bold border-b border-slate-200 dark:border-white/5">
+                                        <tr>
+                                          <th className="py-1.5 px-3">Campaign / Activity Type</th>
+                                          <th className="py-1.5 px-2 text-center">Audited Quantity</th>
+                                          <th className="py-1.5 px-2 text-center">Point Factor</th>
+                                          <th className="py-1.5 px-3 text-right">Points Earned</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                                        {item.campaign_breakdown.map((cb, idx) => (
+                                          <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
+                                            <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                                              {cb.campaign_name || cb.activity_type}
+                                            </td>
+                                            <td className="py-2 px-2 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
+                                              {cb.lead_count} audits
+                                            </td>
+                                            <td className="py-2 px-2 text-center font-mono text-slate-500">
+                                              {cb.point_factor} pts/audit
+                                            </td>
+                                            <td className="py-2 px-3 text-right font-mono font-bold text-cyan-600 dark:text-cyan-400">
+                                              {cb.total_points} pts
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+
                                 {/* Tier Slabs Breakdown */}
                                 <div>
                                   <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-                                    <Layers className="w-3.5 h-3.5 text-cyan-500" />
-                                    <span>Tier Slab Calculation Breakdown:</span>
+                                    <Sliders className="w-3.5 h-3.5 text-cyan-500" />
+                                    <span>Points-Based Tier Slabs Calculation:</span>
                                   </div>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
                                     {item.tier_breakdown && item.tier_breakdown.length > 0 ? (
@@ -480,10 +562,10 @@ export default function QaIncentiveCalculatorView() {
                                         >
                                           <div className="font-bold flex items-center justify-between">
                                             <span>{tb.tier_name}</span>
-                                            <span className="font-mono">₹{tb.rate_per_lead}/lead</span>
+                                            <span className="font-mono">₹{tb.rate_per_lead}/pt</span>
                                           </div>
                                           <div className="mt-1 flex items-center justify-between text-[11px]">
-                                            <span>Leads in tier: <strong>{tb.leads_in_tier}</strong></span>
+                                            <span>Points in tier: <strong>{tb.leads_in_tier} pts</strong></span>
                                             <span className="font-mono font-bold text-cyan-600 dark:text-cyan-400">
                                               +{formatINR(tb.tier_incentive_earned)}
                                             </span>
@@ -495,6 +577,43 @@ export default function QaIncentiveCalculatorView() {
                                     )}
                                   </div>
                                 </div>
+
+                                {/* Additional Status Rules & Rectified Leads Breakdown */}
+                                {item.additional_rules_breakdown && item.additional_rules_breakdown.length > 0 && (
+                                  <div>
+                                    <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                                      <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                                      <span>Additional Status Rules (Rectified Leads Daily Bonus):</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                      {item.additional_rules_breakdown.map((arb, idx) => (
+                                        <div
+                                          key={arb.rule_id || idx}
+                                          className={`p-2.5 rounded-xl border text-xs ${
+                                            arb.is_qualified && arb.incentive_earned > 0
+                                              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-900 dark:text-emerald-200"
+                                              : "bg-white/60 dark:bg-slate-900/60 border-slate-200 dark:border-white/10 text-slate-500"
+                                          }`}
+                                        >
+                                          <div className="font-bold flex items-center justify-between">
+                                            <span>{arb.rule_name}</span>
+                                            <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                              +{formatINR(arb.incentive_earned)}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 flex items-center justify-between text-[11px]">
+                                            <span>
+                                              Audited <strong>{arb.matching_count} {arb.status_name}</strong> leads
+                                            </span>
+                                            <span className="text-[10px] text-slate-400 font-mono">
+                                              {arb.is_qualified ? `(≥${arb.min_count} min met)` : `(need ${arb.min_count} min)`}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
 
                                 {/* Campaigns & Clients Breakdown */}
                                 {(item.campaigns_breakdown?.length || item.clients_breakdown?.length) ? (
@@ -577,10 +696,12 @@ export default function QaIncentiveCalculatorView() {
                 <thead className="bg-slate-100 dark:bg-slate-900/60 text-slate-500 text-[10px] uppercase font-bold sticky top-0">
                   <tr>
                     <th className="py-2 px-3">Lead Code</th>
-                    <th className="py-2 px-2">Campaign</th>
+                    <th className="py-2 px-2">Campaign Type</th>
                     <th className="py-2 px-2">Client</th>
+                    <th className="py-2 px-2 text-center">Point Factor</th>
                     <th className="py-2 px-2 text-center">QA Status</th>
-                    <th className="py-2 px-2">Reviewed At</th>
+                    <th className="py-2 px-2 text-right">Points Earned</th>
+                    <th className="py-2 px-2">Reviewed At (IST Shift)</th>
                     <th className="py-2 px-3">QA Auditor Comment</th>
                   </tr>
                 </thead>
@@ -590,18 +711,34 @@ export default function QaIncentiveCalculatorView() {
                       <td className="py-2.5 px-3 font-mono font-bold text-cyan-600 dark:text-cyan-400">
                         {lead.lead_code || `#${lead.lead_id}`}
                       </td>
-                      <td className="py-2.5 px-2">{lead.campaign_name}</td>
+                      <td className="py-2.5 px-2 font-medium text-slate-800 dark:text-slate-200">
+                        {lead.campaign_type || lead.campaign_name}
+                      </td>
                       <td className="py-2.5 px-2 font-mono text-[11px]">{lead.client_code}</td>
+                      <td className="py-2.5 px-2 text-center font-mono text-purple-600 dark:text-purple-400 font-bold">
+                        {lead.point_factor || 1.0} pts
+                      </td>
                       <td className="py-2.5 px-2 text-center">
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             lead.qa_status === "Qualified"
                               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                              : String(lead.qa_status).toLowerCase() === "rectified" ||
+                                String(lead.prev_status).toLowerCase() === "rectified"
+                              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
                               : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
                           }`}
                         >
                           {lead.qa_status}
+                          {String(lead.prev_status).toLowerCase() === "rectified" && (
+                            <span className="ml-1 text-[9px] text-amber-500 font-normal">
+                              (Rectified)
+                            </span>
+                          )}
                         </span>
+                      </td>
+                      <td className="py-2.5 px-2 text-right font-mono font-black text-cyan-600 dark:text-cyan-400">
+                        +{lead.points_earned !== undefined ? lead.points_earned : (lead.point_factor || 1.0)} pts
                       </td>
                       <td className="py-2.5 px-2 text-[11px] text-slate-400 font-mono">
                         {lead.reviewed_at}
@@ -656,13 +793,28 @@ export default function QaIncentiveCalculatorView() {
                   </div>
 
                   <div className="text-xs text-slate-600 dark:text-slate-300 pt-1">
-                    Base: <strong>{p.base_target_leads} leads</strong> = <strong>{formatINR(p.base_incentive_amount)}</strong>
+                    Base: <strong>{p.base_target_leads} pts/leads</strong> = <strong>{formatINR(p.base_incentive_amount)}</strong>
                     {p.tiers && p.tiers.length > 0 && (
                       <span className="ml-2 text-cyan-600 dark:text-cyan-400 font-medium">
                         ({p.tiers.length} Tiers: {p.tiers.map((t) => `${t.tier_name} @ ₹${t.rate_per_lead}`).join(" • ")})
                       </span>
                     )}
                   </div>
+
+                  {p.additional_rules && p.additional_rules.length > 0 && (
+                    <div className="text-[11px] text-emerald-600 dark:text-emerald-400 pt-0.5 flex flex-wrap items-center gap-1.5 font-semibold">
+                      <Sparkles className="w-3 h-3 text-emerald-500" />
+                      <span>Status Rules:</span>
+                      {p.additional_rules.map((ar, arIdx) => (
+                        <span
+                          key={ar.id || arIdx}
+                          className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-mono text-[10px]"
+                        >
+                          {ar.rule_name} ({ar.status_name}: {ar.rule_type === "POINTS_PER_LEAD" ? `+${ar.point_factor || 1} pts/lead` : `₹${ar.reward_amount}/lead`}, min {ar.min_count})
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3">

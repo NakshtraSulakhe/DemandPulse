@@ -1,5 +1,5 @@
 import { getCrmConfig } from "@/lib/crm-config";
-import { getShiftBusinessDate } from "@/lib/shift/engine";
+import { getShiftBusinessDate, addDays } from "@/lib/shift/engine";
 import {
   CrmApiResponse,
   IncentivePreviewData,
@@ -257,7 +257,18 @@ export function getFallbackIncentivePreview(workDate: string): IncentivePreviewD
  */
 export async function fetchIncentivePreview(date?: string): Promise<CrmApiResponse<IncentivePreviewData>> {
   const targetDate = date || getShiftBusinessDate();
-  const res = await callIncentiveApi<IncentivePreviewData>("preview.php", { method: "GET" }, { date: targetDate });
+  const nextDate = addDays(targetDate, 1);
+  const res = await callIncentiveApi<IncentivePreviewData>(
+    "preview.php",
+    { method: "GET" },
+    {
+      date: targetDate,
+      shift_start: "12:00:00",
+      shift_end: "03:30:00",
+      date_from: `${targetDate} 12:00:00`,
+      date_to: `${nextDate} 03:30:00`,
+    }
+  );
   if (res.success && res.data) {
     return res;
   }
@@ -289,6 +300,7 @@ export async function fetchDailySettled(params?: {
   limit?: number | string;
 }): Promise<CrmApiResponse<DailySettledData>> {
   const targetDate = params?.date || getShiftBusinessDate();
+  const nextDate = addDays(targetDate, 1);
   const res = await callIncentiveApi<DailySettledData>(
     "daily.php",
     { method: "GET" },
@@ -299,6 +311,10 @@ export async function fetchDailySettled(params?: {
       agent_id: params?.agent_id,
       page: params?.page,
       limit: params?.limit || 100,
+      shift_start: "12:00:00",
+      shift_end: "03:30:00",
+      date_from: `${targetDate} 12:00:00`,
+      date_to: `${nextDate} 03:30:00`,
     }
   );
   if (res.success && res.data) {

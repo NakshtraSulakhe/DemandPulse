@@ -201,7 +201,7 @@ export default function SettlementManagementPage() {
                 Shift In Progress — Premature Settlement Guard Active
               </div>
               <p className="text-xs mt-0.5 text-amber-700/90 dark:text-amber-300/80">
-                US Shift for Business Date <span className="font-mono font-bold">{selectedDate}</span> is currently active (5:30 PM – 2:30 AM IST). Real-time dials and QA scorecards are still being processed. Standard settlement occurs after 02:30 AM IST.
+                US Shift for Business Date <span className="font-mono font-bold">{selectedDate}</span> is currently active (5:30 PM – 2:30 AM IST, extendable up to 9:00 AM IST morning refresh). Real-time dials and QA scorecards are still being processed. Standard settlement occurs after shift work concludes.
               </p>
             </div>
           </div>
@@ -589,7 +589,7 @@ export default function SettlementManagementPage() {
               <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col gap-2.5">
                 <div className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
                   <AlertTriangle className="w-4 h-4 text-amber-600" />
-                  Shift is currently active (Ends 02:30 AM IST)
+                  Shift is currently active (Scheduled 02:30 AM / Extends up to 09:00 AM IST)
                 </div>
                 <p className="text-[11px] text-amber-700 dark:text-amber-300/90 leading-tight">
                   Finalizing settlement right now may exclude leads that have not yet been audited by QA. An explicit manager override is required to proceed prematurely.

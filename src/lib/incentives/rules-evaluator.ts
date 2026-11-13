@@ -35,6 +35,7 @@ export const DEFAULT_INCENTIVE_CONFIG: IncentiveConfiguration = {
       description: "Super-achiever uncapped accelerator: ₹100 for each point exceeding 200%",
     },
   ],
+  calculationMode: "incremental",
   qaPolicy: {
     zeroOutIncentive: true,
     fixedDeductionPerEscalation: 0,
@@ -151,31 +152,52 @@ export function calculateIncentiveBreakdown(
   // 4. Calculate Tiered Slabs
   let slabIncentive = 0;
   const appliedSlabs: CalculationBreakdownResult["appliedSlabs"] = [];
+  const isWholeBand = config.calculationMode === "whole_band";
 
   // Sort slabs by minPct ascending
   const sortedSlabs = [...(config.tieredSlabs || [])].sort((a, b) => a.minPct - b.minPct);
 
-  for (const slab of sortedSlabs) {
-    if (completionPct > slab.minPct) {
-      // Calculate how many points fall into this slab's range
-      const slabMinPoints = (slab.minPct / 100) * safeTarget;
-      const slabMaxPoints = slab.maxPct !== null ? (slab.maxPct / 100) * safeTarget : Infinity;
+  if (isWholeBand) {
+    // Whole-achievement-band calculation:
+    // Finds the highest slab reached and multiplies ALL extra points above target by that slab's rate
+    const highestSlab = [...sortedSlabs].reverse().find((s) => completionPct >= s.minPct);
+    const totalExtraPoints = Math.max(0, achievedPoints - safeTarget);
 
-      const slabEffectiveEndPoints = Math.min(achievedPoints, slabMaxPoints);
-      const extraPointsInSlab = Math.max(0, slabEffectiveEndPoints - slabMinPoints);
+    if (highestSlab && totalExtraPoints > 0) {
+      const rate = matchedOverride?.customSlabRate !== undefined ? matchedOverride.customSlabRate : highestSlab.ratePerPoint;
+      slabIncentive = Math.round(totalExtraPoints * rate * 100) / 100;
+      appliedSlabs.push({
+        slabId: highestSlab.id,
+        slabName: `${highestSlab.name} (Whole-Band @ ₹${rate})`,
+        extraPoints: Math.round(totalExtraPoints * 100) / 100,
+        ratePerPoint: rate,
+        subtotal: slabIncentive,
+      });
+    }
+  } else {
+    // Incremental slab calculation (standard marginal bracket):
+    for (const slab of sortedSlabs) {
+      if (completionPct > slab.minPct) {
+        // Calculate how many points fall into this slab's range
+        const slabMinPoints = (slab.minPct / 100) * safeTarget;
+        const slabMaxPoints = slab.maxPct !== null ? (slab.maxPct / 100) * safeTarget : Infinity;
 
-      if (extraPointsInSlab > 0) {
-        const rate = matchedOverride?.customSlabRate !== undefined ? matchedOverride.customSlabRate : slab.ratePerPoint;
-        const subtotal = Math.round(extraPointsInSlab * rate * 100) / 100;
-        slabIncentive += subtotal;
+        const slabEffectiveEndPoints = Math.min(achievedPoints, slabMaxPoints);
+        const extraPointsInSlab = Math.max(0, slabEffectiveEndPoints - slabMinPoints);
 
-        appliedSlabs.push({
-          slabId: slab.id,
-          slabName: slab.name,
-          extraPoints: Math.round(extraPointsInSlab * 100) / 100,
-          ratePerPoint: rate,
-          subtotal,
-        });
+        if (extraPointsInSlab > 0) {
+          const rate = matchedOverride?.customSlabRate !== undefined ? matchedOverride.customSlabRate : slab.ratePerPoint;
+          const subtotal = Math.round(extraPointsInSlab * rate * 100) / 100;
+          slabIncentive += subtotal;
+
+          appliedSlabs.push({
+            slabId: slab.id,
+            slabName: slab.name,
+            extraPoints: Math.round(extraPointsInSlab * 100) / 100,
+            ratePerPoint: rate,
+            subtotal,
+          });
+        }
       }
     }
   }

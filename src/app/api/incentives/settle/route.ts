@@ -44,18 +44,18 @@ export async function POST(req: NextRequest) {
     }
 
     // Phase 6: Shift Closure Guard
-    // If finalizing the currently active shift before 02:30 AM IST closure, require explicit manager override
+    // If finalizing the currently active shift while work continues (before shift closure or 09:00 AM IST refresh), require explicit manager override
     if (parsed.data.mode === "finalize") {
       const shiftState = getCurrentShiftState();
       if (
         parsed.data.work_date === shiftState.businessDate &&
-        shiftState.status === "active" &&
+        shiftState.isShiftActive &&
         !parsed.data.manager_override
       ) {
         return NextResponse.json(
           {
             success: false,
-            error: `Shift for ${parsed.data.work_date} is currently ACTIVE (${shiftState.currentIstTime} IST). Final settlement should be executed after shift closure at 02:30 AM IST when all dialing and QA scorecard audits have concluded.`,
+            error: `Shift for ${parsed.data.work_date} is currently ACTIVE (${shiftState.currentIstTime} IST). Final settlement should be executed after shift closure (standard 02:30 AM IST or extended shift conclusion up to 09:00 AM IST) when all dialing and QA scorecard audits have concluded.`,
             error_code: "SHIFT_IN_PROGRESS",
             requires_override: true,
             shift_state: {

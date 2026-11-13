@@ -23,6 +23,7 @@ import {
   Sliders,
   FileCheck2,
   Trophy,
+  Target,
 } from "lucide-react";
 import { useDailyIncentives } from "@/hooks/useDailyIncentives";
 import { useIncentivePreview } from "@/hooks/useIncentivePreview";
@@ -31,9 +32,14 @@ import IncentiveWorkflowStepper from "@/components/incentives/workflow-stepper";
 import AgentIncentiveAchievers from "@/components/incentives/agent-incentive-achievers";
 import QaIncentivePlanCreator from "@/components/incentives/qa-incentive-plan-creator";
 import QaIncentiveCalculatorView from "@/components/incentives/qa-incentive-calculator-view";
+import TargetManagementView from "@/components/productivity/target-management-view";
+import CampaignPointsEditor from "@/components/productivity/campaign-points-editor";
+import MonthlyIncentiveView from "@/components/incentives/monthly-incentive-view";
 
 export default function IncentiveDashboardPage() {
-  const [mainTab, setMainTab] = useState<"achievers" | "qa_builder" | "qa_audits" | "pipeline">("achievers");
+  const [mainTab, setMainTab] = useState<
+    "achievers" | "targets" | "points" | "monthly" | "qa_builder" | "qa_audits" | "pipeline"
+  >("achievers");
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "eligible" | "ineligible">("all");
@@ -148,55 +154,97 @@ export default function IncentiveDashboardPage() {
       <div className="flex items-center gap-2 p-1.5 rounded-2xl glass-panel border border-slate-200/80 dark:border-white/10 flex-wrap">
         <button
           onClick={() => setMainTab("achievers")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             mainTab === "achievers"
               ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
           <Trophy className="w-4 h-4" />
-          <span>Agent Achievers (CRM Live Feed)</span>
+          <span>Daily Achievers</span>
         </button>
 
         <button
-          onClick={() => setMainTab("qa_builder")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "qa_builder"
+          onClick={() => setMainTab("targets")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "targets"
               ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/20"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <Sliders className="w-4 h-4" />
-          <span>QA Incentive Plan Creator</span>
+          <Target className="w-4 h-4" />
+          <span>Target Management (Agent & QA)</span>
         </button>
 
         <button
-          onClick={() => setMainTab("qa_audits")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "qa_audits"
+          onClick={() => setMainTab("points")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "points"
+              ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Award className="w-4 h-4" />
+          <span>Campaign Points</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab("monthly")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "monthly"
               ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
+          <Coins className="w-4 h-4" />
+          <span>Agent Monthly Incentives</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab("qa_builder")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "qa_builder"
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Sliders className="w-4 h-4" />
+          <span>QA Plans</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab("qa_audits")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "qa_audits"
+              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
           <FileCheck2 className="w-4 h-4" />
-          <span>QA Team Audit Calculations</span>
+          <span>QA Audit Calculations</span>
         </button>
 
         <button
           onClick={() => setMainTab("pipeline")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             mainTab === "pipeline"
               ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm"
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
           <Coins className="w-4 h-4" />
-          <span>All Agents & Settlement Pipeline</span>
+          <span>Daily Settlement Pipeline</span>
         </button>
       </div>
 
       {/* Conditional Tab Rendering */}
       {mainTab === "achievers" && <AgentIncentiveAchievers />}
+
+      {mainTab === "targets" && <TargetManagementView />}
+
+      {mainTab === "points" && <CampaignPointsEditor />}
+
+      {mainTab === "monthly" && <MonthlyIncentiveView />}
 
       {mainTab === "qa_builder" && (
         <QaIncentivePlanCreator onPlanSaved={() => setMainTab("qa_audits")} />

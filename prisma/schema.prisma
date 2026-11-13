@@ -711,3 +711,147 @@ model AnalyticsMetricDefinition {
 
   @@map("analytics_metric_definitions")
 }
+
+// ==========================================
+// 18. PRODUCTIVITY POINT CONFIGURATIONS
+// ==========================================
+
+model ProductivityPointConfig {
+  id            BigInt    @id @default(autoincrement())
+  activityType  String    @map("activity_type") @db.VarChar(100)
+  displayName   String    @map("display_name") @db.VarChar(150)
+  department    String    @default("ALL") @db.VarChar(20) // 'ALL', 'Agent', or 'QA'
+  pointsFactor  Decimal   @default(1.000) @map("points_factor") @db.Decimal(8, 3)
+  description   String?   @db.VarChar(255)
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  isActive      Boolean   @default(true) @map("is_active")
+  version       Int       @default(1)
+  updatedBy     String    @default("System Initialization") @map("updated_by") @db.VarChar(150)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([activityType, department, version])
+  @@index([department, isActive, effectiveFrom, effectiveTo])
+  @@map("productivity_point_configs")
+}
+
+model ProductivityPointAudit {
+  id             BigInt   @id @default(autoincrement())
+  configId       BigInt?  @map("config_id")
+  activityType   String   @map("activity_type") @db.VarChar(100)
+  department     String   @default("ALL") @db.VarChar(20)
+  previousPoints Decimal? @map("previous_points") @db.Decimal(8, 3)
+  newPoints      Decimal  @map("new_points") @db.Decimal(8, 3)
+  action         String   @db.VarChar(50)
+  performedBy    String   @map("performed_by") @db.VarChar(150)
+  remarks        String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.DateTime(6)
+
+  @@index([activityType, department, createdAt])
+  @@map("productivity_point_audit")
+}
+
+// ==========================================
+// 19. EMPLOYEE TARGET ASSIGNMENTS (AGENT & QA)
+// ==========================================
+
+model EmployeeTargetAssignment {
+  id                     BigInt   @id @default(autoincrement())
+  employeeId             BigInt   @map("employee_id")
+  employeeName           String   @map("employee_name") @db.VarChar(150)
+  employeeRole           String   @map("employee_role") @db.VarChar(20) // 'Agent' or 'QA'
+  targetMonth            Int      @map("target_month")
+  targetYear             Int      @map("target_year")
+  workingDays            Int      @default(22) @map("working_days")
+  dailyTarget            Decimal  @map("daily_target") @db.Decimal(10, 2)
+  calculatedMonthlyTarget Decimal @map("calculated_monthly_target") @db.Decimal(12, 2)
+  adjustedMonthlyTarget  Decimal? @map("adjusted_monthly_target") @db.Decimal(12, 2)
+  adjustmentReason       String?  @map("adjustment_reason") @db.Text
+  isManuallyAdjusted     Boolean  @default(false) @map("is_manually_adjusted")
+  qualityThresholdPct    Decimal? @default(95.00) @map("quality_threshold_pct") @db.Decimal(5, 2)
+  effectiveDate          DateTime @map("effective_date") @db.Date
+  status                 String   @default("active") @db.VarChar(30)
+  remarks                String?  @db.Text
+  assignedBy             String   @default("Admin") @map("assigned_by") @db.VarChar(150)
+  createdAt              DateTime @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([employeeId, employeeRole, targetMonth, targetYear])
+  @@index([employeeRole, targetYear, targetMonth, status])
+  @@index([employeeId, effectiveDate])
+  @@map("employee_target_assignments")
+}
+
+model EmployeeTargetAudit {
+  id                    BigInt   @id @default(autoincrement())
+  assignmentId          BigInt?  @map("assignment_id")
+  employeeId            BigInt   @map("employee_id")
+  employeeName          String   @map("employee_name") @db.VarChar(150)
+  employeeRole          String   @map("employee_role") @db.VarChar(20)
+  targetMonth           Int      @map("target_month")
+  targetYear            Int      @map("target_year")
+  previousDailyTarget   Decimal? @map("previous_daily_target") @db.Decimal(10, 2)
+  newDailyTarget        Decimal  @map("new_daily_target") @db.Decimal(10, 2)
+  previousMonthlyTarget Decimal? @map("previous_monthly_target") @db.Decimal(12, 2)
+  newMonthlyTarget      Decimal  @map("new_monthly_target") @db.Decimal(12, 2)
+  workingDays           Int      @map("working_days")
+  action                String   @db.VarChar(50)
+  adjustmentReason      String?  @map("adjustment_reason") @db.Text
+  performedBy           String   @map("performed_by") @db.VarChar(150)
+  createdAt             DateTime @default(now()) @map("created_at") @db.DateTime(6)
+
+  @@index([employeeId, targetYear, targetMonth])
+  @@map("employee_target_audit")
+}
+
+// ==========================================
+// 20. AGENT MONTHLY INCENTIVE PLANS & SETTLEMENTS
+// ==========================================
+
+model AgentMonthlyIncentivePlan {
+  id            BigInt    @id @default(autoincrement())
+  planName      String    @map("plan_name") @db.VarChar(150)
+  slabsJson     Json      @map("slabs_json")
+  currency      String    @default("INR") @db.Char(3)
+  isActive      Boolean   @default(true) @map("is_active")
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  effectiveTo   DateTime? @map("effective_to") @db.Date
+  version       Int       @default(1)
+  createdBy     String    @default("Admin") @map("created_by") @db.VarChar(150)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@index([isActive, effectiveFrom])
+  @@map("agent_monthly_incentive_plans")
+}
+
+model AgentMonthlySettlement {
+  id                     BigInt    @id @default(autoincrement())
+  employeeId             BigInt    @map("employee_id")
+  employeeName           String    @map("employee_name") @db.VarChar(150)
+  settlementMonth        Int       @map("settlement_month")
+  settlementYear         Int       @map("settlement_year")
+  assignedMonthlyTarget  Decimal   @map("assigned_monthly_target") @db.Decimal(12, 2)
+  achievedMonthlyPoints  Decimal   @map("achieved_monthly_points") @db.Decimal(12, 2)
+  achievementPct         Decimal   @map("achievement_pct") @db.Decimal(8, 3)
+  qualifyingThresholdPct Decimal?  @map("qualifying_threshold_pct") @db.Decimal(8, 3)
+  incentiveEarned        Decimal   @default(0.00) @map("incentive_earned") @db.Decimal(12, 2)
+  workingDaysPresent     Int       @default(0) @map("working_days_present")
+  workingDaysAssigned    Int       @default(22) @map("working_days_assigned")
+  eligibilityStatus      String    @default("eligible") @map("eligibility_status") @db.VarChar(30)
+  eligibilityReason      String?   @map("eligibility_reason") @db.VarChar(255)
+  approvalStatus         String    @default("provisional") @map("approval_status") @db.VarChar(30)
+  paymentStatus          String    @default("unpaid") @map("payment_status") @db.VarChar(30)
+  approvedBy             String?   @map("approved_by") @db.VarChar(150)
+  approvedAt             DateTime? @map("approved_at") @db.DateTime(6)
+  remarks                String?   @db.Text
+  planVersionReference   Int?      @map("plan_version_reference")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.DateTime(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.DateTime(6)
+
+  @@unique([employeeId, settlementMonth, settlementYear])
+  @@index([settlementYear, settlementMonth, approvalStatus, paymentStatus])
+  @@map("agent_monthly_settlements")
+}
+

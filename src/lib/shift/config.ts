@@ -1,5 +1,6 @@
 import { ShiftConfiguration, ShiftConfigUpdatePayload } from "@/types/shift";
-import { DEFAULT_SHIFT_CONFIG } from "./constants";
+import { DEFAULT_SHIFT_CONFIG, SHIFT_REFRESH_TIME, MAX_SHIFT_DURATION_MINUTES } from "./constants";
+import { calculateShiftDurationMinutes } from "./engine";
 import { queryOne, execute, serializeDbData } from "@/lib/db";
 import { recordSettingChangeEvent } from "@/lib/db/preferences-repository";
 
@@ -39,14 +40,20 @@ export async function getShiftConfig(): Promise<ShiftConfiguration> {
 
     const workingDays = Array.isArray(workingDaysRaw) ? workingDaysRaw : DEFAULT_SHIFT_CONFIG.workingDays;
 
+    const startTime = calendar.shift_start_local || "17:30:00";
+    const endTime = calendar.shift_end_local || "02:30:00";
+    const durationMinutes = calculateShiftDurationMinutes(startTime, endTime);
+
     return {
       shiftName: calendar.calendar_name,
       shiftCode: calendar.shift_code || "US_SHIFT",
       timezone: calendar.display_timezone || calendar.shift_timezone || "Asia/Kolkata",
-      startTime: calendar.shift_start_local || "17:30:00",
-      endTime: calendar.shift_end_local || "02:30:00",
+      startTime,
+      endTime,
       crossesMidnight: calendar.schedule_mode === "cross_midnight",
-      durationMinutes: 540,
+      durationMinutes,
+      refreshTime: SHIFT_REFRESH_TIME,
+      maxDurationMinutes: MAX_SHIFT_DURATION_MINUTES,
       reportingTimezone: calendar.business_timezone || "America/New_York",
       businessDateRule: "SHIFT_START_DATE",
       gracePeriodMinutes: calendar.grace_period_minutes ?? 1,

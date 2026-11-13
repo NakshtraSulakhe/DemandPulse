@@ -330,7 +330,7 @@ export async function runAnalyticsSync(
         const qaDailyRes = await upsertQaDailySnapshots(workDate, qaDailyInputs);
         processedRecords += qaDailyRes.count;
 
-        // Interval metrics across shift window (5:30 PM - 2:30 AM IST -> 12:00 - 21:00 UTC)
+        // Interval metrics across shift window (5:30 PM - 2:30 AM IST, extended up to 9:00 AM IST)
         const startUtcMs = new Date(shiftWindow.shiftStartUtc).getTime();
         const intervalMinutes = s3Result.data.interval_minutes || 10;
         const intervalInputs: Array<{

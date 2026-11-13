@@ -9,9 +9,11 @@ export interface ShiftConfiguration {
   shiftCode: string;
   timezone: string; // e.g. "Asia/Kolkata"
   startTime: string; // "17:30:00" (5:30 PM)
-  endTime: string; // "02:30:00" (2:30 AM next day)
+  endTime: string; // "02:30:00" (2:30 AM next day scheduled end)
   crossesMidnight: boolean; // true
-  durationMinutes: number; // 540 (9 hours)
+  durationMinutes: number; // 540 (9 hours scheduled duration)
+  refreshTime?: string; // "09:00:00" (9:00 AM IST morning refresh / reset)
+  maxDurationMinutes?: number; // 930 (15.5 hours up to 9:00 AM)
   reportingTimezone: string; // "America/New_York"
   businessDateRule: "SHIFT_START_DATE";
   gracePeriodMinutes: number; // 15 minutes grace for punch-ins
@@ -25,9 +27,12 @@ export interface ShiftConfiguration {
 export interface ShiftWindow {
   businessDate: string; // YYYY-MM-DD (Date shift started in IST)
   shiftStartIst: string; // YYYY-MM-DD 17:30:00
-  shiftEndIst: string; // YYYY-MM-DD 02:30:00 (next day)
+  shiftEndIst: string; // YYYY-MM-DD 02:30:00 (scheduled end)
+  extendedEndIst?: string; // YYYY-MM-DD 09:00:00 (extended end up to 9:00 AM refresh)
   shiftStartUtc: string; // ISO UTC string
-  shiftEndUtc: string; // ISO UTC string
+  shiftEndUtc: string; // ISO UTC string (scheduled)
+  extendedEndUtc?: string; // ISO UTC string (03:30:00 UTC next day)
+  refreshTimeIst?: string; // YYYY-MM-DD 09:00:00
   shiftStartUs: string; // US Eastern time string
   shiftEndUs: string; // US Eastern time string
   usTimezoneAbbr: "EDT" | "EST";
@@ -35,9 +40,10 @@ export interface ShiftWindow {
 }
 
 export type ShiftOperationalStatus =
-  | "active" // In active shift (17:30 - 02:30)
+  | "active" // In scheduled active shift (17:30 - 02:30)
+  | "extended" // Extended shift past scheduled end (02:30 - 09:00)
   | "grace_period" // Within grace period after shift start
-  | "post_shift_audit" // Between 02:30 and audit cutoff
+  | "post_shift_audit" // Audit / settlement window
   | "pre_shift" // Prior to 17:30
   | "outside_shift";
 

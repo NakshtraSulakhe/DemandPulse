@@ -154,6 +154,84 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
+      {/* Productivity & Incentive Hub Showcase Section */}
+      <div className="glass-panel p-6 rounded-2xl border border-slate-200/80 dark:border-white/10 relative overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-slate-200/80 dark:border-white/10 mb-4 gap-2">
+          <div>
+            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider block">
+              Enhanced Module
+            </span>
+            <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2 mt-0.5">
+              <Zap className="w-4 h-4 text-amber-500" />
+              Target Management, Campaign Points & Incentive Governance
+            </h2>
+          </div>
+          <Link
+            href="/admin/incentives"
+            className="text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1"
+          >
+            <span>Open Incentive Hub Console</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 flex flex-col justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white block mb-1">
+                Individual Target Assignments
+              </span>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Assign configurable daily and monthly targets to individual Agents and QA analysts, with working days derivation and manual override audit logs.
+              </p>
+            </div>
+            <Link
+              href="/admin/incentives"
+              className="mt-3 text-xs font-semibold text-cyan-600 hover:underline flex items-center gap-1"
+            >
+              <span>Manage Targets</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 flex flex-col justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white block mb-1">
+                Campaign Points Multipliers
+              </span>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Configure fractional point factors (Email: 0.25, MQL: 1, HQL: 2, BANT: 3, Appt: 5) with versioning and immutable calculation protection.
+              </p>
+            </div>
+            <Link
+              href="/admin/incentives"
+              className="mt-3 text-xs font-semibold text-cyan-600 hover:underline flex items-center gap-1"
+            >
+              <span>Configure Points</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 flex flex-col justify-between">
+            <div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white block mb-1">
+                Employee Performance Portal
+              </span>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Self-service agent and QA dashboards showing target completion %, remaining quotas, and earned daily & monthly milestone incentives.
+              </p>
+            </div>
+            <Link
+              href="/employee/productivity"
+              className="mt-3 text-xs font-semibold text-purple-600 hover:underline flex items-center gap-1"
+            >
+              <span>Launch Employee View</span>
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+        </div>
+      </div>
+
       {/* CRM Architecture Diagnostics & API Status */}
       <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xl">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-3 border-b border-slate-200/60 dark:border-white/10 mb-4 gap-2">

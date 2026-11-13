@@ -139,7 +139,7 @@ export default function QaAnalyticsHistoryPage() {
               className="bg-transparent text-xs text-slate-800 dark:text-slate-200 font-medium outline-none cursor-pointer"
             />
           </div>
-          <span className="text-xs text-slate-500">Selected work date shift (17:30 to 02:30 IST)</span>
+          <span className="text-xs text-slate-500">Selected work date shift (17:30 to 02:30 IST / Extended to 9:00 AM)</span>
         </div>
 
         <button

@@ -23,7 +23,13 @@ import {
   RecognitionResponseSchema,
 } from "@/lib/validations";
 import { getCrmConfig } from "@/lib/crm-config";
-import { getShiftBusinessDate, generateShiftIntervals } from "@/lib/shift/engine";
+import {
+  getShiftBusinessDate,
+  generateShiftIntervals,
+  addDays,
+  getCurrentShiftState,
+} from "@/lib/shift/engine";
+import { DEFAULT_SHIFT_CONFIG, SHIFT_REFRESH_TIME, MAX_SHIFT_DURATION_MINUTES } from "@/lib/shift/constants";
 import { evaluateAgentLatePunch } from "@/lib/shift/late-punches";
 import { getShiftConfig } from "@/lib/shift/config";
 import { fetchIncentivePreview, fetchDailySettled } from "@/lib/incentives/api";
@@ -111,6 +117,7 @@ export function convertUtcToIstTime(timeStr: string): string {
   const parts = timeStr.trim().split(":");
   let hours = parseInt(parts[0], 10);
   let minutes = parseInt(parts[1] || "0", 10);
+  const seconds = parts[2];
   if (isNaN(hours) || isNaN(minutes)) return timeStr;
 
   minutes += 30;
@@ -120,7 +127,8 @@ export function convertUtcToIstTime(timeStr: string): string {
     hours += 1;
   }
   hours = hours % 24;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  const secStr = seconds !== undefined ? `:${seconds}` : "";
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}${secStr}`;
 }
 
 /**
@@ -133,6 +141,24 @@ export function convertUtcIntervalLabelToIst(label: string): string {
     return `${convertUtcToIstTime(parts[0])} - ${convertUtcToIstTime(parts[1])}`;
   }
   return convertUtcToIstTime(label);
+}
+
+/**
+ * Generates canonical operational shift query parameters for DemandFlow CRM endpoints:
+ * Standard Shift: 17:30:00 IST (12:00:00 UTC) on businessDate -> 09:00:00 IST (03:30:00 UTC next day)
+ * Passing date, shift_start, shift_end, date_from, and date_to ensures 100% consistent
+ * timezone and overnight shift alignment across all CRM backend modules.
+ */
+export function getStandardShiftQueryParams(businessDate: string, extra?: Record<string, any>): Record<string, any> {
+  const nextDate = addDays(businessDate, 1);
+  return {
+    date: businessDate,
+    shift_start: "12:00:00",
+    shift_end: "03:30:00",
+    date_from: `${businessDate} 12:00:00`,
+    date_to: `${nextDate} 03:30:00`,
+    ...extra,
+  };
 }
 
 /**
@@ -228,11 +254,12 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
 
   // 1. Fetch Slide 1 data (KPI cards, all live campaigns, late comers)
   const configuredPath = config.endpoints?.slide1 || "slides/slide1.php";
-  const slide1Promise = fetchFromCrm<unknown>(buildEndpointUrl(configuredPath, { date: effectiveDate, status: "Live" }));
+  const slide1Query = getStandardShiftQueryParams(effectiveDate, { status: "Live" });
+  const slide1Promise = fetchFromCrm<unknown>(buildEndpointUrl(configuredPath, slide1Query));
 
   // 2. Concurrently fetch daily targets from CRM API to ensure synchronization across serverless containers
   const targetsPath = config.endpoints?.campaign_targets || "campaign_daily_targets.php";
-  const targetsPromise = fetchFromCrm<unknown>(buildEndpointUrl(targetsPath, { date: effectiveDate, status: "Live" }));
+  const targetsPromise = fetchFromCrm<unknown>(buildEndpointUrl(targetsPath, slide1Query));
 
   let [res, targetsRes] = await Promise.all([slide1Promise, targetsPromise]);
 
@@ -241,11 +268,11 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
     const fallbackPath =
       config.customEndpoints?.find((e) => e.id === "slide1")?.fallbackPath ||
       "slides_analytics.php?type=slide1";
-    res = await fetchFromCrm<unknown>(buildEndpointUrl(fallbackPath, { date: effectiveDate, status: "Live" }));
+    res = await fetchFromCrm<unknown>(buildEndpointUrl(fallbackPath, slide1Query));
   }
 
   if (!res.ok) {
-    res = await fetchFromCrm<unknown>(buildEndpointUrl("slides_analytics.php?action=slide1", { date: effectiveDate, status: "Live" }));
+    res = await fetchFromCrm<unknown>(buildEndpointUrl("slides_analytics.php?action=slide1", slide1Query));
   }
 
   // Retrieve saved allocations from MySQL database for this business date
@@ -465,14 +492,15 @@ export async function getCrmSlide2(
   }
 
   const configuredPath = config.endpoints?.slide2 || "slides/slide2.php";
+  const slide2Query = getStandardShiftQueryParams(effectiveDate, { page: 1, limit: 100 });
   const slide2Promise = fetchFromCrm<unknown>(
-    buildEndpointUrl(configuredPath, { date: effectiveDate, page: 1, limit: 100 })
+    buildEndpointUrl(configuredPath, slide2Query)
   );
 
   // Concurrently fetch daily campaign targets from CRM
   const targetsPath = config.endpoints?.campaign_targets || "campaign_daily_targets.php";
   const targetsPromise = fetchFromCrm<unknown>(
-    buildEndpointUrl(targetsPath, { date: effectiveDate, status: "Live" })
+    buildEndpointUrl(targetsPath, getStandardShiftQueryParams(effectiveDate, { status: "Live" }))
   );
 
   // Concurrently retrieve saved daily allocations from MySQL
@@ -493,13 +521,13 @@ export async function getCrmSlide2(
       config.customEndpoints?.find((e) => e.id === "slide2")?.fallbackPath ||
       "slides_analytics.php?type=slide2";
     res = await fetchFromCrm<unknown>(
-      buildEndpointUrl(fallbackPath, { date: effectiveDate, page, limit })
+      buildEndpointUrl(fallbackPath, slide2Query)
     );
   }
 
   if (!res.ok) {
     res = await fetchFromCrm<unknown>(
-      buildEndpointUrl("slides_analytics.php?action=slide2", { date: effectiveDate, page, limit })
+      buildEndpointUrl("slides_analytics.php?action=slide2", slide2Query)
     );
   }
 
@@ -647,23 +675,25 @@ export async function getCrmSlide2(
 
 /**
  * Slide 3: Quality Team Heatmap
- * Translates shift bounds to UTC for the CRM database query, and maps interval labels to IST
+ * Translates shift bounds to UTC for the CRM database query, and maps interval labels to IST.
+ * Supports shift continuation past 2:30 AM until morning refresh at 9:00 AM IST.
  */
 export async function getCrmSlide3(
   dateStr?: string,
   interval = 10,
   shiftStart = "17:30:00",
-  shiftEnd = "02:30:00"
+  shiftEnd = "09:00:00"
 ): Promise<CrmFetchResult<Slide3Data>> {
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();
   const effectiveDate = dateStr || getShiftBusinessDate();
+  const effectiveShiftEnd = shiftEnd || "09:00:00";
 
   // The CRM MySQL database stores created_at / audited_at in UTC.
-  // Converting IST shift hours (17:30:00 - 02:30:00) -> UTC (12:00:00 - 21:00:00)
-  // ensures the CRM returns audits across the entire 9-hour shift.
+  // Converting IST shift hours (17:30:00 - 09:00:00) -> UTC (12:00:00 - 03:30:00 next day)
+  // ensures the CRM returns audits across the entire operational shift window.
   const utcShiftStart = convertIstToUtcTime(shiftStart);
-  const utcShiftEnd = convertIstToUtcTime(shiftEnd);
+  const utcShiftEnd = convertIstToUtcTime(effectiveShiftEnd);
 
   const configuredPath = config.endpoints?.slide3 || "slides/slide3.php";
   let res = await fetchFromCrm<unknown>(
@@ -688,12 +718,10 @@ export async function getCrmSlide3(
   if (res.ok && res.data) {
     const parsed = Slide3ResponseSchema.safeParse(res.data);
     if (parsed.success) {
-      // Ensure only actual QA reviewers from qa_reviewed_by with audits are included
-      // Strictly omit unnecessary names (0 audits, e.g. Mayur Jadhav) and non-QA personnel (e.g. Sagar Machale)
+      // Ensure actual QA reviewers are included (filter out system/test accounts and non-QA personnel)
       const isActualQaReviewer = (analyst: any) => {
-        const total = (analyst.total_audited || 0) + (analyst.total_qualified || 0);
-        if (total <= 0) return false;
-        if (Number(analyst.user_id) === 99) return false;
+        const id = Number(analyst.user_id);
+        if (id === 99 || id === 151) return false;
         const name = (analyst.full_name || "").toLowerCase().trim();
         if (name.includes("sagar")) return false;
         if (name.includes("mayur jadhav")) return false;
@@ -704,9 +732,10 @@ export async function getCrmSlide3(
       const targetHeatmap = activeAnalysts;
 
       // Synchronize with authoritative operational shift audit metrics from qa_audits.php
-      // Ensures Slide 3 and the Incentive Calculation page (/admin/incentives) show identical counts
-      const shiftStartUtcStr = `${effectiveDate} ${utcShiftStart}`;
-      const shiftEndUtcStr = `${effectiveDate} ${utcShiftEnd}`;
+      // Operational shift window: 17:30 IST (12:00:00 UTC) on effectiveDate to 09:00 IST next day (03:30:00 UTC next day)
+      const nextDayStr = addDays(effectiveDate, 1);
+      const startUtcMs = new Date(`${effectiveDate}T12:00:00.000Z`).getTime();
+      const endUtcMs = new Date(`${nextDayStr}T03:30:00.000Z`).getTime();
 
       const qaAuditsRes = await getCrmQaAudits({ date: effectiveDate, include_leads: 1 }).catch(() => ({
         success: false,
@@ -719,36 +748,96 @@ export async function getCrmSlide3(
         qaAuditsRes?.data;
       const qaAnalystsList = rawQa?.qa_analysts || rawQa?.qa_users || [];
       const qaMetricsMap = new Map<number, { totalAudited: number; qualified: number; disqualified: number }>();
+      const qaLeadsByAnalyst = new Map<number, any[]>();
 
       if (Array.isArray(qaAnalystsList) && qaAnalystsList.length > 0) {
+        // Authoritative CRM QA Counting Engine:
+        // Step 1: For each analyst, determine their unique finalized leads within the operational shift window
+        // (12:00:00 UTC on effectiveDate -> 03:30:00 UTC on nextDayStr)
+        const perAnalystFinalized = new Map<number, any[]>();
+
         for (const a of qaAnalystsList) {
           const id = Number(a.user_id || a.qa_id || a.id);
           if (!id || id === 151 || id === 99) continue;
-          let leads = (a.audited_leads || []).filter((l: any) => {
+
+          const shiftLeads = (a.audited_leads || []).filter((l: any) => {
             const t = l.reviewed_at || l.created_at || "";
-            return t >= shiftStartUtcStr && t <= shiftEndUtcStr;
+            if (!t) return false;
+            const tMs = new Date(t.includes("T") ? t : t.replace(" ", "T") + "Z").getTime();
+            return !isNaN(tMs) && tMs >= startUtcMs && tMs <= endUtcMs;
           });
 
-          // Sort ascending chronologically so newest action defines final state
-          leads.sort((x: any, y: any) =>
+          // Sort ascending chronologically so newest action defines the analyst's final status on the lead
+          shiftLeads.sort((x: any, y: any) =>
             (x.reviewed_at || x.created_at || "").localeCompare(y.reviewed_at || y.created_at || "")
           );
 
           const uniqueMap = new Map<number | string, any>();
-          leads.forEach((l: any) => {
+          shiftLeads.forEach((l: any) => {
             const leadKey = l.lead_id || l.lead_code || l.id;
             if (leadKey) uniqueMap.set(leadKey, l);
           });
 
-          const uniqueList = Array.from(uniqueMap.values());
+          // Filter strictly to finalized review events: 'qualified' or 'disqualified' (unfinalized 'In Progress' / 'Pending' are not counted)
+          const finalized = Array.from(uniqueMap.values()).filter((l: any) => {
+            const s = String(l.qa_status || "").toLowerCase();
+            return s === "qualified" || s === "disqualified";
+          });
+
+          perAnalystFinalized.set(id, finalized);
+        }
+
+        // Step 2: Cross-analyst de-duplication across the QA floor:
+        // When multiple QA analysts review the same lead, credit initial finalization to primary reviewer
+        const allFinalizedEvents: {
+          analystId: number;
+          leadId: string | number;
+          status: string;
+          time: string;
+          lead: any;
+        }[] = [];
+
+        perAnalystFinalized.forEach((leads, analystId) => {
+          leads.forEach((l: any) => {
+            const leadKey = l.lead_id || l.lead_code || l.id;
+            allFinalizedEvents.push({
+              analystId,
+              leadId: leadKey,
+              status: String(l.qa_status || "").toLowerCase(),
+              time: l.reviewed_at || l.created_at || "",
+              lead: l,
+            });
+          });
+        });
+
+        allFinalizedEvents.sort((x, y) => x.time.localeCompare(y.time));
+
+        const seenFloorLeads = new Set<string | number>();
+        const creditedLeadsByAnalyst = new Map<number, any[]>();
+
+        for (const ev of allFinalizedEvents) {
+          if (!seenFloorLeads.has(ev.leadId)) {
+            seenFloorLeads.add(ev.leadId);
+            if (!creditedLeadsByAnalyst.has(ev.analystId)) {
+              creditedLeadsByAnalyst.set(ev.analystId, []);
+            }
+            creditedLeadsByAnalyst.get(ev.analystId)!.push(ev.lead);
+          }
+        }
+
+        for (const a of qaAnalystsList) {
+          const id = Number(a.user_id || a.qa_id || a.id);
+          if (!id || id === 151 || id === 99) continue;
+          const uniqueList = creditedLeadsByAnalyst.get(id) || [];
           const qual = uniqueList.filter((l: any) => String(l.qa_status).toLowerCase() === "qualified").length;
           const disq = uniqueList.filter((l: any) => String(l.qa_status).toLowerCase() === "disqualified").length;
 
           qaMetricsMap.set(id, {
-            totalAudited: uniqueMap.size,
+            totalAudited: qual + disq,
             qualified: qual,
             disqualified: disq,
           });
+          qaLeadsByAnalyst.set(id, uniqueList);
         }
       }
 
@@ -756,8 +845,32 @@ export async function getCrmSlide3(
       // and attach verified shift audit counts
       const mappedHeatmap = targetHeatmap.map((analyst) => {
         const stats = qaMetricsMap.get(Number(analyst.user_id));
-        const totalAudited = stats ? stats.totalAudited : (analyst.total_audited || 0);
-        const totalQualified = stats ? stats.qualified : (analyst.total_qualified || 0);
+        const intervalAudited = (analyst.intervals || []).reduce(
+          (sum: number, inv: any) => sum + (inv.audited_count || 0),
+          0
+        );
+        const intervalQualified = (analyst.intervals || []).reduce(
+          (sum: number, inv: any) => sum + (inv.qualified_count || 0),
+          0
+        );
+
+        // Strict shift metrics calculation:
+        // Priority 1: stats from qa_audits filtered strictly by the shift window (12:00 UTC to 03:30 UTC next day)
+        // Priority 2: interval sum from slide3 intervals across the shift
+        // Priority 3: 0 (Never fall back to unwindowed calendar-day total analyst.total_audited from slide3.php)
+        let totalAudited = 0;
+        let totalQualified = 0;
+
+        if (stats) {
+          totalAudited = stats.totalAudited;
+          totalQualified = stats.qualified;
+        } else if (intervalAudited > 0 || intervalQualified > 0) {
+          totalAudited = intervalAudited;
+          totalQualified = intervalQualified;
+        } else {
+          totalAudited = 0;
+          totalQualified = 0;
+        }
 
         return {
           ...analyst,
@@ -778,37 +891,121 @@ export async function getCrmSlide3(
       const floorTotalDisqualified = Array.from(qaMetricsMap.values()).reduce((sum, v) => sum + v.disqualified, 0);
 
       // Extract today's floor audited metrics if slide1 campaigns was returned in payload
-      let todayAudited: number | undefined;
-      let todayQualified: number | undefined;
-      let todayDisqualified: number | undefined;
       let todayPendingQa: number | undefined;
 
       const rawSlide1 = (res.data as any)?.slide1;
       if (rawSlide1 && Array.isArray(rawSlide1.campaigns)) {
-        let q = 0, d = 0, p = 0;
+        let p = 0;
         for (const c of rawSlide1.campaigns) {
-          q += Number(c.qualified_leads || 0);
-          d += Number(c.disqualified_leads || 0);
           p += Number(c.pending_qa || 0);
         }
-        todayQualified = q;
-        todayDisqualified = d;
-        todayAudited = q + d;
         todayPendingQa = p;
       }
+
+      // Dynamic interval extension:
+      // Show up to 2:30 AM standard, and dynamically extend if work continues past 2:30 AM up to 9:00 AM IST!
+      const fullShiftIntervals = generateShiftIntervals(interval, DEFAULT_SHIFT_CONFIG, 930);
+      const standardSlotCount = Math.floor(540 / interval); // 54 slots for 10-min
+      let maxActiveSlotIdx = standardSlotCount - 1;
+
+      // Check if any analyst had activity in extended slots (beyond 02:30 AM)
+      mappedHeatmap.forEach((analyst) => {
+        analyst.intervals.forEach((inv, idx) => {
+          if (idx >= standardSlotCount && ((inv.qualified_count || 0) > 0 || (inv.audited_count || 0) > 0)) {
+            if (idx > maxActiveSlotIdx) maxActiveSlotIdx = idx;
+          }
+        });
+      });
+
+      // Check if any audited lead occurred past slot 53
+      if (Array.isArray(qaAnalystsList) && qaAnalystsList.length > 0) {
+        qaAnalystsList.forEach((a: any) => {
+          (a.audited_leads || []).forEach((l: any) => {
+            const t = l.reviewed_at || l.created_at || "";
+            if (t) {
+              const tMs = new Date(t.includes("T") ? t : t.replace(" ", "T") + "Z").getTime();
+              if (!isNaN(tMs) && tMs >= startUtcMs && tMs <= endUtcMs) {
+                const offsetMins = Math.floor((tMs - startUtcMs) / 60000);
+                const sIdx = Math.floor(offsetMins / interval);
+                if (sIdx > maxActiveSlotIdx) {
+                  maxActiveSlotIdx = Math.min(fullShiftIntervals.length - 1, sIdx);
+                }
+              }
+            }
+          });
+        });
+      }
+
+      // If current time is during active shift past 02:30 AM IST, extend to current live interval
+      const shiftState = getCurrentShiftState();
+      if (shiftState.businessDate === effectiveDate && shiftState.isShiftActive) {
+        const currentSlotIdx = Math.floor(shiftState.minutesIntoShift / interval);
+        if (currentSlotIdx > maxActiveSlotIdx) {
+          maxActiveSlotIdx = Math.min(fullShiftIntervals.length - 1, currentSlotIdx);
+        }
+      }
+
+      const totalDisplaySlots = maxActiveSlotIdx + 1;
+      const displayIntervals = fullShiftIntervals.slice(0, totalDisplaySlots);
+
+      const finalHeatmap = mappedHeatmap.map((analyst) => {
+        const analystIntervals = [...analyst.intervals];
+        while (analystIntervals.length < totalDisplaySlots) {
+          const sIdx = analystIntervals.length;
+          const ref = displayIntervals[sIdx];
+          analystIntervals.push({
+            slot_index: sIdx,
+            time_label: ref ? ref.label : `Slot ${sIdx}`,
+            qualified_count: 0,
+            audited_count: 0,
+          });
+        }
+
+        // Synchronize interval cell metrics directly from verified credited shift leads for this analyst
+        const analystShiftLeads = qaLeadsByAnalyst.get(Number(analyst.user_id));
+        if (analystShiftLeads && analystShiftLeads.length > 0) {
+          // Reset interval counts so interval totals reconcile 1:1 with verified credited shift totals
+          analystIntervals.forEach((inv) => {
+            inv.audited_count = 0;
+            inv.qualified_count = 0;
+          });
+
+          analystShiftLeads.forEach((l: any) => {
+            const t = l.reviewed_at || l.created_at || "";
+            if (t) {
+              const tMs = new Date(t.includes("T") ? t : t.replace(" ", "T") + "Z").getTime();
+              if (!isNaN(tMs) && tMs >= startUtcMs && tMs <= endUtcMs) {
+                const offsetMins = Math.floor((tMs - startUtcMs) / 60000);
+                const sIdx = Math.floor(offsetMins / interval);
+                if (sIdx >= 0 && sIdx < analystIntervals.length) {
+                  analystIntervals[sIdx].audited_count = (analystIntervals[sIdx].audited_count || 0) + 1;
+                  if (String(l.qa_status).toLowerCase() === "qualified") {
+                    analystIntervals[sIdx].qualified_count = (analystIntervals[sIdx].qualified_count || 0) + 1;
+                  }
+                }
+              }
+            }
+          });
+        }
+
+        return {
+          ...analyst,
+          intervals: analystIntervals.slice(0, totalDisplaySlots),
+        };
+      });
 
       return {
         success: true,
         data: {
           ...parsed.data.slide3,
           shift_start: shiftStart,
-          shift_end: shiftEnd,
-          total_intervals: mappedHeatmap[0]?.intervals.length || parsed.data.slide3.total_intervals,
-          total_qa_analysts: mappedHeatmap.length,
-          qa_heatmap: mappedHeatmap,
-          today_audited: floorTotalAudited > 0 ? floorTotalAudited : todayAudited,
-          today_qualified: floorTotalQualified > 0 ? floorTotalQualified : todayQualified,
-          today_disqualified: floorTotalDisqualified > 0 ? floorTotalDisqualified : todayDisqualified,
+          shift_end: displayIntervals[displayIntervals.length - 1]?.end || effectiveShiftEnd,
+          total_intervals: displayIntervals.length,
+          total_qa_analysts: finalHeatmap.length,
+          qa_heatmap: finalHeatmap,
+          today_audited: floorTotalAudited,
+          today_qualified: floorTotalQualified,
+          today_disqualified: floorTotalDisqualified,
           today_pending_qa: todayPendingQa,
         },
         sourceUrl: res.effectiveUrl,
@@ -836,25 +1033,34 @@ export async function getCrmSlide3(
 
 /**
  * Slide 4: Agent Lead Generation Heatmap
- * Queries with UTC shift hours to capture entire shift, maps labels to IST, sorts top generators on top
+ * Queries with UTC shift hours to capture entire shift, maps labels to IST, sorts top generators on top.
+ * Supports shift continuation past 2:30 AM until morning refresh at 9:00 AM IST.
  */
 export async function getCrmSlide4(
   dateStr?: string,
   interval = 10,
   shiftStart = "17:30:00",
-  shiftEnd = "02:30:00"
+  shiftEnd = "09:00:00"
 ): Promise<CrmFetchResult<Slide4Data>> {
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();
   const effectiveDate = dateStr || getShiftBusinessDate();
+  const effectiveShiftEnd = shiftEnd || "09:00:00";
 
   // Convert IST shift hours to UTC bounds for CRM database query
   const utcShiftStart = convertIstToUtcTime(shiftStart);
-  const utcShiftEnd = convertIstToUtcTime(shiftEnd);
+  const utcShiftEnd = convertIstToUtcTime(effectiveShiftEnd);
 
   const configuredPath = config.endpoints?.slide4 || "slides/slide4.php";
+  const slide4Query = getStandardShiftQueryParams(effectiveDate, {
+    interval,
+    shift_start: utcShiftStart,
+    shift_end: utcShiftEnd,
+    date_from: `${effectiveDate} ${utcShiftStart}`,
+    date_to: `${addDays(effectiveDate, 1)} ${utcShiftEnd}`,
+  });
   let res = await fetchFromCrm<unknown>(
-    buildEndpointUrl(configuredPath, { date: effectiveDate, interval, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+    buildEndpointUrl(configuredPath, slide4Query)
   );
 
   if (!res.ok) {
@@ -862,13 +1068,13 @@ export async function getCrmSlide4(
       config.customEndpoints?.find((e) => e.id === "slide4")?.fallbackPath ||
       "slides_analytics.php?type=slide4";
     res = await fetchFromCrm<unknown>(
-      buildEndpointUrl(fallbackPath, { date: effectiveDate, interval, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+      buildEndpointUrl(fallbackPath, slide4Query)
     );
   }
 
   if (!res.ok) {
     res = await fetchFromCrm<unknown>(
-      buildEndpointUrl("slides_analytics.php?action=slide4", { date: effectiveDate, interval, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+      buildEndpointUrl("slides_analytics.php?action=slide4", slide4Query)
     );
   }
 
@@ -887,14 +1093,57 @@ export async function getCrmSlide4(
       // Sort heatmap agents by total generated count descending (highest lead generators on top)
       mappedHeatmap.sort((a, b) => (b.total_generated || 0) - (a.total_generated || 0));
 
+      // Dynamic interval extension:
+      // Show up to 2:30 AM standard, and dynamically extend if work continues past 2:30 AM up to 9:00 AM IST!
+      const fullShiftIntervals = generateShiftIntervals(interval, DEFAULT_SHIFT_CONFIG, 930);
+      const standardSlotCount = Math.floor(540 / interval);
+      let maxActiveSlotIdx = standardSlotCount - 1;
+
+      mappedHeatmap.forEach((agent) => {
+        agent.intervals.forEach((inv, idx) => {
+          if (idx >= standardSlotCount && (inv.generated_count || 0) > 0) {
+            if (idx > maxActiveSlotIdx) maxActiveSlotIdx = idx;
+          }
+        });
+      });
+
+      // If current time is during active shift past 02:30 AM IST, extend to current live interval
+      const shiftState = getCurrentShiftState();
+      if (shiftState.businessDate === effectiveDate && shiftState.isShiftActive) {
+        const currentSlotIdx = Math.floor(shiftState.minutesIntoShift / interval);
+        if (currentSlotIdx > maxActiveSlotIdx) {
+          maxActiveSlotIdx = Math.min(fullShiftIntervals.length - 1, currentSlotIdx);
+        }
+      }
+
+      const totalDisplaySlots = maxActiveSlotIdx + 1;
+      const displayIntervals = fullShiftIntervals.slice(0, totalDisplaySlots);
+
+      const finalHeatmap = mappedHeatmap.map((agent) => {
+        const agentIntervals = [...agent.intervals];
+        while (agentIntervals.length < totalDisplaySlots) {
+          const sIdx = agentIntervals.length;
+          const ref = displayIntervals[sIdx];
+          agentIntervals.push({
+            slot_index: sIdx,
+            time_label: ref ? ref.label : `Slot ${sIdx}`,
+            generated_count: 0,
+          });
+        }
+        return {
+          ...agent,
+          intervals: agentIntervals.slice(0, totalDisplaySlots),
+        };
+      });
+
       return {
         success: true,
         data: {
           ...parsed.data.slide4,
           shift_start: shiftStart,
-          shift_end: shiftEnd,
-          total_intervals: mappedHeatmap[0]?.intervals.length || parsed.data.slide4.total_intervals,
-          agent_heatmap: mappedHeatmap,
+          shift_end: displayIntervals[displayIntervals.length - 1]?.end || effectiveShiftEnd,
+          total_intervals: displayIntervals.length,
+          agent_heatmap: finalHeatmap,
         },
         sourceUrl: res.effectiveUrl,
         timestamp,
@@ -921,24 +1170,32 @@ export async function getCrmSlide4(
 
 /**
  * Slide 5: Comparative Analytics
- * Queries with UTC shift hours to populate 9-hour timeline, maps slot labels to IST
+ * Queries with UTC shift hours to populate timeline, maps slot labels to IST.
+ * Supports shift continuation past 2:30 AM until morning refresh at 9:00 AM IST.
  */
 export async function getCrmSlide5(
   dateStr?: string,
   shiftStart = "17:30:00",
-  shiftEnd = "02:30:00"
+  shiftEnd = "09:00:00"
 ): Promise<CrmFetchResult<Slide5Data>> {
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();
   const effectiveDate = dateStr || getShiftBusinessDate();
+  const effectiveShiftEnd = shiftEnd || "09:00:00";
 
   // Convert IST shift hours to UTC bounds for CRM database query
   const utcShiftStart = convertIstToUtcTime(shiftStart);
-  const utcShiftEnd = convertIstToUtcTime(shiftEnd);
+  const utcShiftEnd = convertIstToUtcTime(effectiveShiftEnd);
 
   const configuredPath = config.endpoints?.slide5 || "slides/slide5.php";
+  const slide5Query = getStandardShiftQueryParams(effectiveDate, {
+    shift_start: utcShiftStart,
+    shift_end: utcShiftEnd,
+    date_from: `${effectiveDate} ${utcShiftStart}`,
+    date_to: `${addDays(effectiveDate, 1)} ${utcShiftEnd}`,
+  });
   let res = await fetchFromCrm<unknown>(
-    buildEndpointUrl(configuredPath, { date: effectiveDate, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+    buildEndpointUrl(configuredPath, slide5Query)
   );
 
   if (!res.ok) {
@@ -946,13 +1203,13 @@ export async function getCrmSlide5(
       config.customEndpoints?.find((e) => e.id === "slide5")?.fallbackPath ||
       "slides_analytics.php?type=slide5";
     res = await fetchFromCrm<unknown>(
-      buildEndpointUrl(fallbackPath, { date: effectiveDate, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+      buildEndpointUrl(fallbackPath, slide5Query)
     );
   }
 
   if (!res.ok) {
     res = await fetchFromCrm<unknown>(
-      buildEndpointUrl("slides_analytics.php?action=slide5", { date: effectiveDate, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+      buildEndpointUrl("slides_analytics.php?action=slide5", slide5Query)
     );
   }
 
@@ -1003,35 +1260,43 @@ export async function getCrmSlide5(
 /**
  * Slide 6: Form Submissions Productivity Heatmap
  * Connects to slides/forms.php, slides_analytics.php?action=forms, or slide5 fallback.
- * Generates exact intervals across the 9-hour shift and normalizes submitter heatmap data.
+ * Generates exact intervals across the shift window and supports shift continuation past 2:30 AM up to 9:00 AM IST.
  */
 export async function getCrmSlide6(
   dateStr?: string,
   interval = 10,
   shiftStart = "17:30:00",
-  shiftEnd = "02:30:00"
+  shiftEnd = "09:00:00"
 ): Promise<CrmFetchResult<Slide6Data>> {
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();
   const effectiveDate = dateStr || getShiftBusinessDate();
+  const effectiveShiftEnd = shiftEnd || "09:00:00";
 
   const utcShiftStart = convertIstToUtcTime(shiftStart);
-  const utcShiftEnd = convertIstToUtcTime(shiftEnd);
+  const utcShiftEnd = convertIstToUtcTime(effectiveShiftEnd);
 
   const configuredPath = config.endpoints?.slide6 || "slides/forms.php";
+  const slide6Query = getStandardShiftQueryParams(effectiveDate, {
+    interval,
+    shift_start: utcShiftStart,
+    shift_end: utcShiftEnd,
+    date_from: `${effectiveDate} ${utcShiftStart}`,
+    date_to: `${addDays(effectiveDate, 1)} ${utcShiftEnd}`,
+  });
   let res = await fetchFromCrm<unknown>(
-    buildEndpointUrl(configuredPath, { date: effectiveDate, interval, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+    buildEndpointUrl(configuredPath, slide6Query)
   );
 
   if (!res.ok) {
     res = await fetchFromCrm<unknown>(
-      buildEndpointUrl("slides_analytics.php?action=forms", { date: effectiveDate, interval, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+      buildEndpointUrl("slides_analytics.php?action=forms", slide6Query)
     );
   }
 
   if (!res.ok) {
     res = await fetchFromCrm<unknown>(
-      buildEndpointUrl("slides_analytics.php?action=form_submissions", { date: effectiveDate, interval, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+      buildEndpointUrl("slides_analytics.php?action=form_submissions", slide6Query)
     );
   }
 
@@ -1039,7 +1304,7 @@ export async function getCrmSlide6(
     // Fallback to Slide 5 which contains form_submissions and comparison_timeline
     const slide5Path = config.endpoints?.slide5 || "slides/slide5.php";
     res = await fetchFromCrm<unknown>(
-      buildEndpointUrl(slide5Path, { date: effectiveDate, shift_start: utcShiftStart, shift_end: utcShiftEnd })
+      buildEndpointUrl(slide5Path, slide6Query)
     );
   }
 
@@ -1047,9 +1312,9 @@ export async function getCrmSlide6(
     const rawData = res.data as any;
     const formSubmissions = rawData.form_submissions || rawData.slide6 || rawData.forms || rawData;
 
-    // Generate intervals for this interval granularity
-    const shiftIntervals = generateShiftIntervals(interval);
-    const slotCount = shiftIntervals.length;
+    // Full shift intervals up to 9:00 AM IST morning refresh (930 minutes)
+    const fullShiftIntervals = generateShiftIntervals(interval, DEFAULT_SHIFT_CONFIG, 930);
+    const slotCount = fullShiftIntervals.length;
 
     // Extract submitters list
     const rawSubmitters =
@@ -1133,11 +1398,12 @@ export async function getCrmSlide6(
             const hour = istDate.getUTCHours();
             const min = istDate.getUTCMinutes();
             let leadMins = hour * 60 + min;
-            if (leadMins < (shiftStartMins > 720 ? shiftStartMins - 720 : 360)) {
+            // Any submission from 00:00 to 09:00 AM IST morning refresh belongs to the overnight shift:
+            if (leadMins < 9 * 60) {
               leadMins += 1440;
             }
             const offsetMins = leadMins - shiftStartMins;
-            if (offsetMins >= 0 && offsetMins < 540) {
+            if (offsetMins >= 0 && offsetMins < 930) {
               const slotIdx = Math.floor(offsetMins / interval);
               if (slotIdx >= 0 && slotIdx < slotCount) {
                 slotCounts[slotIdx] += 1;
@@ -1146,7 +1412,7 @@ export async function getCrmSlide6(
           }
         });
 
-        intervals = shiftIntervals.map((slot, idx) => ({
+        intervals = fullShiftIntervals.map((slot, idx) => ({
           slot_index: idx,
           time_label: slot.label,
           submitted_count: slotCounts[idx] || 0,
@@ -1173,6 +1439,47 @@ export async function getCrmSlide6(
     // Sort submitters descending by total submitted
     submitterHeatmap.sort((a, b) => b.total_submitted - a.total_submitted);
 
+    // Dynamic interval extension:
+    // Show 2:30 AM standard (slot 53), and dynamically extend if work continues past 2:30 AM up to 9:00 AM IST!
+    const standardSlotCount = Math.floor(540 / interval);
+    let maxActiveSlotIdx = standardSlotCount - 1;
+
+    submitterHeatmap.forEach((sub) => {
+      sub.intervals.forEach((inv, idx) => {
+        if (idx >= standardSlotCount && (inv.submitted_count || 0) > 0) {
+          if (idx > maxActiveSlotIdx) maxActiveSlotIdx = idx;
+        }
+      });
+    });
+
+    const shiftState = getCurrentShiftState();
+    if (shiftState.businessDate === effectiveDate && shiftState.isShiftActive) {
+      const currentSlotIdx = Math.floor(shiftState.minutesIntoShift / interval);
+      if (currentSlotIdx > maxActiveSlotIdx) {
+        maxActiveSlotIdx = Math.min(fullShiftIntervals.length - 1, currentSlotIdx);
+      }
+    }
+
+    const totalDisplaySlots = maxActiveSlotIdx + 1;
+    const displayIntervals = fullShiftIntervals.slice(0, totalDisplaySlots);
+
+    const normalizedSubmitterHeatmap = submitterHeatmap.map((sub) => {
+      const subIntervals = [...sub.intervals];
+      while (subIntervals.length < totalDisplaySlots) {
+        const sIdx = subIntervals.length;
+        const ref = displayIntervals[sIdx];
+        subIntervals.push({
+          slot_index: sIdx,
+          time_label: ref ? ref.label : `Slot ${sIdx}`,
+          submitted_count: 0,
+        });
+      }
+      return {
+        ...sub,
+        intervals: subIntervals.slice(0, totalDisplaySlots),
+      };
+    });
+
     // Timeline summary from comparison_timeline if available
     let timelineSummary: any[] | undefined = undefined;
     if (Array.isArray(rawData.slide5?.comparison_timeline)) {
@@ -1190,11 +1497,11 @@ export async function getCrmSlide6(
         date: effectiveDate,
         interval_minutes: interval,
         shift_start: shiftStart,
-        shift_end: shiftEnd,
-        total_intervals: slotCount,
+        shift_end: displayIntervals[displayIntervals.length - 1]?.end || effectiveShiftEnd,
+        total_intervals: displayIntervals.length,
         total_submitters: totalSubmitters,
-        total_forms_submitted: totalFormsSubmitted || submitterHeatmap.reduce((acc, s) => acc + s.total_submitted, 0),
-        submitter_heatmap: submitterHeatmap,
+        total_forms_submitted: totalFormsSubmitted || normalizedSubmitterHeatmap.reduce((acc, s) => acc + s.total_submitted, 0),
+        submitter_heatmap: normalizedSubmitterHeatmap,
         recent_submissions: recentSubmissions,
         timeline_summary: timelineSummary,
         query_date: effectiveDate,
@@ -1238,10 +1545,7 @@ export async function getCrmCampaignTargets(
   const targetDate = dateStr || getShiftBusinessDate();
 
   const configuredPath = config.endpoints?.campaign_targets || "campaign_daily_targets.php";
-  const queryParams: Record<string, string> = { date: targetDate };
-  if (status) {
-    queryParams.status = status;
-  }
+  const queryParams = getStandardShiftQueryParams(targetDate, status ? { status } : {});
   const res = await fetchFromCrm<unknown>(buildEndpointUrl(configuredPath, queryParams));
 
   if (res.ok && res.data) {
@@ -1340,6 +1644,8 @@ export async function getCrmRecognition(
   // 1. Dedicated or configured endpoint for celebratory events (birthdays, anniversaries, avatars)
   const configuredPath = config.endpoints?.recognition || "slides/recognition.php";
 
+  const recognitionQuery = getStandardShiftQueryParams(effectiveDate);
+
   // Concurrently fetch:
   // - CRM Settled Incentives (daily.php) -> Authoritative settlement records if shift has ended
   // - CRM Incentive Preview (preview.php) -> Authoritative live provisional calculations for ongoing shift
@@ -1348,8 +1654,8 @@ export async function getCrmRecognition(
   const [dailySettledRes, incentivePreviewRes, recognitionRes, slide2Res] = await Promise.all([
     fetchDailySettled({ date: effectiveDate }).catch(() => null),
     fetchIncentivePreview(effectiveDate).catch(() => null),
-    fetchFromCrm<Record<string, any>>(buildEndpointUrl(configuredPath, { date: effectiveDate })).catch(() => ({ ok: false } as any)),
-    fetchFromCrm<Record<string, any>>(buildEndpointUrl("slides/slide2.php", { date: effectiveDate, page: 1, limit: 100 })).catch(() => null),
+    fetchFromCrm<Record<string, any>>(buildEndpointUrl(configuredPath, recognitionQuery)).catch(() => ({ ok: false } as any)),
+    fetchFromCrm<Record<string, any>>(buildEndpointUrl("slides/slide2.php", getStandardShiftQueryParams(effectiveDate, { page: 1, limit: 100 }))).catch(() => null),
   ]);
 
   let res = recognitionRes;
@@ -1358,10 +1664,10 @@ export async function getCrmRecognition(
     const fallbackPath =
       config.customEndpoints?.find((e) => e.id === "recognition")?.fallbackPath ||
       "slides_analytics.php?type=recognition";
-    res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl(fallbackPath, { date: effectiveDate })).catch(() => ({ ok: false } as any));
+    res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl(fallbackPath, recognitionQuery)).catch(() => ({ ok: false } as any));
   }
   if (!res.ok) {
-    res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl("slides/slide1.php", { date: effectiveDate })).catch(() => ({ ok: false } as any));
+    res = await fetchFromCrm<Record<string, any>>(buildEndpointUrl("slides/slide1.php", recognitionQuery)).catch(() => ({ ok: false } as any));
   }
 
   const raw = res.ok && res.data ? res.data : {};
@@ -1771,9 +2077,11 @@ export async function getCrmQaAudits(
   const timestamp = new Date().toISOString();
   const effectiveDate = params?.date || getShiftBusinessDate();
 
-  // Strict operational shift bounds: 17:30 IST (12:00:00 UTC) -> 02:30 IST (21:00:00 UTC)
+  // Operational shift bounds: 17:30 IST (12:00:00 UTC) -> next day 09:00 IST (03:30:00 UTC)
+  // Ensures all work continuing overnight until 9:00 AM IST morning refresh is captured from CRM
   const shiftStartUtc = "12:00:00";
-  const shiftEndUtc = "21:00:00";
+  const shiftEndUtc = "03:30:00";
+  const nextDate = addDays(effectiveDate, 1);
 
   const queryParams: Record<string, string | number | undefined> = {
     date: effectiveDate,
@@ -1781,7 +2089,7 @@ export async function getCrmQaAudits(
     shift_start: shiftStartUtc,
     shift_end: shiftEndUtc,
     date_from: params?.date_from || `${effectiveDate} ${shiftStartUtc}`,
-    date_to: params?.date_to || `${effectiveDate} ${shiftEndUtc}`,
+    date_to: params?.date_to || `${nextDate} ${shiftEndUtc}`,
   };
 
   if (params?.qa_id) queryParams.qa_id = params.qa_id;

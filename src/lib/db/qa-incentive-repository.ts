@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { query, execute, serializeDbData } from "@/lib/db";
-import { QaIncentivePlan, QaIncentiveTier } from "@/types/qa-incentives";
+import { QaIncentivePlan, QaIncentiveTier, QaAdditionalRule } from "@/types/qa-incentives";
 import { enrichPlanTiers } from "@/lib/qa-incentives/calculator";
 
 const BACKUP_FILE_PATH = path.join(process.cwd(), "data", "qa-incentive-plans.json");
@@ -43,8 +43,21 @@ export const DEFAULT_QA_PLANS: QaIncentivePlan[] = [
         total_cumulative_reward: 850,
       },
     ],
+    additional_rules: [
+      {
+        id: "ar-rectified-1",
+        rule_name: "Rectified Leads Daily Bonus",
+        status_name: "Rectified",
+        rule_type: "PER_LEAD",
+        min_count: 1,
+        reward_amount: 25,
+        point_factor: 1,
+        is_active: true,
+        description: "₹25 per rectified/rework-resolved lead for the day",
+      },
+    ],
     is_active: true,
-    notes: "Default daily QA tier rule: 50 leads audited = ₹500, +10 leads @ ₹15 = ₹650, +10 leads @ ₹20 = ₹850.",
+    notes: "Default daily QA tier rule: 50 leads audited = ₹500, +10 leads @ ₹15 = ₹650, +10 leads @ ₹20 = ₹850, plus ₹25/lead for Rectified status.",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -79,6 +92,19 @@ export const DEFAULT_QA_PLANS: QaIncentivePlan[] = [
         cumulative_leads: 1400,
         tier_reward: 5000,
         total_cumulative_reward: 19000,
+      },
+    ],
+    additional_rules: [
+      {
+        id: "ar-rectified-monthly-1",
+        rule_name: "Monthly Rectified Leads Accelerator",
+        status_name: "Rectified",
+        rule_type: "PER_LEAD",
+        min_count: 10,
+        reward_amount: 30,
+        point_factor: 1,
+        is_active: true,
+        description: "₹30 per rectified lead after qualifying 10+ monthly rework resolutions",
       },
     ],
     is_active: true,
@@ -135,6 +161,7 @@ async function ensureQaTable(): Promise<boolean> {
         base_target_leads INT NOT NULL DEFAULT 50,
         base_incentive_amount DECIMAL(12, 2) NOT NULL DEFAULT 500.00,
         tiers_json JSON NOT NULL,
+        additional_rules_json JSON NULL,
         is_active TINYINT(1) NOT NULL DEFAULT 1,
         notes TEXT NULL,
         created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -142,6 +169,14 @@ async function ensureQaTable(): Promise<boolean> {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `;
     await execute(createSql);
+
+    // Defensive alter to add additional_rules_json if missing in existing installations
+    try {
+      await execute(`ALTER TABLE qa_incentive_plans ADD COLUMN additional_rules_json JSON NULL`);
+    } catch {
+      // Column likely already exists
+    }
+
     tableEnsured = true;
     return true;
   } catch (err) {
@@ -174,6 +209,17 @@ export async function getQaIncentivePlans(filter?: {
             tiers = [];
           }
 
+          let additionalRules: QaAdditionalRule[] = [];
+          try {
+            if (r.additional_rules_json) {
+              additionalRules = typeof r.additional_rules_json === "string"
+                ? JSON.parse(r.additional_rules_json)
+                : r.additional_rules_json;
+            }
+          } catch {
+            additionalRules = [];
+          }
+
           const baseLeads = Number(r.base_target_leads) || 50;
           const baseAmount = Number(r.base_incentive_amount) || 500;
 
@@ -189,6 +235,7 @@ export async function getQaIncentivePlans(filter?: {
             base_target_leads: baseLeads,
             base_incentive_amount: baseAmount,
             tiers: enrichPlanTiers(baseLeads, baseAmount, tiers),
+            additional_rules: Array.isArray(additionalRules) ? additionalRules : [],
             is_active: Boolean(r.is_active),
             notes: r.notes || "",
             created_at: String(r.created_at),
@@ -218,6 +265,7 @@ export async function createQaIncentivePlan(
 ): Promise<QaIncentivePlan> {
   const enrichedTiers = enrichPlanTiers(input.base_target_leads, input.base_incentive_amount, input.tiers);
   const jsonTiers = JSON.stringify(enrichedTiers);
+  const jsonAdditionalRules = JSON.stringify(input.additional_rules || []);
 
   const dbOk = await ensureQaTable();
   if (dbOk) {
@@ -225,9 +273,9 @@ export async function createQaIncentivePlan(
       const insertSql = `
         INSERT INTO qa_incentive_plans (
           plan_name, qa_agent_id, qa_agent_name, client_code, campaign_id, campaign_name,
-          frequency, base_target_leads, base_incentive_amount, tiers_json, is_active, notes,
+          frequency, base_target_leads, base_incentive_amount, tiers_json, additional_rules_json, is_active, notes,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), NOW(6))
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), NOW(6))
       `;
 
       const res = await execute(insertSql, [
@@ -241,6 +289,7 @@ export async function createQaIncentivePlan(
         Number(input.base_target_leads) || 50,
         Number(input.base_incentive_amount) || 500,
         jsonTiers,
+        jsonAdditionalRules,
         input.is_active !== false ? 1 : 0,
         input.notes || null,
       ]);
@@ -250,6 +299,7 @@ export async function createQaIncentivePlan(
         id: newId,
         ...input,
         tiers: enrichedTiers,
+        additional_rules: input.additional_rules || [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -268,6 +318,7 @@ export async function createQaIncentivePlan(
     id: newId,
     ...input,
     tiers: enrichedTiers,
+    additional_rules: input.additional_rules || [],
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -299,6 +350,7 @@ export async function updateQaIncentivePlan(
 
   merged.tiers = enrichPlanTiers(merged.base_target_leads, merged.base_incentive_amount, merged.tiers || []);
   const jsonTiers = JSON.stringify(merged.tiers);
+  const jsonAdditionalRules = JSON.stringify(merged.additional_rules || []);
 
   const dbOk = await ensureQaTable();
   if (dbOk && /^\d+$/.test(id)) {
@@ -315,6 +367,7 @@ export async function updateQaIncentivePlan(
           base_target_leads = ?,
           base_incentive_amount = ?,
           tiers_json = ?,
+          additional_rules_json = ?,
           is_active = ?,
           notes = ?,
           updated_at = NOW(6)
@@ -332,6 +385,7 @@ export async function updateQaIncentivePlan(
         Number(merged.base_target_leads),
         Number(merged.base_incentive_amount),
         jsonTiers,
+        jsonAdditionalRules,
         merged.is_active ? 1 : 0,
         merged.notes || null,
         Number(id),

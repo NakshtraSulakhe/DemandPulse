@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getQaIncentivePlans, createQaIncentivePlan } from "@/lib/db/qa-incentive-repository";
+import {
+  getQaIncentivePlans,
+  createQaIncentivePlan,
+  updateQaIncentivePlan,
+  deleteQaIncentivePlan,
+} from "@/lib/db/qa-incentive-repository";
 import { getCrmQaPlans, createCrmQaPlan } from "@/lib/crm-api";
 import { verifyAdminSession } from "@/lib/auth";
 import { z } from "zod";
@@ -14,6 +19,18 @@ const TierSchema = z.object({
   rate_per_lead: z.number().min(0),
 });
 
+const AdditionalRuleSchema = z.object({
+  id: z.string().optional(),
+  rule_name: z.string().min(1),
+  status_name: z.string().default("Rectified"),
+  rule_type: z.enum(["PER_LEAD", "FLAT_BONUS", "POINTS_PER_LEAD"]).default("PER_LEAD"),
+  min_count: z.number().min(0).default(1),
+  reward_amount: z.number().min(0).default(0),
+  point_factor: z.number().optional().default(1),
+  is_active: z.boolean().default(true),
+  description: z.string().optional(),
+});
+
 const CreatePlanSchema = z.object({
   plan_name: z.string().min(2).max(150),
   qa_agent_id: z.number().nullable().optional(),
@@ -22,10 +39,30 @@ const CreatePlanSchema = z.object({
   campaign_id: z.number().nullable().optional(),
   campaign_name: z.string().default("All Campaigns"),
   frequency: z.enum(["DAILY", "MONTHLY"]).default("DAILY"),
-  base_target_leads: z.number().min(1),
+  base_target_leads: z.number().min(0.1),
+  base_target_points: z.number().min(0.1).optional(),
   base_incentive_amount: z.number().min(0),
   tiers: z.array(TierSchema).default([]),
+  additional_rules: z.array(AdditionalRuleSchema).optional().default([]),
   is_active: z.boolean().default(true),
+  notes: z.string().optional(),
+});
+
+const UpdatePlanSchema = z.object({
+  id: z.string().min(1),
+  plan_name: z.string().min(2).max(150).optional(),
+  qa_agent_id: z.number().nullable().optional(),
+  qa_agent_name: z.string().optional(),
+  client_code: z.string().optional(),
+  campaign_id: z.number().nullable().optional(),
+  campaign_name: z.string().optional(),
+  frequency: z.enum(["DAILY", "MONTHLY"]).optional(),
+  base_target_leads: z.number().min(0.1).optional(),
+  base_target_points: z.number().min(0.1).optional(),
+  base_incentive_amount: z.number().min(0).optional(),
+  tiers: z.array(TierSchema).optional(),
+  additional_rules: z.array(AdditionalRuleSchema).optional(),
+  is_active: z.boolean().optional(),
   notes: z.string().optional(),
 });
 
@@ -158,6 +195,76 @@ export async function POST(req: NextRequest) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
       { success: false, error: `Failed to create plan: ${errorMsg}` },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PUT /api/qa-incentives/plans
+ */
+export async function PUT(req: NextRequest) {
+  const auth = await verifyAdminSession(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ success: false, error: auth.error || "Unauthorized" }, { status: 403 });
+  }
+
+  try {
+    const body = await req.json();
+    const validated = UpdatePlanSchema.parse(body);
+
+    const updated = await updateQaIncentivePlan(validated.id, validated);
+
+    return NextResponse.json({
+      success: true,
+      message: "QA incentive plan updated successfully",
+      data: updated,
+    });
+  } catch (err: unknown) {
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Validation failed",
+          details: err.errors.map((e) => `${e.path.join(".")}: ${e.message}`),
+        },
+        { status: 400 }
+      );
+    }
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { success: false, error: `Failed to update plan: ${errorMsg}` },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/qa-incentives/plans
+ */
+export async function DELETE(req: NextRequest) {
+  const auth = await verifyAdminSession(req);
+  if (!auth.authorized) {
+    return NextResponse.json({ success: false, error: auth.error || "Unauthorized" }, { status: 403 });
+  }
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ success: false, error: "Missing plan id" }, { status: 400 });
+    }
+
+    await deleteQaIncentivePlan(id);
+
+    return NextResponse.json({
+      success: true,
+      message: "QA incentive plan deleted successfully",
+    });
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { success: false, error: `Failed to delete plan: ${errorMsg}` },
       { status: 500 }
     );
   }

@@ -40,6 +40,7 @@ const OPERATIONS_ALLOWED_ROUTES = [
   "/admin/target-history",
   "/admin/shifts",
   "/admin/presentation-settings",
+  "/employee/productivity",
 ];
 
 // Admin full navigation
@@ -47,6 +48,7 @@ const ADMIN_NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/incentives", label: "Incentive Hub (Agents & QA)", icon: Coins },
   { href: "/admin/incentives/qa-plans", label: "QA Incentive Plans", icon: Award },
+  { href: "/employee/productivity", label: "Employee Productivity Portal", icon: UserCheck },
   { href: "/admin/shifts", label: "US Shift Management", icon: Clock },
   { href: "/admin/campaign-targets", label: "Campaign Targets", icon: Target },
   { href: "/admin/target-history", label: "Target History", icon: History },

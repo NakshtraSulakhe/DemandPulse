@@ -241,7 +241,7 @@ export async function GET(
       case "slide3": {
         const interval = parseInt(searchParams.get("interval") || "10", 10);
         const shiftStart = searchParams.get("shift_start") || "17:30:00";
-        const shiftEnd = searchParams.get("shift_end") || "02:30:00";
+        const shiftEnd = searchParams.get("shift_end") || "09:00:00";
 
         if (isHistoricalDate && !forceLive) {
           const dbResult = await getDbSlide3(targetDate, interval);
@@ -322,7 +322,7 @@ export async function GET(
       case "slide4": {
         const interval = parseInt(searchParams.get("interval") || "10", 10);
         const shiftStart = searchParams.get("shift_start") || "17:30:00";
-        const shiftEnd = searchParams.get("shift_end") || "02:30:00";
+        const shiftEnd = searchParams.get("shift_end") || "09:00:00";
 
         if (isHistoricalDate && !forceLive) {
           const dbResult = await getDbSlide4(targetDate, interval);
@@ -406,7 +406,7 @@ export async function GET(
       case "form_submissions": {
         const interval = parseInt(searchParams.get("interval") || "10", 10);
         const shiftStart = searchParams.get("shift_start") || "17:30:00";
-        const shiftEnd = searchParams.get("shift_end") || "02:30:00";
+        const shiftEnd = searchParams.get("shift_end") || "09:00:00";
 
         const crmResult = await getCrmSlide6(targetDate, interval, shiftStart, shiftEnd);
 
@@ -424,7 +424,7 @@ export async function GET(
       case "comparison":
       case "comparative": {
         const shiftStart = searchParams.get("shift_start") || "17:30:00";
-        const shiftEnd = searchParams.get("shift_end") || "02:30:00";
+        const shiftEnd = searchParams.get("shift_end") || "09:00:00";
 
         if (isHistoricalDate && !forceLive) {
           const dbResult = await getDbSlide5(targetDate);

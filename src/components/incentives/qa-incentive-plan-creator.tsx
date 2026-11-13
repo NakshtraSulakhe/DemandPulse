@@ -27,6 +27,8 @@ import {
   CampaignMeta,
   TargetFrequency,
   QaIncentivePlan,
+  QaAdditionalRule,
+  QaAdditionalRuleType,
 } from "@/types/qa-incentives";
 import { enrichPlanTiers, calculateQaIncentive } from "@/lib/qa-incentives/calculator";
 
@@ -47,7 +49,7 @@ export default function QaIncentivePlanCreator({
 
   // Form State
   const [planName, setPlanName] = useState(
-    initialPlan?.plan_name || "QA Lead Audit Incentive Plan (50 Base + Tier 1 & 2 Accelerators)"
+    initialPlan?.plan_name || "QA Campaign Activity Points Incentive Plan (50 Base Pts + Tier 1 & 2 Accelerators)"
   );
   const [selectedAgentId, setSelectedAgentId] = useState<string>(
     initialPlan?.qa_agent_id ? String(initialPlan.qa_agent_id) : "ALL"
@@ -93,13 +95,33 @@ export default function QaIncentivePlanCreator({
         ]
   );
 
+  // Additional Rules State (e.g. Rectified leads daily incentive)
+  const [additionalRules, setAdditionalRules] = useState<QaAdditionalRule[]>(
+    initialPlan?.additional_rules && initialPlan.additional_rules.length > 0
+      ? initialPlan.additional_rules
+      : [
+          {
+            id: "ar-rectified-1",
+            rule_name: "Rectified Leads Daily Bonus",
+            status_name: "Rectified",
+            rule_type: "PER_LEAD",
+            min_count: 1,
+            reward_amount: 25,
+            point_factor: 1,
+            is_active: true,
+            description: "₹25 per rectified lead for the day",
+          },
+        ]
+  );
+
   // Notes
   const [notes, setNotes] = useState(
     initialPlan?.notes || "Configured tier plan for QA lead audits with dynamic slab accelerators."
   );
 
-  // Simulator test input
+  // Simulator test inputs
   const [simulatedLeads, setSimulatedLeads] = useState<number>(65);
+  const [simulatedRectifiedLeads, setSimulatedRectifiedLeads] = useState<number>(3);
 
   // Submission feedback
   const [saving, setSaving] = useState(false);
@@ -179,6 +201,34 @@ export default function QaIncentivePlanCreator({
     setTiers(updated);
   };
 
+  // Handle adding an additional status rule (e.g. Rectified leads)
+  const handleAddAdditionalRule = () => {
+    const newRule: QaAdditionalRule = {
+      id: `ar-${Date.now()}`,
+      rule_name: "Rectified Leads Incentive",
+      status_name: "Rectified",
+      rule_type: "PER_LEAD",
+      min_count: 1,
+      reward_amount: 25,
+      point_factor: 1,
+      is_active: true,
+      description: "Additional bonus for audited rectified leads",
+    };
+    setAdditionalRules([...additionalRules, newRule]);
+  };
+
+  // Handle removing an additional status rule
+  const handleRemoveAdditionalRule = (idx: number) => {
+    setAdditionalRules(additionalRules.filter((_, i) => i !== idx));
+  };
+
+  // Handle additional rule value edit
+  const handleAdditionalRuleChange = (idx: number, field: keyof QaAdditionalRule, val: any) => {
+    const updated = [...additionalRules];
+    updated[idx] = { ...updated[idx], [field]: val };
+    setAdditionalRules(updated);
+  };
+
   // Live enriched tiers with running cumulative totals
   const enrichedTiers = useMemo(() => {
     return enrichPlanTiers(baseTargetLeads, baseIncentiveAmount, tiers);
@@ -204,6 +254,7 @@ export default function QaIncentivePlanCreator({
       base_target_leads: baseTargetLeads,
       base_incentive_amount: baseIncentiveAmount,
       tiers: enrichedTiers,
+      additional_rules: additionalRules,
       is_active: true,
       notes,
     };
@@ -219,13 +270,23 @@ export default function QaIncentivePlanCreator({
     baseTargetLeads,
     baseIncentiveAmount,
     enrichedTiers,
+    additionalRules,
     notes,
   ]);
 
-  // Live calculation based on simulated leads
+  // Live calculation based on simulated leads & rectified leads
   const simulationResult = useMemo(() => {
-    return calculateQaIncentive(simulatedLeads, activePlanPreview);
-  }, [simulatedLeads, activePlanPreview]);
+    return calculateQaIncentive(simulatedLeads, activePlanPreview, undefined, {
+      actualPoints: simulatedLeads,
+      actualLeadsAudited: simulatedLeads,
+      rectifiedCount: simulatedRectifiedLeads,
+      statusCounts: {
+        Qualified: Math.round(simulatedLeads * 0.8),
+        Disqualified: Math.round(simulatedLeads * 0.2),
+        Rectified: simulatedRectifiedLeads,
+      },
+    });
+  }, [simulatedLeads, simulatedRectifiedLeads, activePlanPreview]);
 
   // Save Plan Handler
   const handleSavePlan = async (e: React.FormEvent) => {
@@ -260,6 +321,16 @@ export default function QaIncentivePlanCreator({
           tier_name: t.tier_name,
           extra_leads: Number(t.extra_leads),
           rate_per_lead: Number(t.rate_per_lead),
+        })),
+        additional_rules: additionalRules.map((r) => ({
+          rule_name: r.rule_name.trim(),
+          status_name: r.status_name.trim(),
+          rule_type: r.rule_type,
+          min_count: Number(r.min_count) || 0,
+          reward_amount: Number(r.reward_amount) || 0,
+          point_factor: Number(r.point_factor) || 1,
+          is_active: r.is_active !== false,
+          description: r.description || "",
         })),
         is_active: true,
         notes,
@@ -502,7 +573,7 @@ export default function QaIncentivePlanCreator({
           {/* Base Target Leads Audited */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Base Target of Leads Audited *
+              Base Target (Productivity Points) *
             </label>
             <div className="relative">
               <input
@@ -512,10 +583,10 @@ export default function QaIncentivePlanCreator({
                 onChange={(e) => setBaseTargetLeads(Number(e.target.value))}
                 className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-300 dark:border-white/10 text-xs font-mono font-bold text-slate-900 dark:text-white outline-none focus:border-cyan-500"
               />
-              <span className="absolute right-3 top-2 text-xs text-slate-400 font-medium">leads</span>
+              <span className="absolute right-3 top-2 text-xs text-slate-400 font-medium">pts</span>
             </div>
             <p className="text-[10px] text-slate-400 mt-1">
-              Minimum leads audited required to unlock the base incentive (e.g. 50 leads).
+              Minimum campaign productivity points required to unlock the base incentive (e.g. 50 pts).
             </p>
           </div>
 
@@ -536,7 +607,7 @@ export default function QaIncentivePlanCreator({
               />
             </div>
             <p className="text-[10px] text-slate-400 mt-1">
-              Awarded once the base target is reached (e.g. ₹500 at 50 leads).
+              Awarded once the base target points are reached (e.g. ₹500 at 50 pts).
             </p>
           </div>
         </div>
@@ -549,7 +620,7 @@ export default function QaIncentivePlanCreator({
             <span className="w-6 h-6 rounded-full bg-cyan-600 text-white flex items-center justify-center text-xs">
               3
             </span>
-            Tiers of the Incentive Configuration (Volume Accelerators)
+            Points-Based Tier Slabs Configuration (Volume Accelerators)
           </div>
 
           <button
@@ -563,7 +634,7 @@ export default function QaIncentivePlanCreator({
         </div>
 
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Define accelerators beyond the base target. For example: Tier 1 (+10 leads @ ₹15 = ₹650 total at 60 leads); Tier 2 (+10 leads @ ₹20 = ₹850 total at 70 leads).
+          Define accelerators beyond the base points target. For example: Tier 1 (+10 pts @ ₹15 = ₹650 total at 60 pts); Tier 2 (+10 pts @ ₹20 = ₹850 total at 70 pts).
         </p>
 
         {/* Tiers List */}
@@ -584,7 +655,7 @@ export default function QaIncentivePlanCreator({
               </div>
 
               <div className="md:col-span-2">
-                <span className="text-[10px] font-bold uppercase text-slate-400">Extra Leads</span>
+                <span className="text-[10px] font-bold uppercase text-slate-400">Extra Points</span>
                 <div className="relative">
                   <input
                     type="number"
@@ -593,12 +664,12 @@ export default function QaIncentivePlanCreator({
                     onChange={(e) => handleTierChange(idx, "extra_leads", Number(e.target.value))}
                     className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 outline-none"
                   />
-                  <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">leads</span>
+                  <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">pts</span>
                 </div>
               </div>
 
               <div className="md:col-span-2">
-                <span className="text-[10px] font-bold uppercase text-slate-400">Rate / Lead (₹)</span>
+                <span className="text-[10px] font-bold uppercase text-slate-400">Rate / Point (₹)</span>
                 <div className="relative">
                   <span className="absolute left-2 top-1.5 text-[10px] text-slate-400 font-bold">₹</span>
                   <input
@@ -616,7 +687,7 @@ export default function QaIncentivePlanCreator({
                 <div>
                   <div className="text-[10px] text-slate-500">Tier Range</div>
                   <div className="font-mono font-bold text-slate-900 dark:text-white">
-                    Up to {tier.cumulative_leads} leads
+                    Up to {tier.cumulative_leads} pts
                   </div>
                 </div>
                 <div className="text-right">
@@ -644,27 +715,153 @@ export default function QaIncentivePlanCreator({
         </div>
       </div>
 
-      {/* Step 4: Real-Time Interactive Payout Simulator */}
+      {/* Step 4: Additional Incentive for Rectified Leads Only */}
+      <div className="glass-panel p-5 rounded-2xl border border-slate-200/80 dark:border-white/10 space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
+              <span className="w-6 h-6 rounded-full bg-cyan-600 text-white flex items-center justify-center text-xs">
+                4
+              </span>
+              Additional Incentive for Rectified Leads (Daily Plan Bonus)
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Configure additional bonus payouts strictly and exclusively for audited leads with <strong>Rectified</strong> status. Only rectified leads qualify for this additional incentive.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAddAdditionalRule}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 text-xs font-bold transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Rectified Rule</span>
+          </button>
+        </div>
+
+        {additionalRules.length === 0 ? (
+          <div className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-white/10 text-center text-xs text-slate-400">
+            No additional rectified rules configured. Click &ldquo;Add Rectified Rule&rdquo; to add a bonus for rectified leads.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {additionalRules.map((rule, idx) => (
+              <div
+                key={rule.id || idx}
+                className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-white/5 border border-slate-200 dark:border-white/10 grid grid-cols-1 md:grid-cols-12 gap-3 items-center"
+              >
+                {/* Rule Name */}
+                <div className="md:col-span-3">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Rule Name</span>
+                  <input
+                    type="text"
+                    value={rule.rule_name}
+                    onChange={(e) => handleAdditionalRuleChange(idx, "rule_name", e.target.value)}
+                    placeholder="e.g. Rectified Leads Bonus"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500"
+                  />
+                </div>
+
+                {/* Target Status - Locked to Rectified Only */}
+                <div className="md:col-span-2">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Eligible QA Status</span>
+                  <div className="w-full px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Rectified (Only)</span>
+                  </div>
+                </div>
+
+                {/* Rule Type */}
+                <div className="md:col-span-2">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Reward Type</span>
+                  <select
+                    value={rule.rule_type}
+                    onChange={(e) => handleAdditionalRuleChange(idx, "rule_type", e.target.value as QaAdditionalRuleType)}
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500 cursor-pointer"
+                  >
+                    <option value="PER_LEAD">₹ Per Rectified Lead</option>
+                    <option value="FLAT_BONUS">₹ Flat Bonus (Min Met)</option>
+                    <option value="POINTS_PER_LEAD">Extra Points / Rectified Lead</option>
+                  </select>
+                </div>
+
+                {/* Min Daily Count */}
+                <div className="md:col-span-2">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">Min Rectified Count</span>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      value={rule.min_count}
+                      onChange={(e) => handleAdditionalRuleChange(idx, "min_count", Number(e.target.value))}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500"
+                    />
+                    <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">leads</span>
+                  </div>
+                </div>
+
+                {/* Reward Amount (₹) */}
+                <div className="md:col-span-2">
+                  <span className="text-[10px] font-bold uppercase text-slate-400">
+                    {rule.rule_type === "POINTS_PER_LEAD" ? "Points / Lead" : "Reward (₹)"}
+                  </span>
+                  <div className="relative">
+                    {rule.rule_type !== "POINTS_PER_LEAD" && (
+                      <span className="absolute left-2 top-1.5 text-[10px] text-slate-400 font-bold">₹</span>
+                    )}
+                    <input
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={rule.reward_amount}
+                      onChange={(e) => handleAdditionalRuleChange(idx, "reward_amount", Number(e.target.value))}
+                      className={`w-full ${
+                        rule.rule_type !== "POINTS_PER_LEAD" ? "pl-5" : ""
+                      } pr-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 outline-none focus:border-cyan-500`}
+                    />
+                  </div>
+                </div>
+
+                {/* Delete */}
+                <div className="md:col-span-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAdditionalRule(idx)}
+                    className="p-2 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                    title="Remove Rule"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Step 5: Real-Time Interactive Payout Simulator */}
       <div className="glass-panel p-5 rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/5 to-transparent space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
             <Calculator className="w-4 h-4 text-cyan-500" />
-            <span>Interactive Payout Simulator (Test Your Configuration)</span>
+            <span>Interactive Points & Rectified Payout Simulator (Test Your Configuration)</span>
           </div>
           <span className="text-xs text-slate-500 font-mono">
-            Auditing Target: {baseTargetLeads} leads = {formatINR(baseIncentiveAmount)}
+            Auditing Target: {baseTargetLeads} pts = {formatINR(baseIncentiveAmount)}
           </span>
         </div>
 
-        {/* Simulator Slider & Input */}
-        <div className="flex flex-col sm:flex-row items-center gap-4 bg-white/70 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-white/10">
-          <div className="w-full sm:w-2/3 space-y-2">
+        {/* Simulator Sliders & Inputs */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 bg-white/70 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-white/10 items-center">
+          {/* Main Points Slider */}
+          <div className="lg:col-span-5 space-y-2">
             <div className="flex justify-between text-xs">
               <span className="font-semibold text-slate-700 dark:text-slate-300">
-                Simulate Leads Audited by QA Analyst:
+                Simulate Campaign Points Audited:
               </span>
               <span className="font-mono font-black text-cyan-600 dark:text-cyan-400 text-sm">
-                {simulatedLeads} Leads
+                {simulatedLeads} Points
               </span>
             </div>
             <input
@@ -676,8 +873,8 @@ export default function QaIncentivePlanCreator({
               className="w-full accent-cyan-500 cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-              <span>0 leads</span>
-              <span>Base: {baseTargetLeads}</span>
+              <span>0 pts</span>
+              <span>Base: {baseTargetLeads} pts</span>
               {enrichedTiers.map((t) => (
                 <span key={t.tier_order}>
                   T{t.tier_order}: {t.cumulative_leads}
@@ -686,13 +883,42 @@ export default function QaIncentivePlanCreator({
             </div>
           </div>
 
-          <div className="w-full sm:w-1/3 flex items-center justify-between p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30">
+          {/* Rectified Leads Slider */}
+          <div className="lg:col-span-3 space-y-2 border-l border-slate-200 dark:border-white/10 lg:pl-4">
+            <div className="flex justify-between text-xs">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                Simulate Rectified Leads:
+              </span>
+              <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
+                {simulatedRectifiedLeads} Leads
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={20}
+              value={simulatedRectifiedLeads}
+              onChange={(e) => setSimulatedRectifiedLeads(Number(e.target.value))}
+              className="w-full accent-emerald-500 cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+              <span>0 leads</span>
+              <span>10 leads</span>
+              <span>20 leads</span>
+            </div>
+          </div>
+
+          {/* Output Card */}
+          <div className="lg:col-span-4 flex items-center justify-between p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30">
             <div>
               <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase">
-                Calculated QA Incentive
+                Grand Total Incentive
               </span>
               <div className="text-2xl font-black font-mono text-amber-600 dark:text-amber-400">
                 {formatINR(simulationResult.total_incentive)}
+              </div>
+              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                Base: {formatINR(simulationResult.base_incentive_earned)} • Tiers: {formatINR(simulationResult.total_tier_incentive)} • Extra: {formatINR(simulationResult.total_additional_incentive || 0)}
               </div>
             </div>
             <span
@@ -708,11 +934,11 @@ export default function QaIncentivePlanCreator({
         </div>
 
         {/* Step-by-Step Breakdown Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           <div className="p-3 rounded-xl bg-slate-100/80 dark:bg-white/5 border border-slate-200/60 dark:border-white/5">
             <span className="text-[10px] font-bold uppercase text-slate-400">Base Target</span>
             <div className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-              {simulatedLeads >= baseTargetLeads ? "50/50 Leads Reached" : `${simulatedLeads}/${baseTargetLeads} Leads`}
+              {simulatedLeads >= baseTargetLeads ? "Base Points Reached" : `${simulatedLeads}/${baseTargetLeads} Points`}
             </div>
             <div className="text-sm font-mono font-bold text-emerald-600 dark:text-emerald-400 mt-1">
               {formatINR(simulationResult.base_incentive_earned)}
@@ -726,10 +952,28 @@ export default function QaIncentivePlanCreator({
             >
               <span className="text-[10px] font-bold uppercase text-slate-400">{tb.tier_name}</span>
               <div className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                {tb.leads_in_tier} leads × ₹{tb.rate_per_lead}/lead
+                {tb.leads_in_tier} pts × ₹{tb.rate_per_lead}/pt
               </div>
               <div className="text-sm font-mono font-bold text-cyan-600 dark:text-cyan-400 mt-1">
                 +{formatINR(tb.tier_incentive_earned)}
+              </div>
+            </div>
+          ))}
+
+          {/* Additional Rules Card in Simulator */}
+          {simulationResult.additional_rules_breakdown && simulationResult.additional_rules_breakdown.map((arb, idx) => (
+            <div
+              key={arb.rule_id || idx}
+              className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30"
+            >
+              <span className="text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-300">
+                {arb.rule_name}
+              </span>
+              <div className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                {arb.matching_count} {arb.status_name} leads ({arb.is_qualified ? `≥${arb.min_count} min met` : `need ${arb.min_count}`})
+              </div>
+              <div className="text-sm font-mono font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                +{formatINR(arb.incentive_earned)}
               </div>
             </div>
           ))}

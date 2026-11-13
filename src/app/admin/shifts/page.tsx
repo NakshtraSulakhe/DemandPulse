@@ -93,7 +93,7 @@ export default function ShiftManagementAdminPage() {
             Centralized Shift &amp; Operating Hours Management
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Authoritative US business shift schedule (5:30 PM – 2:30 AM IST) governing lead tagging, analytics, and incentives
+            Authoritative US business shift schedule (5:30 PM – 2:30 AM IST, with work continuation and data display up to 9:00 AM IST morning refresh) governing lead tagging, analytics, and incentives
           </p>
         </div>
       </div>
@@ -136,7 +136,7 @@ export default function ShiftManagementAdminPage() {
               <span className="font-mono font-bold text-slate-900 dark:text-white">
                 {shiftEngine.businessDate}
               </span>{" "}
-              (No midnight reset; shift crosses midnight to 2:30 AM)
+              (No midnight reset; shift crosses midnight with data captured until shift concludes, refreshes at 9:00 AM)
             </p>
           </div>
 
@@ -244,7 +244,7 @@ export default function ShiftManagementAdminPage() {
                   placeholder="02:30:00"
                   className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white outline-none font-mono font-bold text-amber-600 dark:text-amber-400"
                 />
-                <span className="text-[10px] text-slate-400">Fixed 2:30 AM IST (Overnight conclusion)</span>
+                <span className="text-[10px] text-slate-400">Scheduled 02:30:00 (Overnight shift continues capturing work until 9:00 AM refresh)</span>
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -300,7 +300,7 @@ export default function ShiftManagementAdminPage() {
               <Info className="w-4 h-4 text-cyan-600 mt-0.5 flex-shrink-0" />
               <span>
                 <strong>Overnight Shift Policy: </strong>
-                Because this shift crosses midnight, all leads, points, attendance logs, and QA audits created after 12:00 AM IST but prior to 2:30 AM IST automatically associate with the shift start date.
+                Because this shift crosses midnight, all leads, points, attendance logs, and QA audits created after 12:00 AM IST continue to be captured for this shift until work completes or the 9:00 AM IST morning refresh.
               </span>
             </div>
 
@@ -332,7 +332,7 @@ export default function ShiftManagementAdminPage() {
                   Fixed India Shift (Asia/Kolkata)
                 </div>
                 <div className="font-mono text-cyan-600 dark:text-cyan-400 font-bold text-sm">
-                  5:30 PM – 2:30 AM IST
+                  5:30 PM – 2:30 AM IST (Extended to 9:00 AM)
                 </div>
                 <div className="text-[10px] text-slate-500">
                   Constant year-round; never changes for Daylight Saving Time.

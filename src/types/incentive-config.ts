@@ -33,6 +33,7 @@ export interface IncentiveConfiguration {
   currency: string; // "INR"
   currencySymbol: string; // "₹"
   tieredSlabs: IncentiveTierSlab[];
+  calculationMode?: "incremental" | "whole_band"; // "incremental" (default marginal bracket) or "whole_band" (all extra points @ highest rate)
   qaPolicy: IncentiveQaEscalationPolicy;
   allowedAttendanceStatuses: string[]; // ["Present", "Full Day", "Half Day", "In Progress"]
   disqualifyAbsent: boolean;

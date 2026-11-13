@@ -54,7 +54,7 @@ function formatDateYmd(d: Date): string {
 /**
  * Adds days to a YYYY-MM-DD string
  */
-function addDays(ymd: string, days: number): string {
+export function addDays(ymd: string, days: number): string {
   const [y, m, d] = ymd.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d + days, 12, 0, 0));
   return dt.toISOString().split("T")[0];
@@ -133,8 +133,11 @@ export function getUsEasternTimeInfo(date: Date = new Date()): {
 }
 
 /**
- * Calculates the authoritative business date for any instant in time
- * Shift: 5:30 PM (17:30) to 2:30 AM (02:30) IST next day (12:00:00 UTC to 21:00:00 UTC)
+ * Calculates the authoritative business date for any instant in time.
+ * Standard Shift: 5:30 PM (17:30) to 2:30 AM (02:30) IST next day.
+ * Work Continuation & Extended Hours: If shift continues past 2:30 AM due to emergencies or extended work,
+ * all data remains attributed to this shift business date until morning refresh at 9:00 AM IST.
+ * Morning Refresh: Exactly at 9:00 AM IST (09:00:00), the application refreshes to the new date cycle.
  */
 export function getShiftBusinessDate(
   instant: Date | string = new Date(),
@@ -147,27 +150,41 @@ export function getShiftBusinessDate(
   const [startH, startM] = (config.startTime || "17:30:00").split(":").map(Number);
   const shiftStartMinutes = (startH ?? 17) * 60 + (startM ?? 30);
 
-  const [endH, endM] = (config.endTime || "02:30:00").split(":").map(Number);
-  const shiftEndMinutes = (endH ?? 2) * 60 + (endM ?? 30);
+  // Authoritative refresh cutoff: 9:00 AM IST (09:00 = 540 minutes of day)
+  const [refH, refM] = (config.refreshTime || "09:00:00").split(":").map(Number);
+  const refreshMinutes = (refH ?? 9) * 60 + (refM ?? 0);
 
   // Case 1: Between shift start (e.g. 17:30) and 23:59:59 IST -> Today's shift start
   if (minuteOfDay >= shiftStartMinutes) {
     return ist.dateStr;
   }
 
-  // Case 2: Between 00:00:00 and shift end (e.g. 02:30) IST -> Overnight extension of yesterday's shift!
-  if (minuteOfDay < shiftEndMinutes) {
+  // Case 2: Between midnight 00:00:00 and morning refresh cutoff (09:00 AM IST) ->
+  // Continues the overnight shift from yesterday (covering normal 02:30 and extended shift work)!
+  if (minuteOfDay < refreshMinutes) {
     return addDays(ist.dateStr, -1);
   }
 
-  // Case 3: Outside shift hours (e.g. 02:30 to 17:29:59 IST)
-  // If between shift end and 12:00 PM: belongs to the shift that just concluded overnight
-  if (minuteOfDay < 12 * 60) {
-    return addDays(ist.dateStr, -1);
-  }
-
-  // If after 12:00 PM: preparing for today's upcoming shift
+  // Case 3: Outside shift hours after 9:00 AM refresh and before next shift start (09:00 to 17:29:59 IST) ->
+  // Shift has refreshed for today's upcoming shift cycle!
   return ist.dateStr;
+}
+
+/**
+ * Calculates duration in minutes from shift start to shift end crossing midnight
+ */
+export function calculateShiftDurationMinutes(
+  startTime: string = "17:30:00",
+  endTime: string = "02:30:00"
+): number {
+  const [sH, sM] = startTime.split(":").map(Number);
+  const [eH, eM] = endTime.split(":").map(Number);
+  const startMins = (sH ?? 17) * 60 + (sM ?? 30);
+  let endMins = (eH ?? 2) * 60 + (eM ?? 30);
+  if (endMins <= startMins) {
+    endMins += 1440;
+  }
+  return endMins - startMins;
 }
 
 /**
@@ -191,22 +208,32 @@ export function getShiftWindowForBusinessDate(
   const utcM = utcMinutes % 60;
 
   const startUtc = new Date(Date.UTC(y, m - 1, d + dayOffset, utcH, utcM, 0));
-  const durationMs = (config.durationMinutes || 540) * 60 * 1000;
-  const endUtc = new Date(startUtc.getTime() + durationMs);
+  const scheduledDurationMs = (config.durationMinutes || 540) * 60 * 1000;
+  const scheduledEndUtc = new Date(startUtc.getTime() + scheduledDurationMs);
+
+  // Extended window up to 9:00 AM IST (15.5 hours = 930 minutes from 17:30 IST)
+  // 17:30 IST is 12:00:00 UTC. Next day 09:00 IST is 03:30:00 UTC.
+  const maxDurationMs = (config.maxDurationMinutes || 930) * 60 * 1000;
+  const extendedEndUtc = new Date(startUtc.getTime() + maxDurationMs);
 
   const nextDayIst = addDays(businessDate, 1);
   const shiftStartIst = `${businessDate} ${config.startTime || "17:30:00"}`;
   const shiftEndIst = `${nextDayIst} ${config.endTime || "02:30:00"}`;
+  const extendedEndIst = `${nextDayIst} ${config.refreshTime || "09:00:00"}`;
+  const refreshTimeIst = `${nextDayIst} ${config.refreshTime || "09:00:00"}`;
 
   const usStartInfo = getUsEasternTimeInfo(startUtc);
-  const usEndInfo = getUsEasternTimeInfo(endUtc);
+  const usEndInfo = getUsEasternTimeInfo(scheduledEndUtc);
 
   return {
     businessDate,
     shiftStartIst,
     shiftEndIst,
+    extendedEndIst,
+    refreshTimeIst,
     shiftStartUtc: startUtc.toISOString(),
-    shiftEndUtc: endUtc.toISOString(),
+    shiftEndUtc: scheduledEndUtc.toISOString(),
+    extendedEndUtc: extendedEndUtc.toISOString(),
     shiftStartUs: `${usStartInfo.timeStr} ${usStartInfo.abbr}`,
     shiftEndUs: `${usEndInfo.timeStr} ${usEndInfo.abbr}`,
     usTimezoneAbbr: usStartInfo.abbr,
@@ -215,7 +242,8 @@ export function getShiftWindowForBusinessDate(
 }
 
 /**
- * Evaluates the full operational state of the current shift
+ * Evaluates the full operational state of the current shift,
+ * supporting work continuation past 2:30 AM until morning refresh at 9:00 AM IST.
  */
 export function getCurrentShiftState(
   nowDate: Date = new Date(),
@@ -228,14 +256,20 @@ export function getCurrentShiftState(
   const shiftStartMinutes = (startH ?? 17) * 60 + (startM ?? 30);
 
   const [endH, endM] = (config.endTime || "02:30:00").split(":").map(Number);
-  const shiftEndMinutes = (endH ?? 2) * 60 + (endM ?? 30);
+  const scheduledEndMinutes = (endH ?? 2) * 60 + (endM ?? 30);
 
-  const isShiftActive = minuteOfDay >= shiftStartMinutes || minuteOfDay < shiftEndMinutes;
+  const [refH, refM] = (config.refreshTime || "09:00:00").split(":").map(Number);
+  const refreshMinutes = (refH ?? 9) * 60 + (refM ?? 0);
+
+  // Shift is active during regular scheduled hours OR extended overnight work hours until 9:00 AM refresh!
+  const isInScheduledShift = minuteOfDay >= shiftStartMinutes || minuteOfDay < scheduledEndMinutes;
+  const isInExtendedShift = minuteOfDay >= scheduledEndMinutes && minuteOfDay < refreshMinutes;
+  const isShiftActive = isInScheduledShift || isInExtendedShift;
+
   const businessDate = getShiftBusinessDate(nowDate, config);
   const window = getShiftWindowForBusinessDate(businessDate, config);
 
   const startUtcTime = new Date(window.shiftStartUtc).getTime();
-  const endUtcTime = new Date(window.shiftEndUtc).getTime();
   const nowUtcTime = nowDate.getTime();
 
   let minutesIntoShift = 0;
@@ -245,20 +279,29 @@ export function getCurrentShiftState(
   if (isShiftActive) {
     const elapsedMs = Math.max(0, nowUtcTime - startUtcTime);
     minutesIntoShift = Math.floor(elapsedMs / 60000);
-    remainingMinutes = Math.max(0, 540 - minutesIntoShift);
-    percentElapsed = Math.min(100, Math.round((minutesIntoShift / 540) * 100));
+
+    if (isInScheduledShift) {
+      remainingMinutes = Math.max(0, (config.durationMinutes || 540) - minutesIntoShift);
+      percentElapsed = Math.min(100, Math.round((minutesIntoShift / (config.durationMinutes || 540)) * 100));
+    } else {
+      // Extended shift: remaining minutes until 9:00 AM IST refresh
+      const maxMins = config.maxDurationMinutes || 930;
+      remainingMinutes = Math.max(0, maxMins - minutesIntoShift);
+      percentElapsed = Math.min(100, Math.round((minutesIntoShift / maxMins) * 100));
+    }
   }
 
   let status: ShiftOperationalStatus = "outside_shift";
   if (isShiftActive) {
-    if (minutesIntoShift <= (config.gracePeriodMinutes || 15)) {
+    if (isInExtendedShift) {
+      status = "extended";
+    } else if (minutesIntoShift <= (config.gracePeriodMinutes || 15)) {
       status = "grace_period";
     } else {
       status = "active";
     }
-  } else if (minuteOfDay < 12 * 60) {
-    status = "post_shift_audit";
   } else {
+    // Between 9:00 AM and 17:30 PM: refreshed, preparing for upcoming evening shift
     status = "pre_shift";
   }
 
@@ -291,15 +334,16 @@ export function getCurrentShiftState(
 
 /**
  * Generates the discrete time intervals for Slide 3 (QA Heatmap), Slide 4 (Agent Heatmap),
- * and Slide 5 (Form Submissions) across the 17:30 to 02:30 operational shift window crossing midnight
+ * and Slide 5 (Form Submissions) across the shift window, supporting extended shifts up to 9:00 AM IST.
  */
 export function generateShiftIntervals(
   intervalMinutes: number = 10,
-  config: ShiftConfiguration = DEFAULT_SHIFT_CONFIG
+  config: ShiftConfiguration = DEFAULT_SHIFT_CONFIG,
+  targetDurationMinutes?: number
 ): ShiftTimeInterval[] {
   const intervals: ShiftTimeInterval[] = [];
-  const duration = config.durationMinutes || 540;
-  const totalSlots = Math.floor(duration / intervalMinutes); // 18 for 30-min, 36 for 15-min, 54 for 10-min
+  const duration = targetDurationMinutes || config.durationMinutes || 540;
+  const totalSlots = Math.floor(duration / intervalMinutes); // 18 for 30-min, 36 for 15-min, 54 for 10-min, up to 93 for 10-min (9:00 AM)
 
   // Starting at config.startTime (default 17:30 = 1050 minutes into day)
   const [startH, startM] = (config.startTime || "17:30:00").split(":").map(Number);

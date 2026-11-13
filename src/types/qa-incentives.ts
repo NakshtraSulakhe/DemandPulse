@@ -1,5 +1,32 @@
 export type TargetFrequency = "DAILY" | "MONTHLY";
 
+export type QaAdditionalRuleType = "PER_LEAD" | "FLAT_BONUS" | "POINTS_PER_LEAD";
+
+export interface QaAdditionalRule {
+  id?: string;
+  rule_name: string; // e.g. "Rectified Leads Incentive"
+  status_name: string; // e.g. "Rectified" (case-insensitive)
+  rule_type: QaAdditionalRuleType; // "PER_LEAD" | "FLAT_BONUS" | "POINTS_PER_LEAD"
+  min_count: number; // minimum count of leads with this status required for the day (e.g. 1, 5)
+  reward_amount: number; // INR reward amount (per lead or flat bonus)
+  point_factor?: number; // optional additional points per lead
+  is_active: boolean; // default true
+  description?: string;
+}
+
+export interface QaAdditionalIncentiveBreakdownItem {
+  rule_id?: string;
+  rule_name: string;
+  status_name: string;
+  rule_type: QaAdditionalRuleType;
+  matching_count: number;
+  min_count: number;
+  is_qualified: boolean;
+  reward_amount: number;
+  incentive_earned: number;
+  points_earned: number;
+}
+
 export interface QaIncentiveTier {
   id?: string;
   tier_order: number;
@@ -20,9 +47,11 @@ export interface QaIncentivePlan {
   campaign_id: number | null; // null or 0 = "All Campaigns"
   campaign_name: string; // "All Campaigns" or specific campaign name
   frequency: TargetFrequency; // "DAILY" | "MONTHLY"
-  base_target_leads: number; // e.g. 50 leads audited
+  base_target_leads: number; // e.g. 50 (used as points or leads)
+  base_target_points?: number; // e.g. 50 points target
   base_incentive_amount: number; // e.g. ₹500
   tiers: QaIncentiveTier[];
+  additional_rules?: QaAdditionalRule[]; // Additional status rules (e.g. Rectified leads daily incentive)
   is_active: boolean;
   notes?: string;
   created_at?: string;
@@ -69,6 +98,7 @@ export interface QaTierBreakdownItem {
 export interface QaIncentiveCalculationItem {
   qa_agent_id: number;
   qa_agent_name: string;
+  qa_name?: string;
   email?: string;
   role?: string;
   department?: string;
@@ -84,6 +114,7 @@ export interface QaIncentiveCalculationItem {
   disqualified_leads: number;
   pending_count?: number;
   rework_count?: number;
+  rectified_count?: number; // count of rectified / rework-resolved leads audited by QA agent for the day
   qualification_rate_pct?: number;
   disqualification_rate_pct?: number;
   status_breakdown?: Record<string, number>;
@@ -109,9 +140,23 @@ export interface QaIncentiveCalculationItem {
   base_target_achieved: boolean;
   base_incentive_amount: number;
   base_incentive_earned: number;
+  actual_points?: number;
+  target_points?: number;
+  achievement_pct?: number;
+  remaining_points?: number;
+  campaign_breakdown?: Array<{
+    activity_type: string;
+    campaign_name: string;
+    lead_count: number;
+    point_factor: number;
+    total_points: number;
+  }>;
   tier_breakdown: QaTierBreakdownItem[];
   total_tier_incentive: number;
+  additional_rules_breakdown?: QaAdditionalIncentiveBreakdownItem[];
+  total_additional_incentive?: number;
   total_incentive: number;
+  total_incentive_earned?: number;
   plan_id: string;
   plan_name: string;
   audited_leads?: QaAuditLead[];
@@ -123,6 +168,9 @@ export interface QaAuditLead {
   campaign_id: number;
   campaign_name: string;
   campaign_code?: string;
+  campaign_type?: string;
+  point_factor?: number;
+  points_earned?: number;
   client_code: string;
   agent_id?: number;
   agent_name?: string;

@@ -384,7 +384,9 @@ export async function getDbSlide3(
       data: {
         date: workDate,
         shift_start: "17:30:00",
-        shift_end: "02:30:00",
+        shift_end:
+          heatmapAnalysts[0]?.intervals[heatmapAnalysts[0].intervals.length - 1]?.time_label?.split(" - ")[1] ||
+          "09:00:00",
         interval_minutes: intervalMinutes,
         total_intervals: heatmapAnalysts[0]?.intervals.length || 54,
         total_qa_analysts: heatmapAnalysts.length,
@@ -475,7 +477,9 @@ export async function getDbSlide4(
         date: workDate,
         interval_minutes: intervalMinutes,
         shift_start: "17:30:00",
-        shift_end: "02:30:00",
+        shift_end:
+          heatmapAgents[0]?.intervals[heatmapAgents[0].intervals.length - 1]?.time_label?.split(" - ")[1] ||
+          "09:00:00",
         total_intervals: heatmapAgents[0]?.intervals.length || 54,
         total_agents: heatmapAgents.length,
         agent_heatmap: heatmapAgents,
