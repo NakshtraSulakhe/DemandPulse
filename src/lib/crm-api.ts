@@ -360,15 +360,46 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
           };
         });
 
-      // Fetch active shift configuration (e.g. 17:30:00, grace period)
+      // Fetch active shift configuration (e.g. 18:30:00, grace period)
       const shiftConfig = await getShiftConfig();
-      const defaultShiftStart = shiftConfig.startTime || "17:30:00";
+      const defaultShiftStart = shiftConfig.startTime || "18:30:00";
       const defaultGrace = shiftConfig.gracePeriodMinutes ?? 0;
 
-      // Evaluate late comers from CRM against their configured shift timing
+      // Extract all agent attendance / punch-in records from CRM response (slide1.php)
+      const rawSlide1 = (res.data as any)?.slide1;
+      const rawRoot = res.data as any;
+
+      const candidateAgents: any[] = [];
+      const seenCandidateIds = new Set<string | number>();
+
+      const addCandidates = (list: any) => {
+        if (!Array.isArray(list)) return;
+        for (const item of list) {
+          if (!item) continue;
+          const id = item.user_id ?? item.agent_id ?? item.crm_agent_id;
+          if (id && !seenCandidateIds.has(id)) {
+            seenCandidateIds.add(id);
+            candidateAgents.push(item);
+          }
+        }
+      };
+
+      addCandidates(rawSlide1?.agent_attendance);
+      addCandidates(rawSlide1?.agents_attendance);
+      addCandidates(rawSlide1?.present_agents);
+      addCandidates(rawSlide1?.punch_ins);
+      addCandidates(rawSlide1?.agent_punch_ins);
+      addCandidates(rawRoot?.agent_attendance);
+      addCandidates(rawRoot?.agents_attendance);
+      addCandidates(rawRoot?.present_agents);
+      addCandidates(rawRoot?.punch_ins);
+      addCandidates(rawRoot?.agent_punch_ins);
+      addCandidates(parsed.data.slide1.late_comers);
+
+      // Evaluate late comers from CRM against current project shift timing (Zero Grace)
       const evaluatedCrmLate: any[] = [];
-      for (const l of parsed.data.slide1.late_comers || []) {
-        const evalResult = evaluateAgentLatePunch(l, defaultShiftStart, defaultGrace);
+      for (const ag of candidateAgents) {
+        const evalResult = evaluateAgentLatePunch(ag, defaultShiftStart, defaultGrace);
         if (evalResult) {
           evaluatedCrmLate.push(evalResult);
         }
@@ -380,7 +411,10 @@ export async function getCrmSlide1(dateStr?: string): Promise<CrmFetchResult<Sli
       for (const s of dbLateSnapshots) {
         const evalResult = evaluateAgentLatePunch(
           {
+            user_id: s.crm_agent_id,
             crm_agent_id: s.crm_agent_id,
+            full_name: s.agent_name_snapshot,
+            agent_name: s.agent_name_snapshot,
             agent_name_snapshot: s.agent_name_snapshot,
             punch_in_at: s.punch_in_at,
             shift_start_time: defaultShiftStart,

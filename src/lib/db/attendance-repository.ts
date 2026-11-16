@@ -91,6 +91,27 @@ export async function upsertAttendanceDailySnapshot(
   return record;
 }
 
+function formatSqlDateTime(val: any, workDateStr: string): string | null {
+  if (!val) return null;
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : val.toISOString().slice(0, 19).replace("T", " ");
+  }
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (!trimmed || trimmed === "null" || trimmed === "undefined") return null;
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(trimmed)) {
+      return trimmed.slice(0, 19).replace("T", " ");
+    }
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(trimmed)) {
+      const timePart = trimmed.length === 5 ? `${trimmed}:00` : trimmed;
+      return `${workDateStr} ${timePart}`;
+    }
+    const d = new Date(trimmed);
+    return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 19).replace("T", " ");
+  }
+  return null;
+}
+
 /**
  * Upserts individual agent attendance snapshots for a work date.
  */
@@ -122,12 +143,9 @@ export async function upsertAgentAttendanceSnapshots(
   await withTransaction(async (conn) => {
     for (const a of records) {
       const crmAgentId = Number(a.crm_agent_id);
-      const punchInAt = a.punch_in_at
-        ? new Date(a.punch_in_at).toISOString().slice(0, 19).replace("T", " ")
-        : null;
-      const punchOutAt = a.punch_out_at
-        ? new Date(a.punch_out_at).toISOString().slice(0, 19).replace("T", " ")
-        : null;
+      if (!crmAgentId) continue;
+      const punchInAt = formatSqlDateTime(a.punch_in_at, workDateStr);
+      const punchOutAt = formatSqlDateTime(a.punch_out_at, workDateStr);
 
       await conn.execute(sql, [
         crmAgentId,

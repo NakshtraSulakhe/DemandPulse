@@ -29,15 +29,21 @@ export const CampaignSlide1Schema = z.object({
 }).passthrough();
 
 export const LateComerSchema = z.object({
-  user_id: z.number(),
-  full_name: z.string(),
-  role: z.string().default("agent"),
+  user_id: z.coerce.number(),
+  full_name: z.string().optional().default(""),
+  agent_name: z.string().optional(),
+  name: z.string().optional(),
+  agent_name_snapshot: z.string().optional(),
+  role: z.string().default("operations_agent"),
   punch_in: z.string().default(""),
   shift_start_time: z.string().default(""),
-  grace_minutes: z.number().default(0),
-  late_minutes: z.number().default(0),
-  status: z.string().default("Present"),
-});
+  grace_minutes: z.coerce.number().default(0),
+  late_minutes: z.coerce.number().default(0),
+  status: z.string().default("Late"),
+}).passthrough().transform((data) => ({
+  ...data,
+  full_name: (data.full_name || data.agent_name || data.name || data.agent_name_snapshot || `Agent #${data.user_id}`).trim(),
+}));
 
 export const Slide1ResponseSchema = z.object({
   ok: z.boolean().default(true),
@@ -45,7 +51,7 @@ export const Slide1ResponseSchema = z.object({
   slide1: z.object({
     kpi_cards: KpiCardsSchema,
     campaigns: z.array(CampaignSlide1Schema),
-    late_comers: z.array(LateComerSchema),
+    late_comers: z.array(LateComerSchema).optional().default([]),
     sliders: z.any().optional(),
     query_date: z.string().optional(),
   }).passthrough(),

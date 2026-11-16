@@ -321,10 +321,11 @@ export async function GET(req: NextRequest) {
           }
         );
 
+        const isQaManager = analystId === 178 || analystId === 132;
         result.email = a.email || "";
-        result.role = a.role || a.job_title || "QA Analyst";
+        result.role = isQaManager ? "QA Manager" : a.role || a.job_title || "QA Analyst";
         result.department = a.department || "Quality Assurance";
-        result.job_title = a.job_title || "Quality Analyst";
+        result.job_title = isQaManager ? "QA Manager" : a.job_title || "QA Analyst";
         result.client_code = matchingPlan.client_code || "ALL";
         result.campaign_name = matchingPlan.campaign_name || "All Campaigns";
         result.period_label = frequency === "DAILY" ? `Daily Shift (${date})` : `Monthly (${date.substring(0, 7)})`;

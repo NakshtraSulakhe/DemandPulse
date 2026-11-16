@@ -3,6 +3,7 @@ import { getCrmCampaignTargets, getCrmSlide3, getCrmQaAudits } from "@/lib/crm-a
 import { getQaDailySnapshotsForDate } from "@/lib/db/qa-analytics-repository";
 import { getShiftBusinessDate } from "@/lib/shift/engine";
 import { QaIncentiveMetaResponse, QaMemberMeta, ClientMeta, CampaignMeta } from "@/types/qa-incentives";
+import { resolveRealUserName, CRM_KNOWN_ROSTER } from "@/lib/crm-roster";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -28,12 +29,15 @@ export async function GET(req: NextRequest) {
     if (qaAuditsRes.success && qaAuditsRes.data?.qa_analysts) {
       qaAuditsRes.data.qa_analysts.forEach((a: any) => {
         const id = Number(a.user_id || a.qa_id);
-        const name = (a.qa_name || a.full_name || "").trim();
-        if (id && name) {
+        const rawName = (a.qa_name || a.full_name || "").trim();
+        const known = CRM_KNOWN_ROSTER[id];
+        const realName = known?.name || (rawName && !rawName.includes("#") ? rawName : "") || `QA Member #${id}`;
+        const realRole = known?.role || a.job_title || a.role || a.department || "QA Analyst";
+        if (id && realName) {
           qaMembersMap.set(id, {
             user_id: id,
-            full_name: name,
-            role: a.job_title || a.role || a.department || "QA Analyst",
+            full_name: realName,
+            role: realRole === "qa_manager" ? "QA Manager" : "QA Analyst",
             avatar: a.avatar || null,
           });
         }

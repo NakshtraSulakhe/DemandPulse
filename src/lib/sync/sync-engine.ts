@@ -436,13 +436,16 @@ export async function runAnalyticsSync(
         }
 
         if (Array.isArray(s1Result.data.late_comers) && s1Result.data.late_comers.length > 0) {
-          const lateInputs = s1Result.data.late_comers.map((l) => ({
-            crm_agent_id: l.user_id,
-            agent_name: l.full_name,
-            attendance_status: l.status || "Late",
-            late_minutes: l.late_minutes || 0,
-            punch_in_at: l.punch_in ? new Date(l.punch_in) : null,
-          }));
+          const lateInputs = s1Result.data.late_comers.map((l) => {
+            const rawPunch = l.punch_in || (l as any).punch_in_at || (l as any).punch_in_time || "";
+            return {
+              crm_agent_id: l.user_id,
+              agent_name: (l.full_name || (l as any).agent_name || (l as any).name || (l as any).agent_name_snapshot || `Agent #${l.user_id}`).trim(),
+              attendance_status: l.status || "Late",
+              late_minutes: l.late_minutes || 0,
+              punch_in_at: rawPunch,
+            };
+          });
           const attRes = await upsertAgentAttendanceSnapshots(workDate, lateInputs);
           processedRecords += attRes.count;
         }

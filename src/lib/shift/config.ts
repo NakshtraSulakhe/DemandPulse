@@ -56,7 +56,7 @@ export async function getShiftConfig(): Promise<ShiftConfiguration> {
       maxDurationMinutes: MAX_SHIFT_DURATION_MINUTES,
       reportingTimezone: calendar.business_timezone || "America/New_York",
       businessDateRule: "SHIFT_START_DATE",
-      gracePeriodMinutes: calendar.grace_period_minutes ?? 1,
+      gracePeriodMinutes: calendar.grace_period_minutes ?? 0,
       workingDays,
       isActive: Boolean(calendar.is_active),
       version: calendar.version || 1,

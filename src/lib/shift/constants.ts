@@ -15,7 +15,7 @@ export const DEFAULT_SHIFT_CONFIG: ShiftConfiguration = {
   maxDurationMinutes: 930, // Can extend up to 9:00 AM IST refresh
   reportingTimezone: "America/New_York",
   businessDateRule: "SHIFT_START_DATE",
-  gracePeriodMinutes: 1,
+  gracePeriodMinutes: 0, // Zero grace period: any punch after shift start is considered late
   workingDays: [1, 2, 3, 4, 5], // Monday through Friday
   isActive: true,
   version: 3,

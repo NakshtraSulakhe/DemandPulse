@@ -81,24 +81,31 @@ export async function GET(
         if (isHistoricalDate && !forceLive) {
           const dbResult = await getDbSlide1(targetDate);
           if (dbResult.hasRecords && dbResult.data) {
-            return NextResponse.json(
-              {
-                success: true,
-                data: dbResult.data,
-                source: "demandflow_slides_mysql",
-                finalizationStatus: dbResult.finalizationStatus,
-                lastSyncedAt: dbResult.lastSyncedAt,
-                workDate: targetDate,
-                timestamp: new Date().toISOString(),
-              },
-              {
-                status: 200,
-                headers: {
-                  "Cache-Control": "no-store, no-cache, must-revalidate",
-                  "X-Data-Source": "mysql-database-snapshot",
+            // Check if DB record has late count > 0 but late_comers detail array is empty
+            const isMissingLateDetails =
+              (dbResult.data.kpi_cards?.late_today || 0) > 0 &&
+              (!dbResult.data.late_comers || dbResult.data.late_comers.length === 0);
+
+            if (!isMissingLateDetails) {
+              return NextResponse.json(
+                {
+                  success: true,
+                  data: dbResult.data,
+                  source: "demandflow_slides_mysql",
+                  finalizationStatus: dbResult.finalizationStatus,
+                  lastSyncedAt: dbResult.lastSyncedAt,
+                  workDate: targetDate,
+                  timestamp: new Date().toISOString(),
                 },
-              }
-            );
+                {
+                  status: 200,
+                  headers: {
+                    "Cache-Control": "no-store, no-cache, must-revalidate",
+                    "X-Data-Source": "mysql-database-snapshot",
+                  },
+                }
+              );
+            }
           }
         }
 

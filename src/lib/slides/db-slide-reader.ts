@@ -7,6 +7,7 @@ import { getAttendanceDailySnapshotForDate, getAgentAttendanceSnapshotsForDate }
 import { getDailyFinalization } from "@/lib/db/finalization-repository";
 import { isAgentPresentForFloorCapacity } from "@/lib/productivity/points-capacity";
 import { evaluateAgentLatePunch } from "@/lib/shift/late-punches";
+import { getShiftConfig } from "@/lib/shift/config";
 
 function convertUtcToIstTime(timeStr: string): string {
   if (!timeStr) return timeStr;
@@ -98,19 +99,26 @@ export async function getDbSlide1(targetDate?: string): Promise<DbSlideReadResul
       target_achieved: c.target_achieved,
     }));
 
+    const shiftCfg = await getShiftConfig().catch(() => null);
+    const dbShiftStart = shiftCfg?.startTime || "18:30:00";
+    const dbGrace = shiftCfg?.gracePeriodMinutes ?? 0;
+
     const evaluatedDbLate: any[] = [];
     for (const l of lateComers) {
       const evalResult = evaluateAgentLatePunch(
         {
+          user_id: l.crm_agent_id,
           crm_agent_id: l.crm_agent_id,
+          full_name: l.agent_name_snapshot,
+          agent_name: l.agent_name_snapshot,
           agent_name_snapshot: l.agent_name_snapshot,
           punch_in_at: l.punch_in_at,
-          shift_start_time: "17:30:00",
+          shift_start_time: dbShiftStart,
           late_minutes: l.late_minutes,
           attendance_status: l.attendance_status,
         },
-        "17:30:00",
-        0
+        dbShiftStart,
+        dbGrace
       );
       if (evalResult) {
         evaluatedDbLate.push(evalResult);

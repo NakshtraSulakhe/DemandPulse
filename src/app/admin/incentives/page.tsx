@@ -35,10 +35,11 @@ import QaIncentiveCalculatorView from "@/components/incentives/qa-incentive-calc
 import TargetManagementView from "@/components/productivity/target-management-view";
 import CampaignPointsEditor from "@/components/productivity/campaign-points-editor";
 import MonthlyIncentiveView from "@/components/incentives/monthly-incentive-view";
+import LeadershipIncentiveHub from "@/components/incentives/leadership-incentive-hub";
 
 export default function IncentiveDashboardPage() {
   const [mainTab, setMainTab] = useState<
-    "achievers" | "targets" | "points" | "monthly" | "qa_builder" | "qa_audits" | "pipeline"
+    "achievers" | "leadership" | "targets" | "points" | "monthly" | "qa_builder" | "qa_audits" | "pipeline"
   >("achievers");
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -134,6 +135,13 @@ export default function IncentiveDashboardPage() {
         {/* Global Navigation Shortcuts */}
         <div className="flex items-center gap-2 flex-wrap">
           <Link
+            href="/admin/incentives/leadership"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+            <span>Leadership Console</span>
+          </Link>
+          <Link
             href="/admin/incentives/qa-plans"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all cursor-pointer"
           >
@@ -162,6 +170,18 @@ export default function IncentiveDashboardPage() {
         >
           <Trophy className="w-4 h-4" />
           <span>Daily Achievers</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab("leadership")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainTab === "leadership"
+              ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-500/20"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Operations Leadership (TL & Mgr)</span>
         </button>
 
         <button
@@ -239,6 +259,8 @@ export default function IncentiveDashboardPage() {
 
       {/* Conditional Tab Rendering */}
       {mainTab === "achievers" && <AgentIncentiveAchievers />}
+
+      {mainTab === "leadership" && <LeadershipIncentiveHub />}
 
       {mainTab === "targets" && <TargetManagementView />}
 

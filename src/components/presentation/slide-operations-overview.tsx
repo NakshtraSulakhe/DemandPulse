@@ -232,7 +232,7 @@ export default function SlideOperationsOverview({
               {formatNumber(kpis.late_today)}
             </span>
             <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.2 rounded">
-              After grace
+              Strict Timing
             </span>
           </div>
           <div className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
@@ -480,7 +480,7 @@ export default function SlideOperationsOverview({
                 <ClockAlert className="w-4 h-4 text-amber-500 dark:text-amber-400" />
                 Late Comers (Today)
               </h2>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">Punch-ins exceeding shift grace window</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Punch-ins after shift start time (Zero Grace)</p>
             </div>
             <span className="px-2 py-0.5 text-[11px] font-bold rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
               {lateComers.length} Flagged
@@ -495,38 +495,52 @@ export default function SlideOperationsOverview({
                 <p className="text-[11px] text-slate-500 mt-0.5">No late punch-ins recorded for today</p>
               </div>
             ) : (
-              lateComers.map((agent) => (
-                <div
-                  key={agent.user_id}
-                  className="p-2.5 rounded-lg bg-slate-100/90 dark:bg-slate-900/70 border border-slate-200 dark:border-white/5 hover:border-amber-400/40 dark:hover:border-amber-500/30 transition-all flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-700 dark:text-amber-300 font-bold text-xs">
-                      {agent.full_name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .slice(0, 2)}
+              lateComers.map((agent, idx) => {
+                const displayName =
+                  (agent.full_name && agent.full_name.trim().length > 0)
+                    ? agent.full_name.trim()
+                    : (agent as any).agent_name?.trim() ||
+                      (agent as any).name?.trim() ||
+                      (agent as any).agent_name_snapshot?.trim() ||
+                      `Agent #${agent.user_id || idx + 1}`;
+
+                const initials = displayName
+                  .split(" ")
+                  .filter(Boolean)
+                  .map((n: string) => n[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase() || "AG";
+
+                return (
+                  <div
+                    key={agent.user_id || idx}
+                    className="p-2.5 rounded-lg bg-slate-100/90 dark:bg-slate-900/70 border border-slate-200 dark:border-white/5 hover:border-amber-400/40 dark:hover:border-amber-500/30 transition-all flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-700 dark:text-amber-300 font-bold text-xs">
+                        {initials}
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-900 dark:text-white text-xs">{displayName}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
+                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{agent.punch_in || "Late"}</span>
+                          {agent.shift_start_time ? <span>• Shift: {agent.shift_start_time}</span> : null}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-bold text-slate-900 dark:text-white text-xs">{agent.full_name}</div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
-                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{agent.punch_in}</span>
-                        <span>• Shift: {agent.shift_start_time}</span>
+
+                    <div className="text-right">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40">
+                        +{agent.late_minutes}m
+                      </span>
+                      <div className="text-[9.5px] text-slate-500 mt-0.5 font-mono">
+                        Shift: {agent.shift_start_time || "17:30"}
                       </div>
                     </div>
                   </div>
-
-                  <div className="text-right">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40">
-                      +{agent.late_minutes}m
-                    </span>
-                    <div className="text-[9.5px] text-slate-500 mt-0.5">
-                      Grace: {agent.grace_minutes}m
-                    </div>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
