@@ -61,6 +61,23 @@ function normalizeDateParam(raw?: string | null): string | undefined {
   return undefined;
 }
 
+const historicalSyncCooldown = new Map<string, number>();
+
+function triggerHistoricalBackfillSync(targetDate: string, label: string) {
+  const now = Date.now();
+  const lastTriggered = historicalSyncCooldown.get(targetDate) || 0;
+  if (now - lastTriggered < 5 * 60 * 1000) return;
+  historicalSyncCooldown.set(targetDate, now);
+
+  runAnalyticsSync(targetDate, {
+    force: true,
+    jobName: "backdated_on_demand_sync",
+    isFinal: true,
+  }).catch((syncErr) => {
+    console.warn(`[auto-persist] Failed to refresh ${label} snapshot for ${targetDate}:`, syncErr?.message || syncErr);
+  });
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { slide: string } }
@@ -72,56 +89,41 @@ export async function GET(
   const currentShiftDate = getShiftBusinessDate();
   const targetDate = dateParam || currentShiftDate;
   const isHistoricalDate = Boolean(dateParam && dateParam < currentShiftDate);
-  const forceLive = searchParams.get("force_live") === "true";
+  const preferDbOnly = searchParams.get("source") === "db";
 
   try {
     switch (slide) {
       case "slide1": {
-        // If historical date, prefer MySQL database snapshots
-        if (isHistoricalDate && !forceLive) {
+        if (preferDbOnly) {
           const dbResult = await getDbSlide1(targetDate);
           if (dbResult.hasRecords && dbResult.data) {
-            // Check if DB record has late count > 0 but late_comers detail array is empty
-            const isMissingLateDetails =
-              (dbResult.data.kpi_cards?.late_today || 0) > 0 &&
-              (!dbResult.data.late_comers || dbResult.data.late_comers.length === 0);
-
-            if (!isMissingLateDetails) {
-              return NextResponse.json(
-                {
-                  success: true,
-                  data: dbResult.data,
-                  source: "demandflow_slides_mysql",
-                  finalizationStatus: dbResult.finalizationStatus,
-                  lastSyncedAt: dbResult.lastSyncedAt,
-                  workDate: targetDate,
-                  timestamp: new Date().toISOString(),
+            return NextResponse.json(
+              {
+                success: true,
+                data: dbResult.data,
+                source: "demandflow_slides_mysql",
+                finalizationStatus: dbResult.finalizationStatus,
+                lastSyncedAt: dbResult.lastSyncedAt,
+                workDate: targetDate,
+                timestamp: new Date().toISOString(),
+              },
+              {
+                status: 200,
+                headers: {
+                  "Cache-Control": "no-store, no-cache, must-revalidate",
+                  "X-Data-Source": "mysql-database-snapshot",
                 },
-                {
-                  status: 200,
-                  headers: {
-                    "Cache-Control": "no-store, no-cache, must-revalidate",
-                    "X-Data-Source": "mysql-database-snapshot",
-                  },
-                }
-              );
-            }
+              }
+            );
           }
         }
 
-        // Query CRM API for slide 1 (live shift or backdated date missing from database)
+        // Always query authoritative CRM API first (both live shift and backdated dates across extended hours)
         const crmResult = await getCrmSlide1(targetDate);
 
         if (crmResult.success && crmResult.data) {
-          // Asynchronously persist to MySQL only for historical backfills missing from DB
           if (isHistoricalDate) {
-            runAnalyticsSync(targetDate, {
-              force: false,
-              jobName: "backdated_on_demand_sync",
-              isFinal: true,
-            }).catch((syncErr) => {
-              console.warn(`[auto-persist] Failed to persist Slide 1 for ${targetDate}:`, syncErr?.message || syncErr);
-            });
+            triggerHistoricalBackfillSync(targetDate, "Slide 1");
           }
 
           return NextResponse.json(crmResult, {
@@ -168,7 +170,7 @@ export async function GET(
         const limit = limitParam === "all" ? 100 : parseInt(limitParam, 10);
         const dataset = searchParams.get("dataset") || undefined;
 
-        if (isHistoricalDate && !forceLive && dataset !== "example") {
+        if (preferDbOnly && dataset !== "example") {
           const dbResult = await getDbSlide2(targetDate, page, limit);
           if (dbResult.hasRecords && dbResult.data) {
             return NextResponse.json(
@@ -195,15 +197,8 @@ export async function GET(
         const crmResult = await getCrmSlide2(targetDate, page, limit, dataset);
 
         if (crmResult.success && crmResult.data && dataset !== "example") {
-          // Asynchronously persist to MySQL only for historical backfills missing from DB
           if (isHistoricalDate) {
-            runAnalyticsSync(targetDate, {
-              force: false,
-              jobName: "backdated_on_demand_sync",
-              isFinal: true,
-            }).catch((syncErr) => {
-              console.warn(`[auto-persist] Failed to persist Slide 2 for ${targetDate}:`, syncErr?.message || syncErr);
-            });
+            triggerHistoricalBackfillSync(targetDate, "Slide 2");
           }
 
           return NextResponse.json(crmResult, {
@@ -250,7 +245,7 @@ export async function GET(
         const shiftStart = searchParams.get("shift_start") || "17:30:00";
         const shiftEnd = searchParams.get("shift_end") || "09:00:00";
 
-        if (isHistoricalDate && !forceLive) {
+        if (preferDbOnly) {
           const dbResult = await getDbSlide3(targetDate, interval);
           if (dbResult.hasRecords && dbResult.data) {
             return NextResponse.json(
@@ -278,13 +273,7 @@ export async function GET(
 
         if (crmResult.success && crmResult.data) {
           if (isHistoricalDate) {
-            runAnalyticsSync(targetDate, {
-              force: false,
-              jobName: "backdated_on_demand_sync",
-              isFinal: true,
-            }).catch((syncErr) => {
-              console.warn(`[auto-persist] Failed to persist Slide 3 for ${targetDate}:`, syncErr?.message || syncErr);
-            });
+            triggerHistoricalBackfillSync(targetDate, "Slide 3");
           }
 
           return NextResponse.json(crmResult, {
@@ -331,7 +320,7 @@ export async function GET(
         const shiftStart = searchParams.get("shift_start") || "17:30:00";
         const shiftEnd = searchParams.get("shift_end") || "09:00:00";
 
-        if (isHistoricalDate && !forceLive) {
+        if (preferDbOnly) {
           const dbResult = await getDbSlide4(targetDate, interval);
           if (dbResult.hasRecords && dbResult.data) {
             return NextResponse.json(
@@ -359,13 +348,7 @@ export async function GET(
 
         if (crmResult.success && crmResult.data) {
           if (isHistoricalDate) {
-            runAnalyticsSync(targetDate, {
-              force: false,
-              jobName: "backdated_on_demand_sync",
-              isFinal: true,
-            }).catch((syncErr) => {
-              console.warn(`[auto-persist] Failed to persist Slide 4 for ${targetDate}:`, syncErr?.message || syncErr);
-            });
+            triggerHistoricalBackfillSync(targetDate, "Slide 4");
           }
 
           return NextResponse.json(crmResult, {
@@ -433,7 +416,7 @@ export async function GET(
         const shiftStart = searchParams.get("shift_start") || "17:30:00";
         const shiftEnd = searchParams.get("shift_end") || "09:00:00";
 
-        if (isHistoricalDate && !forceLive) {
+        if (preferDbOnly) {
           const dbResult = await getDbSlide5(targetDate);
           if (dbResult.hasRecords && dbResult.data) {
             return NextResponse.json(
@@ -461,13 +444,7 @@ export async function GET(
 
         if (crmResult.success && crmResult.data) {
           if (isHistoricalDate) {
-            runAnalyticsSync(targetDate, {
-              force: false,
-              jobName: "backdated_on_demand_sync",
-              isFinal: true,
-            }).catch((syncErr) => {
-              console.warn(`[auto-persist] Failed to persist Slide 6 for ${targetDate}:`, syncErr?.message || syncErr);
-            });
+            triggerHistoricalBackfillSync(targetDate, "Slide 6");
           }
 
           return NextResponse.json(crmResult, {

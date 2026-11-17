@@ -343,11 +343,13 @@ export function generateShiftIntervals(
 ): ShiftTimeInterval[] {
   const intervals: ShiftTimeInterval[] = [];
   const duration = targetDurationMinutes || config.durationMinutes || 540;
-  const totalSlots = Math.floor(duration / intervalMinutes); // 18 for 30-min, 36 for 15-min, 54 for 10-min, up to 93 for 10-min (9:00 AM)
+  const totalSlots = Math.ceil(duration / intervalMinutes); // 18 for 30-min, 36 for 15-min, 54 for 10-min, up to 93 for 10-min (9:00 AM)
 
   // Starting at config.startTime (default 17:30 = 1050 minutes into day)
   const [startH, startM] = (config.startTime || "17:30:00").split(":").map(Number);
-  let currentMinutes = (startH ?? 17) * 60 + (startM ?? 30);
+  const baseStartMinutes = (startH ?? 17) * 60 + (startM ?? 30);
+  const maxEndMinutes = baseStartMinutes + duration;
+  let currentMinutes = baseStartMinutes;
 
   // 17:30 IST is 12:00:00 UTC
   // In US Eastern (EST UTC-5 / EDT UTC-4), 12:00 UTC corresponds to 07:00 EST / 08:00 EDT
@@ -358,7 +360,7 @@ export function generateShiftIntervals(
     const startHour = Math.floor(currentMinutes / 60) % 24;
     const startMin = currentMinutes % 60;
 
-    const nextMinutes = currentMinutes + intervalMinutes;
+    const nextMinutes = Math.min(currentMinutes + intervalMinutes, maxEndMinutes);
     const endHour = Math.floor(nextMinutes / 60) % 24;
     const endMin = nextMinutes % 60;
 

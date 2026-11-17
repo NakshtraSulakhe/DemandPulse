@@ -8,6 +8,7 @@ import { getDailyFinalization } from "@/lib/db/finalization-repository";
 import { isAgentPresentForFloorCapacity } from "@/lib/productivity/points-capacity";
 import { evaluateAgentLatePunch } from "@/lib/shift/late-punches";
 import { getShiftConfig } from "@/lib/shift/config";
+import { DEFAULT_SHIFT_CONFIG } from "@/lib/shift/constants";
 
 function convertUtcToIstTime(timeStr: string): string {
   if (!timeStr) return timeStr;
@@ -329,19 +330,37 @@ export async function getDbSlide3(
       };
     }
 
-    // Group interval records by analyst
-    const analystMap = new Map<number, QaHeatmapAnalyst>();
+    const shiftStartUtcMs = new Date(`${workDate}T12:00:00.000Z`).getTime();
+    const fullShiftIntervals = generateShiftIntervals(intervalMinutes, DEFAULT_SHIFT_CONFIG, 930);
+    const totalFullSlots = fullShiftIntervals.length;
+    const standardSlotCount = Math.floor(540 / intervalMinutes);
+
+    // Group interval records by analyst and re-bucket into requested intervalMinutes
+    const analystMap = new Map<
+      number,
+      {
+        user_id: number;
+        full_name: string;
+        total_audited: number;
+        total_qualified: number;
+        auditedBuckets: number[];
+        qualifiedBuckets: number[];
+      }
+    >();
+
     qaDaily.forEach((qa) => {
       analystMap.set(qa.crm_qa_agent_id, {
         user_id: qa.crm_qa_agent_id,
         full_name: qa.qa_agent_name_snapshot || `QA #${qa.crm_qa_agent_id}`,
         total_audited: qa.total_audits,
         total_qualified: qa.qualified_leads,
-        intervals: [],
+        auditedBuckets: new Array(totalFullSlots).fill(0),
+        qualifiedBuckets: new Array(totalFullSlots).fill(0),
       });
     });
 
-    // Attach intervals
+    let maxActiveSlotIdx = Math.min(totalFullSlots - 1, standardSlotCount - 1);
+
     intervals.forEach((inv) => {
       let analyst = analystMap.get(inv.crm_qa_agent_id);
       if (!analyst) {
@@ -350,25 +369,42 @@ export async function getDbSlide3(
           full_name: inv.qa_agent_name_snapshot || `QA #${inv.crm_qa_agent_id}`,
           total_audited: 0,
           total_qualified: 0,
-          intervals: [],
+          auditedBuckets: new Array(totalFullSlots).fill(0),
+          qualifiedBuckets: new Array(totalFullSlots).fill(0),
         };
         analystMap.set(inv.crm_qa_agent_id, analyst);
       }
 
-      const startUtc = new Date(inv.interval_start_at);
-      const endUtc = new Date(inv.interval_end_at);
-      const startIst = convertUtcToIstTime(startUtc.toISOString().slice(11, 19));
-      const endIst = convertUtcToIstTime(endUtc.toISOString().slice(11, 19));
-
-      analyst.intervals.push({
-        slot_index: analyst.intervals.length,
-        time_label: `${startIst} - ${endIst}`,
-        qualified_count: inv.qualified_events,
-        audited_count: inv.audited_events,
-      });
+      const rawStart = String(inv.interval_start_at || "");
+      const startMs = new Date(rawStart.includes("T") ? rawStart : rawStart.replace(" ", "T") + "Z").getTime();
+      if (!isNaN(startMs)) {
+        const offsetMins = Math.floor((startMs - shiftStartUtcMs) / 60000);
+        if (offsetMins >= 0 && offsetMins < 930) {
+          const bIdx = Math.min(totalFullSlots - 1, Math.floor(offsetMins / intervalMinutes));
+          analyst.auditedBuckets[bIdx] += Number(inv.audited_events || 0);
+          analyst.qualifiedBuckets[bIdx] += Number(inv.qualified_events || 0);
+          if (bIdx >= standardSlotCount && ((inv.audited_events || 0) > 0 || (inv.qualified_events || 0) > 0)) {
+            if (bIdx > maxActiveSlotIdx) maxActiveSlotIdx = bIdx;
+          }
+        }
+      }
     });
 
-    const allHeatmapAnalysts = Array.from(analystMap.values());
+    const displayIntervals = fullShiftIntervals.slice(0, maxActiveSlotIdx + 1);
+
+    const allHeatmapAnalysts: QaHeatmapAnalyst[] = Array.from(analystMap.values()).map((a) => ({
+      user_id: a.user_id,
+      full_name: a.full_name,
+      total_audited: a.total_audited,
+      total_qualified: a.total_qualified,
+      intervals: displayIntervals.map((ref, idx) => ({
+        slot_index: idx,
+        time_label: ref.label,
+        qualified_count: a.qualifiedBuckets[idx] || 0,
+        audited_count: a.auditedBuckets[idx] || 0,
+      })),
+    }));
+
     const activeHeatmapAnalysts = allHeatmapAnalysts.filter(
       (a) =>
         ((a.total_audited || 0) > 0 || (a.total_qualified || 0) > 0) &&
@@ -391,12 +427,10 @@ export async function getDbSlide3(
       hasRecords: true,
       data: {
         date: workDate,
-        shift_start: "17:30:00",
-        shift_end:
-          heatmapAnalysts[0]?.intervals[heatmapAnalysts[0].intervals.length - 1]?.time_label?.split(" - ")[1] ||
-          "09:00:00",
+        shift_start: "17:30",
+        shift_end: displayIntervals[displayIntervals.length - 1]?.end || "09:00",
         interval_minutes: intervalMinutes,
-        total_intervals: heatmapAnalysts[0]?.intervals.length || 54,
+        total_intervals: displayIntervals.length,
         total_qa_analysts: heatmapAnalysts.length,
         qa_heatmap: heatmapAnalysts,
         today_audited: totalAudited,
@@ -444,7 +478,22 @@ export async function getDbSlide4(
       };
     }
 
-    const agentMap = new Map<number, AgentHeatmapItem>();
+    const shiftStartUtcMs = new Date(`${workDate}T12:00:00.000Z`).getTime();
+    const fullShiftIntervals = generateShiftIntervals(intervalMinutes, DEFAULT_SHIFT_CONFIG, 930);
+    const totalFullSlots = fullShiftIntervals.length;
+    const standardSlotCount = Math.floor(540 / intervalMinutes);
+    let maxActiveSlotIdx = Math.min(totalFullSlots - 1, standardSlotCount - 1);
+
+    const agentMap = new Map<
+      number,
+      {
+        agent_id: number;
+        agent_name: string;
+        total_generated: number;
+        buckets: number[];
+      }
+    >();
+
     intervals.forEach((inv) => {
       let item = agentMap.get(inv.crm_agent_id);
       if (!item) {
@@ -452,26 +501,40 @@ export async function getDbSlide4(
           agent_id: inv.crm_agent_id,
           agent_name: inv.agent_name_snapshot || `Agent #${inv.crm_agent_id}`,
           total_generated: 0,
-          intervals: [],
+          buckets: new Array(totalFullSlots).fill(0),
         };
         agentMap.set(inv.crm_agent_id, item);
       }
 
-      item.total_generated += inv.generated_leads;
+      const count = Number(inv.generated_leads || 0);
+      item.total_generated += count;
 
-      const startUtc = new Date(inv.interval_start_at);
-      const endUtc = new Date(inv.interval_end_at);
-      const startIst = convertUtcToIstTime(startUtc.toISOString().slice(11, 19));
-      const endIst = convertUtcToIstTime(endUtc.toISOString().slice(11, 19));
-
-      item.intervals.push({
-        slot_index: item.intervals.length,
-        time_label: `${startIst} - ${endIst}`,
-        generated_count: inv.generated_leads,
-      });
+      const rawStart = String(inv.interval_start_at || "");
+      const startMs = new Date(rawStart.includes("T") ? rawStart : rawStart.replace(" ", "T") + "Z").getTime();
+      if (!isNaN(startMs)) {
+        const offsetMins = Math.floor((startMs - shiftStartUtcMs) / 60000);
+        if (offsetMins >= 0 && offsetMins < 930) {
+          const bIdx = Math.min(totalFullSlots - 1, Math.floor(offsetMins / intervalMinutes));
+          item.buckets[bIdx] += count;
+          if (bIdx >= standardSlotCount && count > 0 && bIdx > maxActiveSlotIdx) {
+            maxActiveSlotIdx = bIdx;
+          }
+        }
+      }
     });
 
-    const heatmapAgents = Array.from(agentMap.values());
+    const displayIntervals = fullShiftIntervals.slice(0, maxActiveSlotIdx + 1);
+
+    const heatmapAgents: AgentHeatmapItem[] = Array.from(agentMap.values()).map((a) => ({
+      agent_id: a.agent_id,
+      agent_name: a.agent_name,
+      total_generated: a.total_generated,
+      intervals: displayIntervals.map((ref, idx) => ({
+        slot_index: idx,
+        time_label: ref.label,
+        generated_count: a.buckets[idx] || 0,
+      })),
+    }));
     heatmapAgents.sort((a, b) => b.total_generated - a.total_generated);
 
     return {
@@ -484,11 +547,9 @@ export async function getDbSlide4(
       data: {
         date: workDate,
         interval_minutes: intervalMinutes,
-        shift_start: "17:30:00",
-        shift_end:
-          heatmapAgents[0]?.intervals[heatmapAgents[0].intervals.length - 1]?.time_label?.split(" - ")[1] ||
-          "09:00:00",
-        total_intervals: heatmapAgents[0]?.intervals.length || 54,
+        shift_start: "17:30",
+        shift_end: displayIntervals[displayIntervals.length - 1]?.end || "09:00",
+        total_intervals: displayIntervals.length,
         total_agents: heatmapAgents.length,
         agent_heatmap: heatmapAgents,
       },
