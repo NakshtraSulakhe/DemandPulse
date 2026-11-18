@@ -123,76 +123,85 @@ export async function upsertAgentDailySnapshots(
     return { success: true, count: 0 };
   }
 
-  const sql = `
-    INSERT INTO agent_daily_snapshots (
-      crm_agent_id, agent_name_snapshot, work_date, daily_target_points, achieved_points,
-      qualified_leads, disqualified_leads, generated_leads, pending_qa_leads, remaining_target_points,
-      target_completion_pct, attendance_status_snapshot, effective_work_minutes, elapsed_work_minutes,
-      expected_points_at_snapshot, productivity_pace_pct, pace_status, source_updated_at, synced_at,
-      snapshot_version, is_final, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), ?, ?, NOW(6), NOW(6))
-    ON DUPLICATE KEY UPDATE
-      agent_name_snapshot = VALUES(agent_name_snapshot),
-      daily_target_points = VALUES(daily_target_points),
-      achieved_points = VALUES(achieved_points),
-      qualified_leads = VALUES(qualified_leads),
-      disqualified_leads = VALUES(disqualified_leads),
-      generated_leads = VALUES(generated_leads),
-      pending_qa_leads = VALUES(pending_qa_leads),
-      remaining_target_points = VALUES(remaining_target_points),
-      target_completion_pct = VALUES(target_completion_pct),
-      attendance_status_snapshot = VALUES(attendance_status_snapshot),
-      effective_work_minutes = VALUES(effective_work_minutes),
-      elapsed_work_minutes = VALUES(elapsed_work_minutes),
-      expected_points_at_snapshot = VALUES(expected_points_at_snapshot),
-      productivity_pace_pct = VALUES(productivity_pace_pct),
-      pace_status = VALUES(pace_status),
-      source_updated_at = VALUES(source_updated_at),
-      synced_at = NOW(6),
-      is_final = VALUES(is_final),
-      updated_at = NOW(6)
-  `;
-
+  const CHUNK_SIZE = 100;
   await withTransaction(async (conn) => {
-    for (const a of agents) {
-      const crmAgentId = Number(a.crm_agent_id);
-      const targetPts = Math.max(0, a.daily_target_points);
-      const achievedPts = Math.max(0, a.achieved_points);
-      const remainingPts = Math.max(0, targetPts - achievedPts);
-      const completionPct =
-        targetPts > 0
-          ? Math.round((achievedPts / targetPts) * 100 * 1000) / 1000
-          : 0;
+    for (let i = 0; i < agents.length; i += CHUNK_SIZE) {
+      const chunk = agents.slice(i, i + CHUNK_SIZE);
+      const placeholders: string[] = [];
+      const params: any[] = [];
 
-      const elapsed = a.elapsed_work_minutes ?? 0;
-      const paceInfo = calculateAgentPace(targetPts, achievedPts, elapsed, 465);
+      for (const a of chunk) {
+        const crmAgentId = Number(a.crm_agent_id);
+        const targetPts = Math.max(0, a.daily_target_points);
+        const achievedPts = Math.max(0, a.achieved_points);
+        const remainingPts = Math.max(0, targetPts - achievedPts);
+        const completionPct =
+          targetPts > 0
+            ? Math.round((achievedPts / targetPts) * 100 * 1000) / 1000
+            : 0;
 
-      const sourceUpdatedAt = a.source_updated_at
-        ? new Date(a.source_updated_at).toISOString().slice(0, 19).replace("T", " ")
-        : null;
+        const elapsed = a.elapsed_work_minutes ?? 0;
+        const paceInfo = calculateAgentPace(targetPts, achievedPts, elapsed, 465);
 
-      await conn.execute(sql, [
-        crmAgentId,
-        a.agent_name,
-        workDateStr,
-        targetPts,
-        achievedPts,
-        a.qualified_leads,
-        a.disqualified_leads || 0,
-        a.generated_leads,
-        a.pending_qa_leads || 0,
-        remainingPts,
-        completionPct,
-        a.attendance_status || "Present",
-        465,
-        elapsed,
-        paceInfo.expectedPoints,
-        paceInfo.productivityPacePct,
-        paceInfo.paceStatus,
-        sourceUpdatedAt,
-        snapshotVersion,
-        isFinal ? 1 : 0,
-      ]);
+        const sourceUpdatedAt = a.source_updated_at
+          ? new Date(a.source_updated_at).toISOString().slice(0, 19).replace("T", " ")
+          : null;
+
+        placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), ?, ?, NOW(6), NOW(6))");
+        params.push(
+          crmAgentId,
+          a.agent_name,
+          workDateStr,
+          targetPts,
+          achievedPts,
+          a.qualified_leads,
+          a.disqualified_leads || 0,
+          a.generated_leads,
+          a.pending_qa_leads || 0,
+          remainingPts,
+          completionPct,
+          a.attendance_status || "Present",
+          465,
+          elapsed,
+          paceInfo.expectedPoints,
+          paceInfo.productivityPacePct,
+          paceInfo.paceStatus,
+          sourceUpdatedAt,
+          snapshotVersion,
+          isFinal ? 1 : 0
+        );
+      }
+
+      const bulkSql = `
+        INSERT INTO agent_daily_snapshots (
+          crm_agent_id, agent_name_snapshot, work_date, daily_target_points, achieved_points,
+          qualified_leads, disqualified_leads, generated_leads, pending_qa_leads, remaining_target_points,
+          target_completion_pct, attendance_status_snapshot, effective_work_minutes, elapsed_work_minutes,
+          expected_points_at_snapshot, productivity_pace_pct, pace_status, source_updated_at, synced_at,
+          snapshot_version, is_final, created_at, updated_at
+        ) VALUES ${placeholders.join(", ")}
+        ON DUPLICATE KEY UPDATE
+          agent_name_snapshot = VALUES(agent_name_snapshot),
+          daily_target_points = VALUES(daily_target_points),
+          achieved_points = VALUES(achieved_points),
+          qualified_leads = VALUES(qualified_leads),
+          disqualified_leads = VALUES(disqualified_leads),
+          generated_leads = VALUES(generated_leads),
+          pending_qa_leads = VALUES(pending_qa_leads),
+          remaining_target_points = VALUES(remaining_target_points),
+          target_completion_pct = VALUES(target_completion_pct),
+          attendance_status_snapshot = VALUES(attendance_status_snapshot),
+          effective_work_minutes = VALUES(effective_work_minutes),
+          elapsed_work_minutes = VALUES(elapsed_work_minutes),
+          expected_points_at_snapshot = VALUES(expected_points_at_snapshot),
+          productivity_pace_pct = VALUES(productivity_pace_pct),
+          pace_status = VALUES(pace_status),
+          source_updated_at = VALUES(source_updated_at),
+          synced_at = NOW(6),
+          is_final = VALUES(is_final),
+          updated_at = NOW(6)
+      `;
+      await conn.execute(bulkSql, params);
     }
   });
 
@@ -277,38 +286,43 @@ export async function upsertAgentIntervalMetrics(
     return { success: true, count: 0 };
   }
 
-  const sql = `
-    INSERT INTO agent_interval_metrics (
-      crm_agent_id, agent_name_snapshot, work_date, interval_start_at, interval_end_at, generated_leads, synced_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, NOW(6), NOW(6))
-    ON DUPLICATE KEY UPDATE
-      agent_name_snapshot = VALUES(agent_name_snapshot),
-      work_date = VALUES(work_date),
-      interval_end_at = VALUES(interval_end_at),
-      generated_leads = VALUES(generated_leads),
-      synced_at = NOW(6)
-  `;
+  const CHUNK_SIZE = 300;
+  await withTransaction(async (conn) => {
+    for (let i = 0; i < intervals.length; i += CHUNK_SIZE) {
+      const chunk = intervals.slice(i, i + CHUNK_SIZE);
+      const placeholders: string[] = [];
+      const params: any[] = [];
 
-  const BATCH_SIZE = 50;
-  for (let i = 0; i < intervals.length; i += BATCH_SIZE) {
-    const chunk = intervals.slice(i, i + BATCH_SIZE);
-    await withTransaction(async (conn) => {
       for (const item of chunk) {
         const crmAgentId = Number(item.crm_agent_id);
         const start = new Date(item.interval_start_at).toISOString().slice(0, 19).replace("T", " ");
         const end = new Date(item.interval_end_at).toISOString().slice(0, 19).replace("T", " ");
 
-        await conn.execute(sql, [
+        placeholders.push("(?, ?, ?, ?, ?, ?, NOW(6), NOW(6))");
+        params.push(
           crmAgentId,
           item.agent_name || null,
           workDateStr,
           start,
           end,
-          item.generated_leads,
-        ]);
+          item.generated_leads
+        );
       }
-    });
-  }
+
+      const bulkSql = `
+        INSERT INTO agent_interval_metrics (
+          crm_agent_id, agent_name_snapshot, work_date, interval_start_at, interval_end_at, generated_leads, synced_at, created_at
+        ) VALUES ${placeholders.join(", ")}
+        ON DUPLICATE KEY UPDATE
+          agent_name_snapshot = VALUES(agent_name_snapshot),
+          work_date = VALUES(work_date),
+          interval_end_at = VALUES(interval_end_at),
+          generated_leads = VALUES(generated_leads),
+          synced_at = NOW(6)
+      `;
+      await conn.execute(bulkSql, params);
+    }
+  });
 
   return { success: true, count: intervals.length };
 }

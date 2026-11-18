@@ -147,33 +147,21 @@ export async function upsertQaIntervalMetrics(
     return { success: true, count: 0 };
   }
 
-  const sql = `
-    INSERT INTO qa_interval_metrics (
-      crm_qa_agent_id, qa_agent_name_snapshot, work_date, interval_start_at, interval_end_at,
-      audited_events, qualified_events, disqualified_events, unique_leads_qualified, synced_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), NOW(6))
-    ON DUPLICATE KEY UPDATE
-      qa_agent_name_snapshot = VALUES(qa_agent_name_snapshot),
-      work_date = VALUES(work_date),
-      interval_end_at = VALUES(interval_end_at),
-      audited_events = VALUES(audited_events),
-      qualified_events = VALUES(qualified_events),
-      disqualified_events = VALUES(disqualified_events),
-      unique_leads_qualified = VALUES(unique_leads_qualified),
-      synced_at = NOW(6)
-  `;
+  const CHUNK_SIZE = 300;
+  await withTransaction(async (conn) => {
+    for (let i = 0; i < intervals.length; i += CHUNK_SIZE) {
+      const chunk = intervals.slice(i, i + CHUNK_SIZE);
+      const placeholders: string[] = [];
+      const params: any[] = [];
 
-  const BATCH_SIZE = 50;
-  for (let i = 0; i < intervals.length; i += BATCH_SIZE) {
-    const chunk = intervals.slice(i, i + BATCH_SIZE);
-    await withTransaction(async (conn) => {
       for (const item of chunk) {
         const crmQaAgentId = Number(item.crm_qa_agent_id);
         const start = new Date(item.interval_start_at).toISOString().slice(0, 19).replace("T", " ");
         const end = new Date(item.interval_end_at).toISOString().slice(0, 19).replace("T", " ");
         const uniqueQualified = item.unique_leads_qualified ?? item.qualified_events;
 
-        await conn.execute(sql, [
+        placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), NOW(6))");
+        params.push(
           crmQaAgentId,
           item.qa_agent_name || null,
           workDateStr,
@@ -182,11 +170,28 @@ export async function upsertQaIntervalMetrics(
           item.audited_events,
           item.qualified_events,
           item.disqualified_events || 0,
-          uniqueQualified,
-        ]);
+          uniqueQualified
+        );
       }
-    });
-  }
+
+      const bulkSql = `
+        INSERT INTO qa_interval_metrics (
+          crm_qa_agent_id, qa_agent_name_snapshot, work_date, interval_start_at, interval_end_at,
+          audited_events, qualified_events, disqualified_events, unique_leads_qualified, synced_at, created_at
+        ) VALUES ${placeholders.join(", ")}
+        ON DUPLICATE KEY UPDATE
+          qa_agent_name_snapshot = VALUES(qa_agent_name_snapshot),
+          work_date = VALUES(work_date),
+          interval_end_at = VALUES(interval_end_at),
+          audited_events = VALUES(audited_events),
+          qualified_events = VALUES(qualified_events),
+          disqualified_events = VALUES(disqualified_events),
+          unique_leads_qualified = VALUES(unique_leads_qualified),
+          synced_at = NOW(6)
+      `;
+      await conn.execute(bulkSql, params);
+    }
+  });
 
   return { success: true, count: intervals.length };
 }

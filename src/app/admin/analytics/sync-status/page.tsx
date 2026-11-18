@@ -41,6 +41,7 @@ export default function SyncStatusAndBackfillPage() {
   const [backfillEnd, setBackfillEnd] = useState<string>("");
   const [overwriteExisting, setOverwriteExisting] = useState<boolean>(false);
   const [isBackfilling, setIsBackfilling] = useState<boolean>(false);
+  const [backfillProgress, setBackfillProgress] = useState<string | null>(null);
   const [backfillResult, setBackfillResult] = useState<any>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -92,30 +93,101 @@ export default function SyncStatusAndBackfillPage() {
       return;
     }
 
+    // Build inclusive date list client-side and process 1 day per API call
+    // to prevent Vercel serverless function timeouts on multi-day ranges.
+    const dates: string[] = [];
+    const cur = new Date(`${backfillStart}T12:00:00Z`);
+    const end = new Date(`${backfillEnd}T12:00:00Z`);
+    if (isNaN(cur.getTime()) || isNaN(end.getTime()) || cur > end) {
+      alert("Start date must be on or before end date.");
+      return;
+    }
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
     setIsBackfilling(true);
-    setBackfillResult(null);
+    setBackfillProgress(`Starting backfill for ${dates.length} day(s)...`);
+
+    const aggregate = {
+      startDate: backfillStart,
+      endDate: backfillEnd,
+      totalDays: dates.length,
+      reconstructedDays: 0,
+      partialDays: 0,
+      alreadyPersistedDays: 0,
+      failedDays: 0,
+      reports: [] as any[],
+      durationMs: 0,
+    };
+    const runStartMs = Date.now();
+    setBackfillResult({ ...aggregate });
+
     try {
-      const res = await fetch("/api/admin/analytics/backfill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          start_date: backfillStart,
-          end_date: backfillEnd,
-          overwrite_existing: overwriteExisting,
-          mark_final: true,
-        }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setBackfillResult(json.data);
-        await fetchStatus();
-      } else {
-        alert(json.error || "Backfill failed");
+      for (let i = 0; i < dates.length; i++) {
+        const d = dates[i];
+        setBackfillProgress(`Backfilling ${d} (${i + 1}/${dates.length})...`);
+        try {
+          const res = await fetch("/api/admin/analytics/backfill", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              start_date: d,
+              end_date: d,
+              overwrite_existing: overwriteExisting,
+              mark_final: true,
+            }),
+          });
+
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            aggregate.failedDays += 1;
+            aggregate.reports.push({
+              date: d,
+              status: "failed",
+              recordsProcessed: 0,
+              notes: `HTTP ${res.status} while syncing ${d}`,
+              error: text.slice(0, 200),
+            });
+          } else {
+            const json = await res.json();
+            if (json.success && json.data) {
+              aggregate.reconstructedDays += json.data.reconstructedDays || 0;
+              aggregate.partialDays += json.data.partialDays || 0;
+              aggregate.alreadyPersistedDays += json.data.alreadyPersistedDays || 0;
+              aggregate.failedDays += json.data.failedDays || 0;
+              if (Array.isArray(json.data.reports)) {
+                aggregate.reports.push(...json.data.reports);
+              }
+            } else {
+              aggregate.failedDays += 1;
+              aggregate.reports.push({
+                date: d,
+                status: "failed",
+                recordsProcessed: 0,
+                notes: json.error || "Backfill failed",
+              });
+            }
+          }
+        } catch (dayErr: any) {
+          aggregate.failedDays += 1;
+          aggregate.reports.push({
+            date: d,
+            status: "failed",
+            recordsProcessed: 0,
+            notes: dayErr?.message || "Network error",
+          });
+        }
+
+        aggregate.durationMs = Date.now() - runStartMs;
+        setBackfillResult({ ...aggregate, reports: [...aggregate.reports] });
       }
-    } catch (err: any) {
-      alert(err.message || "Network error");
+
+      await fetchStatus();
     } finally {
       setIsBackfilling(false);
+      setBackfillProgress(null);
     }
   };
 
@@ -202,7 +274,7 @@ export default function SyncStatusAndBackfillPage() {
             className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-indigo-600/20 transition-all cursor-pointer disabled:opacity-50"
           >
             <Play className="w-3.5 h-3.5" />
-            <span>{isBackfilling ? "Backfilling in progress..." : "Start Safe Backfill"}</span>
+            <span>{isBackfilling ? (backfillProgress || "Backfilling in progress...") : "Start Safe Backfill"}</span>
           </button>
         </div>
 

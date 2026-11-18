@@ -82,72 +82,81 @@ export async function upsertCampaignDailySnapshots(
     return { success: true, count: 0 };
   }
 
-  const sql = `
-    INSERT INTO campaign_daily_snapshots (
-      crm_campaign_id, crm_campaign_code, campaign_name_snapshot, client_code_snapshot, campaign_type_snapshot,
-      work_date, monthly_allocation_snapshot, daily_target_leads, campaign_point_factor, daily_target_points,
-      generated_leads, qualified_leads, disqualified_leads, pending_qa_leads, remaining_target_leads,
-      completion_percentage, target_achieved, source_updated_at, synced_at, snapshot_version, is_final,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), ?, ?, NOW(6), NOW(6))
-    ON DUPLICATE KEY UPDATE
-      crm_campaign_code = VALUES(crm_campaign_code),
-      campaign_name_snapshot = VALUES(campaign_name_snapshot),
-      client_code_snapshot = VALUES(client_code_snapshot),
-      campaign_type_snapshot = VALUES(campaign_type_snapshot),
-      monthly_allocation_snapshot = VALUES(monthly_allocation_snapshot),
-      daily_target_leads = VALUES(daily_target_leads),
-      campaign_point_factor = VALUES(campaign_point_factor),
-      daily_target_points = VALUES(daily_target_points),
-      generated_leads = VALUES(generated_leads),
-      qualified_leads = VALUES(qualified_leads),
-      disqualified_leads = VALUES(disqualified_leads),
-      pending_qa_leads = VALUES(pending_qa_leads),
-      remaining_target_leads = VALUES(remaining_target_leads),
-      completion_percentage = VALUES(completion_percentage),
-      target_achieved = VALUES(target_achieved),
-      source_updated_at = VALUES(source_updated_at),
-      synced_at = NOW(6),
-      is_final = VALUES(is_final),
-      updated_at = NOW(6)
-  `;
-
+  const CHUNK_SIZE = 100;
   await withTransaction(async (conn) => {
-    for (const c of campaigns) {
-      const crmCampaignId = Number(c.crm_campaign_id);
-      const factor = c.campaign_point_factor ?? 1.0;
-      const metrics = calculateCampaignSnapshotMetrics(
-        c.daily_target_leads,
-        c.qualified_leads,
-        factor
-      );
+    for (let i = 0; i < campaigns.length; i += CHUNK_SIZE) {
+      const chunk = campaigns.slice(i, i + CHUNK_SIZE);
+      const placeholders: string[] = [];
+      const params: any[] = [];
 
-      const sourceUpdatedAt = c.source_updated_at
-        ? new Date(c.source_updated_at).toISOString().slice(0, 19).replace("T", " ")
-        : null;
+      for (const c of chunk) {
+        const crmCampaignId = Number(c.crm_campaign_id);
+        const factor = c.campaign_point_factor ?? 1.0;
+        const metrics = calculateCampaignSnapshotMetrics(
+          c.daily_target_leads,
+          c.qualified_leads,
+          factor
+        );
 
-      await conn.execute(sql, [
-        crmCampaignId,
-        c.crm_campaign_code || null,
-        c.campaign_name,
-        c.client_code || null,
-        c.campaign_type || "General",
-        workDateStr,
-        c.monthly_allocation || 0,
-        c.daily_target_leads,
-        factor,
-        metrics.targetPoints,
-        c.generated_leads,
-        c.qualified_leads,
-        c.disqualified_leads || 0,
-        c.pending_qa_leads || 0,
-        metrics.remaining,
-        metrics.completionPct,
-        metrics.targetAchieved ? 1 : 0,
-        sourceUpdatedAt,
-        snapshotVersion,
-        isFinal ? 1 : 0,
-      ]);
+        const sourceUpdatedAt = c.source_updated_at
+          ? new Date(c.source_updated_at).toISOString().slice(0, 19).replace("T", " ")
+          : null;
+
+        placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), ?, ?, NOW(6), NOW(6))");
+        params.push(
+          crmCampaignId,
+          c.crm_campaign_code || null,
+          c.campaign_name,
+          c.client_code || null,
+          c.campaign_type || "General",
+          workDateStr,
+          c.monthly_allocation || 0,
+          c.daily_target_leads,
+          factor,
+          metrics.targetPoints,
+          c.generated_leads,
+          c.qualified_leads,
+          c.disqualified_leads || 0,
+          c.pending_qa_leads || 0,
+          metrics.remaining,
+          metrics.completionPct,
+          metrics.targetAchieved ? 1 : 0,
+          sourceUpdatedAt,
+          snapshotVersion,
+          isFinal ? 1 : 0
+        );
+      }
+
+      const bulkSql = `
+        INSERT INTO campaign_daily_snapshots (
+          crm_campaign_id, crm_campaign_code, campaign_name_snapshot, client_code_snapshot, campaign_type_snapshot,
+          work_date, monthly_allocation_snapshot, daily_target_leads, campaign_point_factor, daily_target_points,
+          generated_leads, qualified_leads, disqualified_leads, pending_qa_leads, remaining_target_leads,
+          completion_percentage, target_achieved, source_updated_at, synced_at, snapshot_version, is_final,
+          created_at, updated_at
+        ) VALUES ${placeholders.join(", ")}
+        ON DUPLICATE KEY UPDATE
+          crm_campaign_code = VALUES(crm_campaign_code),
+          campaign_name_snapshot = VALUES(campaign_name_snapshot),
+          client_code_snapshot = VALUES(client_code_snapshot),
+          campaign_type_snapshot = VALUES(campaign_type_snapshot),
+          monthly_allocation_snapshot = VALUES(monthly_allocation_snapshot),
+          daily_target_leads = VALUES(daily_target_leads),
+          campaign_point_factor = VALUES(campaign_point_factor),
+          daily_target_points = VALUES(daily_target_points),
+          generated_leads = VALUES(generated_leads),
+          qualified_leads = VALUES(qualified_leads),
+          disqualified_leads = VALUES(disqualified_leads),
+          pending_qa_leads = VALUES(pending_qa_leads),
+          remaining_target_leads = VALUES(remaining_target_leads),
+          completion_percentage = VALUES(completion_percentage),
+          target_achieved = VALUES(target_achieved),
+          source_updated_at = VALUES(source_updated_at),
+          synced_at = NOW(6),
+          is_final = VALUES(is_final),
+          updated_at = NOW(6)
+      `;
+      await conn.execute(bulkSql, params);
     }
   });
 
