@@ -46,28 +46,44 @@ export interface FloorCapacitySummary {
  * - Default: 1 point per lead
  */
 export const VERIFIED_CRM_POINT_FACTORS: Record<string, number> = {
+  "voice mail": 0.25,
+  voice_mail: 0.25,
+  voicemail: 0.25,
   mql: 1,
   "marketing qualified leads": 1,
   "marketing qualified lead": 1,
   "hql/callback": 2,
   "hql / callback": 2,
+  hql_callback: 2,
   hql: 2,
   callback: 2,
   bant: 3,
   "appointment generation": 5,
+  appointment_generation: 5,
   "appointment setting": 5,
   appointment: 5,
-  "email marketing": 0.25,
-  email: 0.25,
+  "email marketing": 0.5,
+  email_marketing: 0.5,
+  email: 0.5,
   outbound: 1,
   "outbound b2b": 1,
   inbound: 1,
   "inbound qualified": 1,
 };
 
+function normalizeCampaignTypeKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_/\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
  * Normalizes campaign type and retrieves verified CRM points factor.
- * Avoids hardcoding inside display components; allows dynamic resolution.
+ * Always prioritizes database-configured customFactors (exact and partial normalized match)
+ * before falling back to VERIFIED_CRM_POINT_FACTORS defaults.
  */
 export function getVerifiedPointFactor(
   campaignType?: string | null,
@@ -75,21 +91,59 @@ export function getVerifiedPointFactor(
 ): number {
   if (!campaignType) return 1;
   const clean = campaignType.trim().toLowerCase();
+  const normalized = normalizeCampaignTypeKey(campaignType);
 
-  if (customFactors && clean in customFactors) {
-    const custom = customFactors[clean];
-    if (typeof custom === "number" && !isNaN(custom) && custom > 0) {
-      return custom;
+  if (customFactors && Object.keys(customFactors).length > 0) {
+    // 1. Exact match against DB-configured factors (raw or normalized)
+    if (clean in customFactors) {
+      const custom = customFactors[clean];
+      if (typeof custom === "number" && !isNaN(custom) && custom > 0) {
+        return custom;
+      }
+    }
+    if (normalized in customFactors) {
+      const custom = customFactors[normalized];
+      if (typeof custom === "number" && !isNaN(custom) && custom > 0) {
+        return custom;
+      }
+    }
+
+    // Check normalized versions of customFactors keys for exact match
+    const normalizedEntries = Object.entries(customFactors)
+      .filter(([, v]) => typeof v === "number" && !isNaN(v) && v > 0)
+      .map(([k, v]) => [normalizeCampaignTypeKey(k), v] as [string, number])
+      .filter(([k]) => k.length > 0);
+
+    for (const [kNorm, factor] of normalizedEntries) {
+      if (normalized === kNorm) {
+        return factor;
+      }
+    }
+
+    // 2. Partial match against DB-configured factors (longest keys first for highest specificity)
+    const sortedCustom = [...normalizedEntries].sort((a, b) => b[0].length - a[0].length);
+    for (const [kNorm, factor] of sortedCustom) {
+      if (kNorm.length >= 3 && (normalized.includes(kNorm) || kNorm.includes(normalized))) {
+        return factor;
+      }
     }
   }
 
+  // 3. Exact match against built-in defaults
   if (clean in VERIFIED_CRM_POINT_FACTORS) {
     return VERIFIED_CRM_POINT_FACTORS[clean];
   }
+  if (normalized in VERIFIED_CRM_POINT_FACTORS) {
+    return VERIFIED_CRM_POINT_FACTORS[normalized];
+  }
 
-  // Check partial key matching
-  for (const [key, factor] of Object.entries(VERIFIED_CRM_POINT_FACTORS)) {
-    if (clean.includes(key) || key.includes(clean)) {
+  // 4. Partial key matching against built-in defaults (longest keys first)
+  const sortedDefaults = Object.entries(VERIFIED_CRM_POINT_FACTORS)
+    .map(([k, v]) => [normalizeCampaignTypeKey(k), v] as [string, number])
+    .sort((a, b) => b[0].length - a[0].length);
+
+  for (const [kNorm, factor] of sortedDefaults) {
+    if (kNorm.length >= 3 && (normalized.includes(kNorm) || kNorm.includes(normalized))) {
       return factor;
     }
   }

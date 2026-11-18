@@ -285,14 +285,27 @@ export async function getProductivityPointsMap(
     if (rows && rows.length > 0) {
       for (const c of rows) {
         const factor = Number(c.points_factor);
-        const actType = (c.activity_type || "").toLowerCase();
-        const dispName = (c.display_name || "").toLowerCase();
+        const actType = (c.activity_type || "").trim().toLowerCase();
+        const dispName = (c.display_name || "").trim().toLowerCase();
 
-        map[actType] = factor;
-        map[dispName] = factor;
+        if (actType) {
+          map[actType] = factor;
+          map[actType.replace(/_/g, " ")] = factor;
+        }
+        if (dispName) {
+          map[dispName] = factor;
+          map[dispName.replace(/\s+/g, "_")] = factor;
+        }
 
         // Normalizations
-        if (actType === "email_marketing") {
+        if (actType === "voice_mail" || dispName === "voice mail" || dispName === "voicemail") {
+          map["voice_mail"] = factor;
+          map["voice mail"] = factor;
+          map["voice-mail"] = factor;
+          map["voicemail"] = factor;
+        }
+        if (actType === "email_marketing" || dispName === "email marketing") {
+          map["email_marketing"] = factor;
           map["email marketing"] = factor;
           map["email"] = factor;
         }

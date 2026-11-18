@@ -506,7 +506,7 @@ export default function QaIncentiveCalculatorView() {
                                     <div className="p-2.5 bg-slate-100 dark:bg-white/5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
                                       <div className="font-bold text-[11px] text-slate-900 dark:text-white flex items-center gap-1.5">
                                         <Layers className="w-3.5 h-3.5 text-cyan-500" />
-                                        <span>Audited Campaign Types & Points Breakdown (5:30 AM to 9:00 AM Shift)</span>
+                                        <span>Audited Campaign Types & Points Breakdown (5:30 PM to 9:00 AM Shift)</span>
                                       </div>
                                       <span className="text-[10px] font-mono font-bold text-purple-600 dark:text-purple-400">
                                         Total Earned: {item.actual_points || 0} pts
@@ -522,22 +522,35 @@ export default function QaIncentiveCalculatorView() {
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                                        {item.campaign_breakdown.map((cb, idx) => (
-                                          <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
-                                            <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
-                                              {cb.campaign_name || cb.activity_type}
-                                            </td>
-                                            <td className="py-2 px-2 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
-                                              {cb.lead_count} audits
-                                            </td>
-                                            <td className="py-2 px-2 text-center font-mono text-slate-500">
-                                              {cb.point_factor} pts/audit
-                                            </td>
-                                            <td className="py-2 px-3 text-right font-mono font-bold text-cyan-600 dark:text-cyan-400">
-                                              {cb.total_points} pts
-                                            </td>
-                                          </tr>
-                                        ))}
+                                        {item.campaign_breakdown.map((cb, idx) => {
+                                          const resolvedType = cb.campaign_type || cb.activity_type;
+                                          const showTypeBadge =
+                                            resolvedType &&
+                                            resolvedType.toLowerCase() !== (cb.campaign_name || "").toLowerCase();
+                                          return (
+                                            <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
+                                              <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                                                <div className="flex items-center flex-wrap gap-1.5">
+                                                  <span>{cb.campaign_name || cb.activity_type}</span>
+                                                  {showTypeBadge && (
+                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/20">
+                                                      {resolvedType}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
+                                                {cb.lead_count} audits
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-slate-500">
+                                                {cb.point_factor} pts/audit
+                                              </td>
+                                              <td className="py-2 px-3 text-right font-mono font-bold text-cyan-600 dark:text-cyan-400">
+                                                {cb.total_points} pts
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
                                       </tbody>
                                     </table>
                                   </div>

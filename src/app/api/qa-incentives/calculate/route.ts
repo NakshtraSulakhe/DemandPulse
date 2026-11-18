@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getQaIncentivePlans } from "@/lib/db/qa-incentive-repository";
 import { getQaDailySnapshotsForDate } from "@/lib/db/qa-analytics-repository";
-import { getCrmSlide3, getCrmQaAudits } from "@/lib/crm-api";
+import { getCrmSlide3, getCrmQaAudits, getCrmCampaignTargets } from "@/lib/crm-api";
 import { calculateQaIncentive } from "@/lib/qa-incentives/calculator";
 import { getShiftBusinessDate, addDays } from "@/lib/shift/engine";
 import { QaIncentivePlan, QaIncentiveCalculationItem } from "@/types/qa-incentives";
@@ -65,16 +65,50 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 2. Fetch live QA Audits & Incentive feed from the newly provided CRM API endpoint
-    // Primary: /api/v1/slides/qa_audits.php
-    const qaAuditsRes = await getCrmQaAudits({
-      date,
-      frequency: frequency.toLowerCase() as "daily" | "monthly",
-      base_target: defaultPlan.base_target_leads,
-      base_reward: defaultPlan.base_incentive_amount,
-      tiers: tierSlabsPayload,
-      include_leads: 1,
-    }).catch(() => ({ success: false, data: undefined }));
+    // 2. Fetch live QA Audits & full CRM campaign metadata concurrently so every audited lead
+    // resolves its authoritative CRM campaign_type (Voice Mail, Email Marketing, MQL, HQL/Callback, BANT, AG)
+    const [qaAuditsRes, crmCampaignsRes] = await Promise.all([
+      getCrmQaAudits({
+        date,
+        frequency: frequency.toLowerCase() as "daily" | "monthly",
+        base_target: defaultPlan.base_target_leads,
+        base_reward: defaultPlan.base_incentive_amount,
+        tiers: tierSlabsPayload,
+        include_leads: 1,
+      }).catch(() => ({ success: false, data: undefined })),
+      getCrmCampaignTargets(date, "all").catch(() => ({ success: false, data: undefined })),
+    ]);
+
+    // Build authoritative CRM campaign_type lookup indexes (by campaign_id, campaign_code, and campaign_name)
+    const campaignTypeById = new Map<number, string>();
+    const campaignTypeByCode = new Map<string, string>();
+    const campaignTypeByName = new Map<string, string>();
+
+    const crmCampaignList: any[] = Array.isArray(crmCampaignsRes?.data)
+      ? crmCampaignsRes.data
+      : Array.isArray((crmCampaignsRes?.data as any)?.campaigns)
+      ? (crmCampaignsRes.data as any).campaigns
+      : [];
+
+    for (const c of crmCampaignList) {
+      const cType = String(c.campaign_type || "").trim();
+      if (!cType) continue;
+      if (c.campaign_id) campaignTypeById.set(Number(c.campaign_id), cType);
+      if (c.campaign_code) campaignTypeByCode.set(String(c.campaign_code).trim().toLowerCase(), cType);
+      if (c.campaign_name) campaignTypeByName.set(String(c.campaign_name).trim().toLowerCase(), cType);
+    }
+
+    const resolveLeadCampaignType = (leadOrCamp: any, fallbackName: string): string => {
+      const explicitType = String(leadOrCamp?.campaign_type || "").trim();
+      if (explicitType) return explicitType;
+      const cid = Number(leadOrCamp?.campaign_id || 0);
+      if (cid && campaignTypeById.has(cid)) return campaignTypeById.get(cid)!;
+      const cCode = String(leadOrCamp?.campaign_code || "").trim().toLowerCase();
+      if (cCode && campaignTypeByCode.has(cCode)) return campaignTypeByCode.get(cCode)!;
+      const cNameKey = fallbackName.trim().toLowerCase();
+      if (cNameKey && campaignTypeByName.has(cNameKey)) return campaignTypeByName.get(cNameKey)!;
+      return fallbackName;
+    };
 
     const calculations: QaIncentiveCalculationItem[] = [];
     let apiSummary: any = null;
@@ -196,7 +230,10 @@ export async function GET(req: NextRequest) {
         let rectifiedCount = 0;
 
         let filteredShiftLeads: any[] = [];
-        const campaignGroupMap = new Map<string, { count: number; factor: number; totalPoints: number }>();
+        const campaignGroupMap = new Map<
+          string,
+          { count: number; factor: number; totalPoints: number; campaignType: string }
+        >();
 
         if (Array.isArray(a.audited_leads)) {
           const uniqueList = creditedLeadsByAnalyst.get(analystId) || [];
@@ -217,15 +254,21 @@ export async function GET(req: NextRequest) {
           };
           rectifiedCount = uniqueList.filter(isRectified).length;
 
-          // Compute campaign type points for each lead
+          // Compute campaign type points for each lead using authoritative CRM campaign_type
           uniqueList.forEach((l: any) => {
             const campaignName = (l.campaign_name || l.campaign_code || "General").trim();
-            const factor = getVerifiedPointFactor(campaignName, pointsMap);
+            const resolvedCampaignType = resolveLeadCampaignType(l, campaignName);
+            const factor = getVerifiedPointFactor(resolvedCampaignType, pointsMap);
             l.point_factor = factor;
             l.points_earned = factor;
-            l.campaign_type = campaignName;
+            l.campaign_type = resolvedCampaignType;
 
-            const existing = campaignGroupMap.get(campaignName) || { count: 0, factor, totalPoints: 0 };
+            const existing = campaignGroupMap.get(campaignName) || {
+              count: 0,
+              factor,
+              totalPoints: 0,
+              campaignType: resolvedCampaignType,
+            };
             existing.count += 1;
             existing.totalPoints = Math.round((existing.totalPoints + factor) * 100) / 100;
             campaignGroupMap.set(campaignName, existing);
@@ -245,10 +288,16 @@ export async function GET(req: NextRequest) {
         if (totalAnalystPoints === 0 && Array.isArray(a.campaigns_breakdown) && a.campaigns_breakdown.length > 0) {
           a.campaigns_breakdown.forEach((cb: any) => {
             const cName = cb.campaign_name || `Campaign #${cb.campaign_id}`;
-            const factor = getVerifiedPointFactor(cName, pointsMap);
+            const resolvedCampaignType = resolveLeadCampaignType(cb, cName);
+            const factor = getVerifiedPointFactor(resolvedCampaignType, pointsMap);
             const count = Number(cb.total_audited || cb.qualified || 0);
             const points = Math.round(count * factor * 100) / 100;
-            campaignGroupMap.set(cName, { count, factor, totalPoints: points });
+            campaignGroupMap.set(cName, {
+              count,
+              factor,
+              totalPoints: points,
+              campaignType: resolvedCampaignType,
+            });
             totalAnalystPoints = Math.round((totalAnalystPoints + points) * 100) / 100;
           });
         }
@@ -261,17 +310,17 @@ export async function GET(req: NextRequest) {
           const bQty = Math.floor(totalAudited * 0.1);
           const aQty = Math.floor(totalAudited * 0.1);
 
-          const eFactor = pointsMap["email_marketing"] || 0.25;
+          const eFactor = pointsMap["email_marketing"] || 0.5;
           const mFactor = pointsMap["mql"] || 1.0;
           const hFactor = pointsMap["hql_callback"] || 2.0;
           const bFactor = pointsMap["bant"] || 3.0;
           const aFactor = pointsMap["appointment_generation"] || 5.0;
 
-          campaignGroupMap.set("Email Marketing", { count: eQty, factor: eFactor, totalPoints: Math.round(eQty * eFactor * 100) / 100 });
-          campaignGroupMap.set("MQL", { count: mQty, factor: mFactor, totalPoints: Math.round(mQty * mFactor * 100) / 100 });
-          campaignGroupMap.set("HQL / Callback", { count: hQty, factor: hFactor, totalPoints: Math.round(hQty * hFactor * 100) / 100 });
-          campaignGroupMap.set("BANT", { count: bQty, factor: bFactor, totalPoints: Math.round(bQty * bFactor * 100) / 100 });
-          campaignGroupMap.set("Appointment Generation", { count: aQty, factor: aFactor, totalPoints: Math.round(aQty * aFactor * 100) / 100 });
+          campaignGroupMap.set("Email Marketing", { count: eQty, factor: eFactor, totalPoints: Math.round(eQty * eFactor * 100) / 100, campaignType: "Email Marketing" });
+          campaignGroupMap.set("MQL", { count: mQty, factor: mFactor, totalPoints: Math.round(mQty * mFactor * 100) / 100, campaignType: "MQL" });
+          campaignGroupMap.set("HQL / Callback", { count: hQty, factor: hFactor, totalPoints: Math.round(hQty * hFactor * 100) / 100, campaignType: "HQL / Callback" });
+          campaignGroupMap.set("BANT", { count: bQty, factor: bFactor, totalPoints: Math.round(bQty * bFactor * 100) / 100, campaignType: "BANT" });
+          campaignGroupMap.set("Appointment Generation", { count: aQty, factor: aFactor, totalPoints: Math.round(aQty * aFactor * 100) / 100, campaignType: "Appointment Generation" });
 
           totalAnalystPoints = Math.round(
             Array.from(campaignGroupMap.values()).reduce((sum, g) => sum + g.totalPoints, 0) * 100
@@ -279,8 +328,9 @@ export async function GET(req: NextRequest) {
         }
 
         const campaignBreakdownList = Array.from(campaignGroupMap.entries()).map(([cName, g]) => ({
-          activity_type: cName,
+          activity_type: g.campaignType || cName,
           campaign_name: cName,
+          campaign_type: g.campaignType,
           lead_count: g.count,
           point_factor: g.factor,
           total_points: g.totalPoints,

@@ -147,6 +147,7 @@ export interface QaIncentiveCalculationItem {
   campaign_breakdown?: Array<{
     activity_type: string;
     campaign_name: string;
+    campaign_type?: string;
     lead_count: number;
     point_factor: number;
     total_points: number;

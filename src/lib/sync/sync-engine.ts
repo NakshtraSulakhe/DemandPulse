@@ -26,6 +26,7 @@ import {
 import { fetchDailySettled } from "@/lib/incentives/api";
 import { getAllocationsMapForDate } from "@/lib/db/allocations";
 import { getVerifiedPointFactor, isAgentPresentForFloorCapacity } from "@/lib/productivity/points-capacity";
+import { getProductivityPointsMap } from "@/lib/db/campaign-points-repository";
 import { upsertCampaignDailySnapshots } from "@/lib/db/campaign-analytics-repository";
 import {
   upsertAgentDailySnapshots,
@@ -155,6 +156,8 @@ export async function runAnalyticsSync(
       hasMockFallback = true;
     }
 
+    const pointsMap = await getProductivityPointsMap().catch(() => ({} as Record<string, number>));
+
     // =========================================================================
     // A. SYNC CAMPAIGN DAILY SNAPSHOTS (Slide 1 + Target Plans)
     // =========================================================================
@@ -163,7 +166,7 @@ export async function runAnalyticsSync(
         const campaignInputs = s1Result.data.campaigns.map((camp) => {
           const savedAlloc = allocationsMap.get(camp.campaign_id);
           const dailyTarget = savedAlloc ? savedAlloc.daily_target : (camp.daily_target || 0);
-          const factor = getVerifiedPointFactor(camp.campaign_type);
+          const factor = getVerifiedPointFactor(camp.campaign_type, pointsMap);
 
           return {
             crm_campaign_id: camp.campaign_id,
@@ -238,7 +241,7 @@ export async function runAnalyticsSync(
         s1Result.data.campaigns.forEach((c) => {
           const saved = allocationsMap.get(c.campaign_id);
           const target = saved ? saved.daily_target : (c.daily_target || 0);
-          const factor = getVerifiedPointFactor(c.campaign_type);
+          const factor = getVerifiedPointFactor(c.campaign_type, pointsMap);
           campaignTargetPoints += target * factor;
         });
       }
