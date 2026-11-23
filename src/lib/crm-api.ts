@@ -2374,20 +2374,38 @@ export async function getCrmQaAudits(
   const config = await getCrmConfig();
   const timestamp = new Date().toISOString();
   const effectiveDate = params?.date || getShiftBusinessDate();
+  const isMonthly = (params?.frequency || "").toLowerCase() === "monthly";
 
-  // Operational shift bounds: 17:30 IST (12:00:00 UTC) -> next day 09:00 IST (03:30:00 UTC)
-  // Ensures all work continuing overnight until 9:00 AM IST morning refresh is captured from CRM
-  const shiftStartUtc = "12:00:00";
-  const shiftEndUtc = "03:30:00";
-  const nextDate = addDays(effectiveDate, 1);
+  let dateFrom: string;
+  let dateTo: string;
+
+  if (params?.date_from && params?.date_to) {
+    dateFrom = params.date_from;
+    dateTo = params.date_to;
+  } else if (isMonthly) {
+    const parts = effectiveDate.split("-");
+    const year = Number(parts[0]) || new Date().getFullYear();
+    const month = Number(parts[1]) || new Date().getMonth() + 1;
+    const lastDay = new Date(year, month, 0).getDate();
+    dateFrom = `${year}-${String(month).padStart(2, "0")}-01 00:00:00`;
+    dateTo = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")} 23:59:59`;
+  } else {
+    // Operational shift bounds: 17:30 IST (12:00:00 UTC) -> next day 09:00 IST (03:30:00 UTC)
+    // Ensures all work continuing overnight until 9:00 AM IST morning refresh is captured from CRM
+    const shiftStartUtc = "12:00:00";
+    const shiftEndUtc = "03:30:00";
+    const nextDate = addDays(effectiveDate, 1);
+    dateFrom = `${effectiveDate} ${shiftStartUtc}`;
+    dateTo = `${nextDate} ${shiftEndUtc}`;
+  }
 
   const queryParams: Record<string, string | number | undefined> = {
     date: effectiveDate,
     frequency: params?.frequency || "daily",
-    shift_start: shiftStartUtc,
-    shift_end: shiftEndUtc,
-    date_from: params?.date_from || `${effectiveDate} ${shiftStartUtc}`,
-    date_to: params?.date_to || `${nextDate} ${shiftEndUtc}`,
+    shift_start: isMonthly ? undefined : "12:00:00",
+    shift_end: isMonthly ? undefined : "03:30:00",
+    date_from: dateFrom,
+    date_to: dateTo,
   };
 
   if (params?.qa_id) queryParams.qa_id = params.qa_id;

@@ -137,7 +137,12 @@ export default function QaIncentiveCalculatorView() {
           {/* Daily vs Monthly Toggle */}
           <div className="flex items-center p-1 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-xs">
             <button
-              onClick={() => setFrequency("DAILY")}
+              onClick={() => {
+                setFrequency("DAILY");
+                if (selectedDate.length === 7) {
+                  setSelectedDate(new Date().toISOString().split("T")[0]);
+                }
+              }}
               className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                 frequency === "DAILY"
                   ? "bg-cyan-600 text-white shadow-sm"
@@ -147,7 +152,12 @@ export default function QaIncentiveCalculatorView() {
               Daily
             </button>
             <button
-              onClick={() => setFrequency("MONTHLY")}
+              onClick={() => {
+                setFrequency("MONTHLY");
+                if (selectedDate.length > 7) {
+                  setSelectedDate(selectedDate.slice(0, 7));
+                }
+              }}
               className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                 frequency === "MONTHLY"
                   ? "bg-purple-600 text-white shadow-sm"
@@ -158,15 +168,24 @@ export default function QaIncentiveCalculatorView() {
             </button>
           </div>
 
-          {/* Date Picker */}
+          {/* Date / Month Picker */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl glass-panel border border-slate-200/80 dark:border-white/10 text-xs">
             <Calendar className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-slate-800 dark:text-slate-200 outline-none text-xs cursor-pointer font-mono"
-            />
+            {frequency === "MONTHLY" ? (
+              <input
+                type="month"
+                value={selectedDate.slice(0, 7)}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-transparent text-slate-800 dark:text-slate-200 outline-none text-xs cursor-pointer font-mono font-semibold"
+              />
+            ) : (
+              <input
+                type="date"
+                value={selectedDate.length === 7 ? `${selectedDate}-01` : selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-transparent text-slate-800 dark:text-slate-200 outline-none text-xs cursor-pointer font-mono"
+              />
+            )}
           </div>
 
           <button
@@ -290,7 +309,11 @@ export default function QaIncentiveCalculatorView() {
           </div>
           <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
             {summary?.top_performer
-              ? `${summary.top_performer.total_points || summary.top_performer.total_audited} pts (${summary.top_performer.total_audited} audits)`
+              ? `${summary.top_performer.total_points || summary.top_performer.total_audited} pts (${summary.top_performer.total_audited} audits)${
+                  summary.top_performer.total_incentive > 0
+                    ? ` • ${formatINR(summary.top_performer.total_incentive)}`
+                    : ""
+                }`
               : "Evaluating..."}
           </p>
         </div>
@@ -506,7 +529,9 @@ export default function QaIncentiveCalculatorView() {
                                     <div className="p-2.5 bg-slate-100 dark:bg-white/5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
                                       <div className="font-bold text-[11px] text-slate-900 dark:text-white flex items-center gap-1.5">
                                         <Layers className="w-3.5 h-3.5 text-cyan-500" />
-                                        <span>Audited Campaign Types & Points Breakdown (5:30 PM to 9:00 AM Shift)</span>
+                                        <span>
+                                          Audited Campaign Types & Points Breakdown ({frequency === "MONTHLY" ? "Monthly Cumulative" : "5:30 PM to 9:00 AM Shift"})
+                                        </span>
                                       </div>
                                       <span className="text-[10px] font-mono font-bold text-purple-600 dark:text-purple-400">
                                         Total Earned: {item.actual_points || 0} pts

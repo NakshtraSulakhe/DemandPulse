@@ -8,6 +8,8 @@ import { QaIncentivePlan, QaIncentiveCalculationItem } from "@/types/qa-incentiv
 import { getProductivityPointsMap } from "@/lib/db/campaign-points-repository";
 import { getVerifiedPointFactor } from "@/lib/productivity/points-capacity";
 import { getEmployeeTargetForMonth } from "@/lib/db/employee-targets-repository";
+import { CRM_KNOWN_ROSTER } from "@/lib/crm-roster";
+import { query } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,9 +20,18 @@ export const revalidate = 0;
  */
 export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams;
-  const date = searchParams.get("date") || getShiftBusinessDate();
+  const rawDate = searchParams.get("date") || getShiftBusinessDate();
   const frequency = (searchParams.get("frequency") || "DAILY").toUpperCase() as "DAILY" | "MONTHLY";
   const planIdFilter = searchParams.get("plan_id");
+
+  // Determine target month and year
+  const parts = rawDate.split("-");
+  const targetYear = parseInt(parts[0], 10) || new Date().getFullYear();
+  const targetMonth = parseInt(parts[1], 10) || new Date().getMonth() + 1;
+  const lastDay = new Date(targetYear, targetMonth, 0).getDate();
+  const monthStartStr = `${targetYear}-${String(targetMonth).padStart(2, "0")}-01 00:00:00`;
+  const monthEndStr = `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")} 23:59:59`;
+  const date = frequency === "MONTHLY" ? `${targetYear}-${String(targetMonth).padStart(2, "0")}` : rawDate;
 
   try {
     // 1. Fetch configured plans
@@ -69,14 +80,16 @@ export async function GET(req: NextRequest) {
     // resolves its authoritative CRM campaign_type (Voice Mail, Email Marketing, MQL, HQL/Callback, BANT, AG)
     const [qaAuditsRes, crmCampaignsRes] = await Promise.all([
       getCrmQaAudits({
-        date,
+        date: rawDate,
+        date_from: frequency === "MONTHLY" ? monthStartStr : undefined,
+        date_to: frequency === "MONTHLY" ? monthEndStr : undefined,
         frequency: frequency.toLowerCase() as "daily" | "monthly",
         base_target: defaultPlan.base_target_leads,
         base_reward: defaultPlan.base_incentive_amount,
         tiers: tierSlabsPayload,
-        include_leads: 1,
+        include_leads: frequency === "MONTHLY" ? 0 : 1,
       }).catch(() => ({ success: false, data: undefined })),
-      getCrmCampaignTargets(date, "all").catch(() => ({ success: false, data: undefined })),
+      getCrmCampaignTargets(rawDate, "all").catch(() => ({ success: false, data: undefined })),
     ]);
 
     // Build authoritative CRM campaign_type lookup indexes (by campaign_id, campaign_code, and campaign_name)
@@ -132,81 +145,84 @@ export async function GET(req: NextRequest) {
     if (qaAuditsRes.success && Array.isArray(analystsList) && analystsList.length > 0) {
       apiSummary = qaAuditsPayload?.summary || rawData?.summary || null;
 
-      // Authoritative QA Counting Engine:
-      // Step 1: For each analyst, determine their unique finalized leads within the operational shift window
-      // (12:00:00 UTC date -> 03:30:00 UTC nextDate)
-      const nextDate = addDays(date, 1);
-      const startUtcMs = new Date(`${date}T12:00:00.000Z`).getTime();
-      const endUtcMs = new Date(`${nextDate}T03:30:00.000Z`).getTime();
-
-      const perAnalystFinalized = new Map<number, any[]>();
-
-      for (const a of analystsList) {
-        const aId = Number(a.user_id || a.qa_id || a.id);
-        if (!aId || aId === 99 || aId === 151) continue;
-
-        const shiftLeads = (a.audited_leads || []).filter((l: any) => {
-          const t = l.reviewed_at || l.created_at || "";
-          if (!t) return false;
-          const tMs = new Date(t.includes("T") ? t : t.replace(" ", "T") + "Z").getTime();
-          return !isNaN(tMs) && tMs >= startUtcMs && tMs <= endUtcMs;
-        });
-
-        // Sort ascending chronologically so newest action defines the analyst's final status on the lead
-        shiftLeads.sort((x: any, y: any) =>
-          (x.reviewed_at || x.created_at || "").localeCompare(y.reviewed_at || y.created_at || "")
-        );
-
-        const uniqueMap = new Map<number | string, any>();
-        shiftLeads.forEach((l: any) => {
-          const leadKey = l.lead_id || l.lead_code || l.id;
-          if (leadKey) uniqueMap.set(leadKey, l);
-        });
-
-        // Filter strictly to finalized review events: 'qualified' or 'disqualified' (unfinalized 'In Progress' / 'Pending' are not counted)
-        const finalized = Array.from(uniqueMap.values()).filter((l: any) => {
-          const s = String(l.qa_status || "").toLowerCase();
-          return s === "qualified" || s === "disqualified";
-        });
-
-        perAnalystFinalized.set(aId, finalized);
-      }
-
-      // Step 2: Cross-analyst de-duplication across the QA floor:
-      // When multiple QA analysts review the same lead, credit initial finalization to primary reviewer
-      const allFinalizedEvents: {
-        analystId: number;
-        leadId: string | number;
-        status: string;
-        time: string;
-        lead: any;
-      }[] = [];
-
-      perAnalystFinalized.forEach((leads, analystId) => {
-        leads.forEach((l: any) => {
-          const leadKey = l.lead_id || l.lead_code || l.id;
-          allFinalizedEvents.push({
-            analystId,
-            leadId: leadKey,
-            status: String(l.qa_status || "").toLowerCase(),
-            time: l.reviewed_at || l.created_at || "",
-            lead: l,
-          });
-        });
-      });
-
-      allFinalizedEvents.sort((x, y) => x.time.localeCompare(y.time));
-
-      const seenFloorLeads = new Set<string | number>();
       const creditedLeadsByAnalyst = new Map<number, any[]>();
 
-      for (const ev of allFinalizedEvents) {
-        if (!seenFloorLeads.has(ev.leadId)) {
-          seenFloorLeads.add(ev.leadId);
-          if (!creditedLeadsByAnalyst.has(ev.analystId)) {
-            creditedLeadsByAnalyst.set(ev.analystId, []);
+      // Authoritative QA Counting Engine for Daily Shift:
+      if (frequency === "DAILY") {
+        // Step 1: For each analyst, determine their unique finalized leads within the operational shift window
+        // (12:00:00 UTC date -> 03:30:00 UTC nextDate)
+        const nextDate = addDays(rawDate, 1);
+        const startUtcMs = new Date(`${rawDate}T12:00:00.000Z`).getTime();
+        const endUtcMs = new Date(`${nextDate}T03:30:00.000Z`).getTime();
+
+        const perAnalystFinalized = new Map<number, any[]>();
+
+        for (const a of analystsList) {
+          const aId = Number(a.user_id || a.qa_id || a.id);
+          if (!aId || aId === 99 || aId === 151) continue;
+
+          const shiftLeads = (a.audited_leads || []).filter((l: any) => {
+            const t = l.reviewed_at || l.created_at || "";
+            if (!t) return false;
+            const tMs = new Date(t.includes("T") ? t : t.replace(" ", "T") + "Z").getTime();
+            return !isNaN(tMs) && tMs >= startUtcMs && tMs <= endUtcMs;
+          });
+
+          // Sort ascending chronologically so newest action defines the analyst's final status on the lead
+          shiftLeads.sort((x: any, y: any) =>
+            (x.reviewed_at || x.created_at || "").localeCompare(y.reviewed_at || y.created_at || "")
+          );
+
+          const uniqueMap = new Map<number | string, any>();
+          shiftLeads.forEach((l: any) => {
+            const leadKey = l.lead_id || l.lead_code || l.id;
+            if (leadKey) uniqueMap.set(leadKey, l);
+          });
+
+          // Filter strictly to finalized review events: 'qualified' or 'disqualified' (unfinalized 'In Progress' / 'Pending' are not counted)
+          const finalized = Array.from(uniqueMap.values()).filter((l: any) => {
+            const s = String(l.qa_status || "").toLowerCase();
+            return s === "qualified" || s === "disqualified";
+          });
+
+          perAnalystFinalized.set(aId, finalized);
+        }
+
+        // Step 2: Cross-analyst de-duplication across the QA floor:
+        // When multiple QA analysts review the same lead, credit initial finalization to primary reviewer
+        const allFinalizedEvents: {
+          analystId: number;
+          leadId: string | number;
+          status: string;
+          time: string;
+          lead: any;
+        }[] = [];
+
+        perAnalystFinalized.forEach((leads, analystId) => {
+          leads.forEach((l: any) => {
+            const leadKey = l.lead_id || l.lead_code || l.id;
+            allFinalizedEvents.push({
+              analystId,
+              leadId: leadKey,
+              status: String(l.qa_status || "").toLowerCase(),
+              time: l.reviewed_at || l.created_at || "",
+              lead: l,
+            });
+          });
+        });
+
+        allFinalizedEvents.sort((x, y) => x.time.localeCompare(y.time));
+
+        const seenFloorLeads = new Set<string | number>();
+
+        for (const ev of allFinalizedEvents) {
+          if (!seenFloorLeads.has(ev.leadId)) {
+            seenFloorLeads.add(ev.leadId);
+            if (!creditedLeadsByAnalyst.has(ev.analystId)) {
+              creditedLeadsByAnalyst.set(ev.analystId, []);
+            }
+            creditedLeadsByAnalyst.get(ev.analystId)!.push(ev.lead);
           }
-          creditedLeadsByAnalyst.get(ev.analystId)!.push(ev.lead);
         }
       }
 
@@ -215,7 +231,9 @@ export async function GET(req: NextRequest) {
         const analystId = Number(a.user_id || a.qa_id || a.id);
         if (!analystId || analystId === 99 || analystId === 151) continue;
 
+        const rosterEntry = CRM_KNOWN_ROSTER[analystId];
         const resolvedName =
+          rosterEntry?.name ||
           QA_NAME_MAP[analystId] ||
           (a.qa_name && !a.qa_name.includes("#") ? a.qa_name : "") ||
           (a.full_name && !a.full_name.includes("#") ? a.full_name : "") ||
@@ -235,7 +253,7 @@ export async function GET(req: NextRequest) {
           { count: number; factor: number; totalPoints: number; campaignType: string }
         >();
 
-        if (Array.isArray(a.audited_leads)) {
+        if (frequency === "DAILY" && Array.isArray(a.audited_leads) && a.audited_leads.length > 0) {
           const uniqueList = creditedLeadsByAnalyst.get(analystId) || [];
           totalAudited = uniqueList.length;
           filteredShiftLeads = uniqueList;
@@ -277,7 +295,23 @@ export async function GET(req: NextRequest) {
           totalAudited = Number(a.total_audited ?? a.unique_leads_audited ?? a.audited_count ?? 0);
           qualifiedCount = Number(a.qualified_count ?? a.qualified_leads ?? a.qualified ?? 0);
           disqualifiedCount = Number(a.disqualified_count ?? a.disqualified_leads ?? a.disqualified ?? 0);
-          rectifiedCount = Number(a.rectified_count ?? 0);
+          rectifiedCount = Number(a.status_breakdown?.Rectified ?? a.rectified_count ?? 0);
+
+          if (Array.isArray(a.campaigns_breakdown) && a.campaigns_breakdown.length > 0) {
+            a.campaigns_breakdown.forEach((cb: any) => {
+              const cName = cb.campaign_name || cb.campaign_code || `Campaign #${cb.campaign_id}`;
+              const resolvedCampaignType = resolveLeadCampaignType(cb, cName);
+              const factor = getVerifiedPointFactor(resolvedCampaignType, pointsMap);
+              const count = Number(cb.total_audited ?? cb.qualified ?? 0);
+              const points = Math.round(count * factor * 100) / 100;
+              campaignGroupMap.set(cName, {
+                count,
+                factor,
+                totalPoints: points,
+                campaignType: resolvedCampaignType,
+              });
+            });
+          }
         }
 
         let totalAnalystPoints = Math.round(
@@ -348,9 +382,11 @@ export async function GET(req: NextRequest) {
           targetYear
         ).catch(() => null);
 
-        const baseTargetPoints = assignedTarget?.daily_target
-          ? Number(assignedTarget.daily_target)
-          : Number(matchingPlan.base_target_points || matchingPlan.base_target_leads || 50);
+        const baseTargetPoints = frequency === "MONTHLY"
+          ? Number(matchingPlan.base_target_points || matchingPlan.base_target_leads || (assignedTarget?.effective_monthly_target ? Number(assignedTarget.effective_monthly_target) : 500))
+          : (assignedTarget?.daily_target
+              ? Number(assignedTarget.daily_target)
+              : Number(matchingPlan.base_target_points || matchingPlan.base_target_leads || 50));
 
         // Compute points-based incentive calculation
         const result = calculateQaIncentive(
@@ -378,7 +414,7 @@ export async function GET(req: NextRequest) {
         result.job_title = isQaManager ? "QA Manager" : a.job_title || "QA Analyst";
         result.client_code = matchingPlan.client_code || "ALL";
         result.campaign_name = matchingPlan.campaign_name || "All Campaigns";
-        result.period_label = frequency === "DAILY" ? `Daily Shift (${date})` : `Monthly (${date.substring(0, 7)})`;
+        result.period_label = frequency === "DAILY" ? `Daily Shift (${rawDate})` : `Monthly Cumulative (${rawDate.substring(0, 7)})`;
         result.unique_leads_audited = totalAudited;
         result.total_audit_actions = Number(a.total_audit_actions || totalAudited);
         result.qualified_leads = qualifiedCount;
@@ -403,10 +439,27 @@ export async function GET(req: NextRequest) {
       }
     } else {
       // 3. Fallback to MySQL DB snapshots or live Slide 3 if CRM custom endpoint is unreachable
-      const [dbSnapshots, slide3Res] = await Promise.all([
-        getQaDailySnapshotsForDate(date).catch(() => []),
-        getCrmSlide3(date, 10).catch(() => ({ success: false, data: null })),
-      ]);
+      let dbSnapshots: any[] = [];
+      if (frequency === "MONTHLY") {
+        const monthStart = `${targetYear}-${String(targetMonth).padStart(2, "0")}-01`;
+        const monthEnd = `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+        dbSnapshots = await query<any>(
+          `SELECT crm_qa_agent_id, 
+                  MAX(qa_agent_name_snapshot) as qa_agent_name_snapshot,
+                  SUM(total_audits) as total_audits,
+                  SUM(qualified_leads) as qualified_leads,
+                  SUM(disqualified_leads) as disqualified_leads,
+                  SUM(achieved_points) as achieved_points
+           FROM qa_daily_snapshots
+           WHERE work_date >= ? AND work_date <= ?
+           GROUP BY crm_qa_agent_id`,
+          [monthStart, monthEnd]
+        ).catch(() => []);
+      } else {
+        dbSnapshots = await getQaDailySnapshotsForDate(date).catch(() => []);
+      }
+
+      const slide3Res = await getCrmSlide3(date, 10).catch(() => ({ success: false, data: null }));
 
       const analystMap = new Map<
         number,
@@ -465,7 +518,7 @@ export async function GET(req: NextRequest) {
         }
       });
 
-      const multiplier = frequency === "MONTHLY" ? 22 : 1;
+      const multiplier = frequency === "MONTHLY" ? 1 : 1;
 
       analystMap.forEach((analyst) => {
         const matchingPlan =
@@ -473,7 +526,7 @@ export async function GET(req: NextRequest) {
 
         const effectiveAudits = analyst.totalAudits * multiplier;
         const effectivePoints = Math.round(effectiveAudits * 1.45 * 100) / 100;
-        const baseTargetPoints = Number(matchingPlan.base_target_points || matchingPlan.base_target_leads || 50);
+        const baseTargetPoints = Number(matchingPlan.base_target_points || matchingPlan.base_target_leads || (frequency === "MONTHLY" ? 500 : 50));
 
         const result = calculateQaIncentive(
           effectivePoints,
