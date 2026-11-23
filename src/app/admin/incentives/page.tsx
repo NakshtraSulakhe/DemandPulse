@@ -36,11 +36,13 @@ import TargetManagementView from "@/components/productivity/target-management-vi
 import CampaignPointsEditor from "@/components/productivity/campaign-points-editor";
 import MonthlyIncentiveView from "@/components/incentives/monthly-incentive-view";
 import LeadershipIncentiveHub from "@/components/incentives/leadership-incentive-hub";
+import { QaIncentivePlan } from "@/types/qa-incentives";
 
 export default function IncentiveDashboardPage() {
   const [mainTab, setMainTab] = useState<
     "achievers" | "leadership" | "targets" | "points" | "monthly" | "qa_builder" | "qa_audits" | "pipeline"
   >("achievers");
+  const [editingQaPlan, setEditingQaPlan] = useState<QaIncentivePlan | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "eligible" | "ineligible">("all");
@@ -269,10 +271,27 @@ export default function IncentiveDashboardPage() {
       {mainTab === "monthly" && <MonthlyIncentiveView />}
 
       {mainTab === "qa_builder" && (
-        <QaIncentivePlanCreator onPlanSaved={() => setMainTab("qa_audits")} />
+        <QaIncentivePlanCreator
+          initialPlan={editingQaPlan}
+          onPlanSaved={() => {
+            setEditingQaPlan(null);
+            setMainTab("qa_audits");
+          }}
+          onCancel={() => {
+            setEditingQaPlan(null);
+            setMainTab("qa_audits");
+          }}
+        />
       )}
 
-      {mainTab === "qa_audits" && <QaIncentiveCalculatorView />}
+      {mainTab === "qa_audits" && (
+        <QaIncentiveCalculatorView
+          onEditPlan={(plan) => {
+            setEditingQaPlan(plan);
+            setMainTab("qa_builder");
+          }}
+        />
+      )}
 
       {mainTab === "pipeline" && (
         <div className="flex flex-col gap-6 animate-fadeIn">

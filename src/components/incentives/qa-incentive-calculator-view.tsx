@@ -27,6 +27,7 @@ import {
   Layers,
   Flame,
   Check,
+  Pencil,
 } from "lucide-react";
 import { formatINR } from "@/lib/incentives/formatters";
 import {
@@ -36,7 +37,13 @@ import {
   QaAuditLead,
 } from "@/types/qa-incentives";
 
-export default function QaIncentiveCalculatorView() {
+interface QaIncentiveCalculatorViewProps {
+  onEditPlan?: (plan: QaIncentivePlan) => void;
+}
+
+export default function QaIncentiveCalculatorView({
+  onEditPlan,
+}: QaIncentiveCalculatorViewProps = {}) {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [frequency, setFrequency] = useState<TargetFrequency>("DAILY");
   const [searchTerm, setSearchTerm] = useState("");
@@ -429,9 +436,33 @@ export default function QaIncentiveCalculatorView() {
                           </td>
 
                           <td className="py-3 px-2 text-center">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 truncate max-w-[140px] inline-block">
-                              {item.plan_name}
-                            </span>
+                            <div className="inline-flex items-center gap-1 justify-center">
+                              <span
+                                className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 truncate max-w-[130px] inline-block"
+                                title={item.plan_name}
+                              >
+                                {item.plan_name}
+                              </span>
+                              {onEditPlan && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const matched = plans.find(
+                                      (p) => String(p.id) === String(item.plan_id) || p.plan_name === item.plan_name
+                                    );
+                                    if (matched) {
+                                      onEditPlan(matched);
+                                    } else if (plans.length > 0) {
+                                      onEditPlan(plans[0]);
+                                    }
+                                  }}
+                                  className="p-1 rounded text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 cursor-pointer transition-colors"
+                                  title="Edit this plan"
+                                >
+                                  <Pencil className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                            </div>
                           </td>
 
                           <td className="py-3 px-2 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
@@ -855,7 +886,18 @@ export default function QaIncentiveCalculatorView() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5">
+                  {onEditPlan && (
+                    <button
+                      onClick={() => onEditPlan(p)}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors cursor-pointer"
+                      title="Edit Plan"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Edit Plan</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => handleTogglePlan(p)}
                     className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer"

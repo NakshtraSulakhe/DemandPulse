@@ -11,13 +11,16 @@ import {
   ChevronRight,
   Sparkles,
   Calculator,
+  Pencil,
 } from "lucide-react";
 import QaIncentivePlanCreator from "@/components/incentives/qa-incentive-plan-creator";
 import QaIncentiveCalculatorView from "@/components/incentives/qa-incentive-calculator-view";
 import CampaignPointsEditor from "@/components/productivity/campaign-points-editor";
+import { QaIncentivePlan } from "@/types/qa-incentives";
 
 export default function QaIncentivesPage() {
   const [activeTab, setActiveTab] = useState<"builder" | "calculator" | "points">("builder");
+  const [editingPlan, setEditingPlan] = useState<QaIncentivePlan | null>(null);
 
   return (
     <div className="w-full flex flex-col gap-6 animate-fadeIn pb-12">
@@ -54,9 +57,26 @@ export default function QaIncentivesPage() {
               : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
           }`}
         >
-          <Sliders className="w-4 h-4" />
-          <span>Plan Builder & Configuration</span>
+          {editingPlan ? <Pencil className="w-4 h-4 text-cyan-200" /> : <Sliders className="w-4 h-4" />}
+          <span>
+            {editingPlan
+              ? `Edit Plan #${editingPlan.id} (${editingPlan.frequency})`
+              : "Plan Builder & Configuration"}
+          </span>
         </button>
+
+        {editingPlan && (
+          <button
+            onClick={() => {
+              setEditingPlan(null);
+              setActiveTab("builder");
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 text-xs font-medium text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer"
+            title="Switch to creating a new plan"
+          >
+            <span>+ New Plan</span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveTab("calculator")}
@@ -85,9 +105,24 @@ export default function QaIncentivesPage() {
 
       {/* Tab Contents */}
       {activeTab === "builder" ? (
-        <QaIncentivePlanCreator onPlanSaved={() => setActiveTab("calculator")} />
+        <QaIncentivePlanCreator
+          initialPlan={editingPlan}
+          onPlanSaved={() => {
+            setEditingPlan(null);
+            setActiveTab("calculator");
+          }}
+          onCancel={() => {
+            setEditingPlan(null);
+            setActiveTab("calculator");
+          }}
+        />
       ) : activeTab === "calculator" ? (
-        <QaIncentiveCalculatorView />
+        <QaIncentiveCalculatorView
+          onEditPlan={(plan) => {
+            setEditingPlan(plan);
+            setActiveTab("builder");
+          }}
+        />
       ) : (
         <CampaignPointsEditor />
       )}
