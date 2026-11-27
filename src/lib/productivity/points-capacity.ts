@@ -38,17 +38,22 @@ export interface FloorCapacitySummary {
 /**
  * Authoritative CRM Point Factors
  * Derived from DemandFlow CRM's QA & Incentive audit engine (preview.php & settle.php):
+ * - Voice Mail / Voicemail: 0.25 points per lead (low-intent contact)
  * - MQL / Marketing Qualified Leads: 1 point per lead
  * - HQL / Callback: 2 points per lead
  * - BANT: 3 points per lead
  * - Appointment Generation: 5 points per lead
- * - Email Marketing: 1 point per lead
+ * - Email Marketing: 0.5 points per lead (BUG-005 FIX: was incorrectly documented as 1 — confirmed 0.5)
  * - Default: 1 point per lead
+ *
+ * BUG-006 FIX: voice_mail is now documented explicitly.
  */
 export const VERIFIED_CRM_POINT_FACTORS: Record<string, number> = {
+  // Voice mail — explicitly documented as 0.25 (low-intent prospecting contact)
   "voice mail": 0.25,
   voice_mail: 0.25,
   voicemail: 0.25,
+  // Standard lead types
   mql: 1,
   "marketing qualified leads": 1,
   "marketing qualified lead": 1,
@@ -62,6 +67,7 @@ export const VERIFIED_CRM_POINT_FACTORS: Record<string, number> = {
   appointment_generation: 5,
   "appointment setting": 5,
   appointment: 5,
+  // BUG-005 FIX: Email Marketing = 0.5 (confirmed from CRM audit engine — header comment was wrong)
   "email marketing": 0.5,
   email_marketing: 0.5,
   email: 0.5,
@@ -121,9 +127,12 @@ export function getVerifiedPointFactor(
     }
 
     // 2. Partial match against DB-configured factors (longest keys first for highest specificity)
+    // BUG-007 FIX: Only match if the KNOWN KEY is a substring of the input (not the other way around).
+    // Require minimum key length of 5 to avoid false matches from short keys like "bant", "hql".
+    // Also do NOT use kNorm.includes(normalized) — that direction is too broad and causes misclassification.
     const sortedCustom = [...normalizedEntries].sort((a, b) => b[0].length - a[0].length);
     for (const [kNorm, factor] of sortedCustom) {
-      if (kNorm.length >= 3 && (normalized.includes(kNorm) || kNorm.includes(normalized))) {
+      if (kNorm.length >= 5 && normalized.includes(kNorm)) {
         return factor;
       }
     }
@@ -138,12 +147,14 @@ export function getVerifiedPointFactor(
   }
 
   // 4. Partial key matching against built-in defaults (longest keys first)
+  // BUG-007 FIX: Same fix — only match if known key is contained within the input type string.
+  // Require minimum 5 chars to prevent short keys like "hql", "mql" from matching unrelated types.
   const sortedDefaults = Object.entries(VERIFIED_CRM_POINT_FACTORS)
     .map(([k, v]) => [normalizeCampaignTypeKey(k), v] as [string, number])
     .sort((a, b) => b[0].length - a[0].length);
 
   for (const [kNorm, factor] of sortedDefaults) {
-    if (kNorm.length >= 3 && (normalized.includes(kNorm) || kNorm.includes(normalized))) {
+    if (kNorm.length >= 5 && normalized.includes(kNorm)) {
       return factor;
     }
   }

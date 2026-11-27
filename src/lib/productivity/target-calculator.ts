@@ -58,14 +58,29 @@ export interface QaProductivitySummary {
 
 /**
  * Calculates productivity metrics from actual vs target.
+ * BUG-008 FIX: When target is 0 (unassigned agent), return zeroed result instead of
+ * Math.max(0.001) which caused absurd 100,000%+ completion percentages.
  */
 export function calculateProductivityMetrics(
   actual: number,
   target: number
 ): ProductivityMetricResult {
   const safeActual = Math.max(0, Number(actual) || 0);
-  const safeTarget = Math.max(0.001, Number(target) || 0);
+  const rawTarget = Number(target) || 0;
 
+  // BUG-008 FIX: If target is 0 (unassigned), return zeroed metrics rather than
+  // dividing by a near-zero epsilon that produces astronomical percentages.
+  if (rawTarget <= 0) {
+    return {
+      target: 0,
+      actual: Math.round(safeActual * 100) / 100,
+      achievementPct: 0,
+      remaining: 0,
+      isAchieved: false,
+    };
+  }
+
+  const safeTarget = rawTarget;
   const achievementPct = Math.round((safeActual / safeTarget) * 100 * 10) / 10;
   const remaining = Math.max(0, Math.round((safeTarget - safeActual) * 100) / 100);
   const isAchieved = safeActual >= safeTarget;

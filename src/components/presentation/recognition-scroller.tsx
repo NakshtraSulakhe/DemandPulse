@@ -121,7 +121,7 @@ export default function RecognitionScroller({
         <div className="flex items-center gap-1.5 text-[10.5px]">
           {/* Quick Filter Pill Buttons (rendered only when multiple categories exist) */}
           {distinctCategoryCount > 1 && (
-            <div className="hidden sm:flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               <button
                 onClick={() => {
                   setActiveFilter("all");
@@ -245,21 +245,44 @@ export default function RecognitionScroller({
           </div>
         </div>
       ) : (
-        <div className="p-2.5 grid grid-cols-1 md:grid-cols-3 gap-2.5">
-          <AnimatePresence mode="wait">
-            {visibleSliderItems.map((item) => (
-              <motion.div
-                key={item.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.2 }}
+        <>
+          <div className="p-2.5 grid grid-cols-1 md:grid-cols-3 gap-2.5">
+            <AnimatePresence mode="wait">
+              {visibleSliderItems.map((item) => (
+                <motion.div
+                  key={item.id}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <RecognitionCard item={item} isSlider />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+          {maxSliderPage > 0 && (
+            <div className="flex items-center justify-center gap-3 py-2 border-t border-slate-100 dark:border-white/10">
+              <button
+                onClick={() => setSliderIndex(Math.max(0, sliderIndex - 1))}
+                disabled={sliderIndex === 0}
+                className="px-3 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
               >
-                <RecognitionCard item={item} isSlider />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
+                ← Prev
+              </button>
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                {sliderIndex + 1} / {maxSliderPage + 1}
+              </span>
+              <button
+                onClick={() => setSliderIndex(Math.min(maxSliderPage, sliderIndex + 1))}
+                disabled={sliderIndex === maxSliderPage}
+                className="px-3 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -286,8 +309,10 @@ function RecognitionCard({
   isSlider?: boolean;
 }) {
   const isTargetAchiever =
+    // BUG-015 FIX: Only mark as target achiever when type is explicitly top_lead_scorer
+    // or is_target_met is true. Do NOT use incentive_amount alone — birthday/anniversary
+    // cards with any amount field would incorrectly get the Trophy badge.
     item.type === "top_lead_scorer" ||
-    (Number(item.incentive_amount) || 0) > 0 ||
     item.is_target_met === true;
   const earnedIncentive = Number(item.incentive_amount) || 0;
   const initials = getInitials(item.title);

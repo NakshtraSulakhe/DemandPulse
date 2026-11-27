@@ -81,7 +81,7 @@ function buildUrlFromDbCredentials() {
   const encodedUser = encodeURIComponent(user);
   const encodedPassword = encodeURIComponent(password);
 
-  return `mysql://${encodedUser}:${encodedPassword}@${cleanHost}:${cleanPort}/${cleanDb}?connect_timeout=15&connection_limit=1&pool_timeout=10`;
+  return `mysql://${encodedUser}:${encodedPassword}@${cleanHost}:${cleanPort}/${cleanDb}?connect_timeout=15&connection_limit=5&pool_timeout=10`;
 }
 
 function setupDatabaseEnv() {
@@ -96,6 +96,9 @@ setupDatabaseEnv();
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ["echarts", "zrender"],
+  experimental: {
+    serverComponentsExternalPackages: ["mysql2"],
+  },
 };
 
 export default nextConfig;

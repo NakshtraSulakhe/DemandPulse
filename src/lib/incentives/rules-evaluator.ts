@@ -202,7 +202,7 @@ export function calculateIncentiveBreakdown(
     }
   }
 
-  // Multiplier if configured
+  // Accelerator multiplier applies to tiered slab earnings (not base daily payout)
   if (matchedOverride?.multiplier && matchedOverride.multiplier > 0) {
     slabIncentive = Math.round(slabIncentive * matchedOverride.multiplier * 100) / 100;
   }

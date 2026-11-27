@@ -91,11 +91,9 @@ export function normalizeDateString(raw?: string | null): string | undefined {
     return `${year}-${month}-${day}`;
   }
 
-  const parsed = new Date(trimmed);
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10);
-  }
-
+  // BUG-009 (date) FIX: Removed `new Date(trimmed)` fallback.
+  // `new Date("05/01/2026")` parses as MM/DD in Node.js (US locale), so "05/01/2026"
+  // becomes May 1st instead of Jan 5th. Only the three explicitly matched formats above are safe.
   return undefined;
 }
 
@@ -351,10 +349,11 @@ export function generateShiftIntervals(
   const maxEndMinutes = baseStartMinutes + duration;
   let currentMinutes = baseStartMinutes;
 
-  // 17:30 IST is 12:00:00 UTC
-  // In US Eastern (EST UTC-5 / EDT UTC-4), 12:00 UTC corresponds to 07:00 EST / 08:00 EDT
-  const usInfo = getUsEasternTimeInfo();
-  const usBaseStartMinutes = usInfo.abbr === "EDT" ? 8 * 60 : 7 * 60;
+  // MED-010 FIX: Compute US Eastern time per-interval from actual UTC slot timestamps
+  // so custom config.startTime and DST transitions are accurately reflected.
+  const businessDate = getShiftBusinessDate(new Date(), config);
+  const shiftWindow = getShiftWindowForBusinessDate(businessDate, config);
+  const shiftStartUtcMs = new Date(shiftWindow.shiftStartUtc).getTime();
 
   for (let i = 0; i < totalSlots; i++) {
     const startHour = Math.floor(currentMinutes / 60) % 24;
@@ -367,14 +366,12 @@ export function generateShiftIntervals(
     const startStr = `${String(startHour).padStart(2, "0")}:${String(startMin).padStart(2, "0")}`;
     const endStr = `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
 
-    const usStartMins = usBaseStartMinutes + (i * intervalMinutes);
-    const usStartH = Math.floor(usStartMins / 60) % 24;
-    const usStartM = usStartMins % 60;
-    const usEndMins = usStartMins + intervalMinutes;
-    const usEndH = Math.floor(usEndMins / 60) % 24;
-    const usEndM = usEndMins % 60;
+    const slotStartOffsetMs = (currentMinutes - baseStartMinutes) * 60 * 1000;
+    const slotEndOffsetMs = (nextMinutes - baseStartMinutes) * 60 * 1000;
+    const usStartInfo = getUsEasternTimeInfo(new Date(shiftStartUtcMs + slotStartOffsetMs));
+    const usEndInfo = getUsEasternTimeInfo(new Date(shiftStartUtcMs + slotEndOffsetMs));
 
-    const usLabel = `${String(usStartH).padStart(2, "0")}:${String(usStartM).padStart(2, "0")} - ${String(usEndH).padStart(2, "0")}:${String(usEndM).padStart(2, "0")} ${usInfo.abbr}`;
+    const usLabel = `${usStartInfo.timeStr.slice(0, 5)} - ${usEndInfo.timeStr.slice(0, 5)} ${usStartInfo.abbr}`;
 
     intervals.push({
       index: i,

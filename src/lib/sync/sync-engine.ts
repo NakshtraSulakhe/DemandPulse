@@ -43,11 +43,13 @@ import {
 } from "@/lib/db/attendance-repository";
 import { upsertIncentiveDailySnapshots } from "@/lib/db/incentive-reporting-repository";
 import { startSyncRun, completeSyncRun } from "@/lib/db/sync-run-repository";
+import { execute, queryOne } from "@/lib/db";
 
-// Concurrency mutex lock: track in-progress syncs per business workDate
-const activeSyncDates = new Map<string, number>(); // workDate -> timestamp
+// BUG-009 FIX: Replaced in-memory mutex (fails on Vercel multi-instance) with
+// MySQL advisory lock using GET_LOCK() / RELEASE_LOCK() so it works across all
+// serverless function instances sharing the same DB.
+const SYNC_LOCK_TIMEOUT_MS = 60; // MySQL GET_LOCK timeout in seconds
 let lastSyncCompletedAt: Date | null = null;
-const SYNC_LOCK_TIMEOUT_MS = 60000; // 60 seconds auto-expiration
 
 export interface SyncEngineResult {
   success: boolean;
@@ -77,25 +79,37 @@ export async function runAnalyticsSync(
   const normalizedTarget = normalizeDateString(targetDate);
   const workDate = normalizedTarget || getShiftBusinessDate();
   const jobName = options?.jobName || "demandflow_analytics_sync";
+  const lockName = `demandflow_sync_${workDate}`;
 
-  // Check if this date is already syncing and not expired
-  const existingLockTime = activeSyncDates.get(workDate);
-  const isDateSyncing = existingLockTime && (startTime - existingLockTime < SYNC_LOCK_TIMEOUT_MS);
-
-  // Prevent overlapping sync jobs for the same date unless forced
-  if (isDateSyncing && !options?.force) {
-    return {
-      success: false,
-      workDate,
-      processedCount: 0,
-      failedCount: 0,
-      errors: { concurrency: `A synchronization run for ${workDate} is already in progress.` },
-      durationMs: Date.now() - startTime,
-      message: `Sync skipped: Job currently active for ${workDate}.`,
-    };
+  // BUG-009 FIX: Use MySQL advisory GET_LOCK() as a distributed lock that works
+  // across all Vercel serverless instances sharing the same MySQL database.
+  // Returns 1 if lock acquired, 0 if already held by another connection, null on error.
+  let lockAcquired = false;
+  try {
+    if (!options?.force) {
+      const lockResult = await queryOne<{ lock_result: number }>(
+        `SELECT GET_LOCK(?, ?) AS lock_result`,
+        [lockName, SYNC_LOCK_TIMEOUT_MS]
+      );
+      lockAcquired = lockResult?.lock_result === 1;
+      if (!lockAcquired) {
+        return {
+          success: false,
+          workDate,
+          processedCount: 0,
+          failedCount: 0,
+          errors: { concurrency: `A synchronization run for ${workDate} is already in progress (distributed lock held).` },
+          durationMs: Date.now() - startTime,
+          message: `Sync skipped: Distributed lock currently held for ${workDate}.`,
+        };
+      }
+    } else {
+      lockAcquired = true; // force mode skips lock
+    }
+  } catch (lockErr: any) {
+    console.warn("[SyncEngine] DB advisory lock unavailable — proceeding without lock:", lockErr?.message);
+    lockAcquired = true; // gracefully degrade if DB doesn't support advisory locks
   }
-
-  activeSyncDates.set(workDate, startTime);
 
   let runId: string | undefined;
   const errors: Record<string, string> = {};
@@ -122,7 +136,8 @@ export async function runAnalyticsSync(
       shiftState.businessDate === workDate ? shiftState.minutesIntoShift : 540;
 
     // 2. Fetch live data concurrently from CRM APIs
-    const [s1Result, s2Result, s3Result, s4Result, allocationsMap, incentivesResult] =
+    // BUG-010 FIX: Added s5Result (Slide 5 / Comparative Analytics) which was imported but never fetched.
+    const [s1Result, s2Result, s3Result, s4Result, s5Result, allocationsMap, incentivesResult] =
       await Promise.all([
         getCrmSlide1(workDate).catch((e) => ({
           success: false,
@@ -148,11 +163,17 @@ export async function runAnalyticsSync(
           data: undefined,
           isMockFallback: false,
         })),
+        getCrmSlide5(workDate).catch((e) => ({
+          success: false,
+          error: e.message || String(e),
+          data: undefined,
+          isMockFallback: false,
+        })),
         getAllocationsMapForDate(workDate).catch(() => new Map()),
         fetchDailySettled({ date: workDate }).catch(() => null),
       ]);
 
-    if (s1Result.isMockFallback || s2Result.isMockFallback) {
+    if (s1Result.isMockFallback || s2Result.isMockFallback || s5Result.isMockFallback) {
       hasMockFallback = true;
     }
 
@@ -204,19 +225,28 @@ export async function runAnalyticsSync(
     // =========================================================================
     if (s2Result.success && s2Result.data && Array.isArray(s2Result.data.agents)) {
       try {
-        const agentInputs = s2Result.data.agents.map((ag) => ({
-          crm_agent_id: ag.agent_id,
-          agent_name: ag.agent_name,
-          daily_target_points: ag.daily_target_points || 0,
-          achieved_points: ag.achieved_points || 0,
-          qualified_leads: ag.qualified_leads || 0,
-          disqualified_leads: ag.disqualified_leads || 0,
-          generated_leads: ag.generated_leads || 0,
-          pending_qa_leads: ag.pending_qa || 0,
-          attendance_status: ag.attendance_status || (isAgentPresentForFloorCapacity(ag.attendance_status, ag.is_present) ? "Present" : "Absent"),
-          elapsed_work_minutes: elapsedMinutes,
-          source_updated_at: new Date(),
-        }));
+        const agentInputs = s2Result.data.agents.map((ag) => {
+          // BUG-011 FIX: Pre-compute attendance status before using in the mapping.
+          // The old code passed ag.attendance_status (possibly null) to isAgentPresentForFloorCapacity
+          // while simultaneously using ag.attendance_status in the same || expression — a self-referential bug.
+          const rawAttStatus = ag.attendance_status || "";
+          const resolvedAttStatus = rawAttStatus
+            ? rawAttStatus
+            : (isAgentPresentForFloorCapacity(undefined, ag.is_present) ? "Present" : "Absent");
+          return {
+            crm_agent_id: ag.agent_id,
+            agent_name: ag.agent_name,
+            daily_target_points: ag.daily_target_points || 0,
+            achieved_points: ag.achieved_points || 0,
+            qualified_leads: ag.qualified_leads || 0,
+            disqualified_leads: ag.disqualified_leads || 0,
+            generated_leads: ag.generated_leads || 0,
+            pending_qa_leads: ag.pending_qa || 0,
+            attendance_status: resolvedAttStatus,
+            elapsed_work_minutes: elapsedMinutes,
+            source_updated_at: new Date(),
+          };
+        });
 
         const res = await upsertAgentDailySnapshots(
           workDate,
@@ -279,13 +309,21 @@ export async function runAnalyticsSync(
         absentAgents = s1Result.data.kpi_cards.absent_today || 0;
       }
 
-      // Reconcile with Slide 1 attendance if Slide 2 had no attendance metadata
+      // HIGH-001 FIX: Log a warning instead of silently overriding computed floor capacity values.
+      // The old code silently clamped presentAgents down when Slide 1 KPI count was lower,
+      // masking data discrepancies without any audit trail.
       if (s1Result.success && s1Result.data?.kpi_cards && s1Result.data.kpi_cards.present_today > 0) {
         const s1Present = s1Result.data.kpi_cards.present_today;
         const s1Absent = s1Result.data.kpi_cards.absent_today;
         if (presentAgents > s1Present) {
-          presentAgents = s1Present;
-          absentAgents = s1Absent;
+          console.warn(
+            `[SyncEngine] Floor capacity discrepancy for ${workDate}: ` +
+            `Slide 2 agent-level data shows ${presentAgents} present, ` +
+            `but Slide 1 KPI shows only ${s1Present}. ` +
+            `Using Slide 2 value as it is derived from individual agent records. ` +
+            `Investigate CRM data refresh timing if this recurs.`
+          );
+          // Do NOT silently override — keep the agent-level value from Slide 2 (more precise)
         }
       }
 
@@ -312,12 +350,15 @@ export async function runAnalyticsSync(
     // =========================================================================
     if (s3Result.success && s3Result.data && Array.isArray(s3Result.data.qa_heatmap)) {
       try {
+        // BUG-012 FIX: Removed hardcoded name-based exclusions ("sagar", "mayur jadhav").
+        // Name-based filtering in production is fragile — if a new employee has a matching name
+        // substring they'd be silently excluded. Keep only the stable numeric ID exclusion.
+        // Add any permanent exclusions to a DB-driven list (slide_system_settings or dedicated table).
+        const EXCLUDED_QA_USER_IDS = new Set([99]); // numeric ID exclusions only
         const activeQaHeatmap = s3Result.data.qa_heatmap.filter(
           (qa) =>
             ((qa.total_audited || 0) > 0 || (qa.total_qualified || 0) > 0) &&
-            qa.user_id !== 99 &&
-            !qa.full_name?.toLowerCase().includes("sagar") &&
-            !qa.full_name?.toLowerCase().includes("mayur jadhav")
+            !EXCLUDED_QA_USER_IDS.has(qa.user_id)
         );
         const targetQaHeatmap = activeQaHeatmap;
 
@@ -496,6 +537,26 @@ export async function runAnalyticsSync(
     }
 
     // =========================================================================
+    // H. VALIDATE COMPARATIVE ANALYTICS (Slide 5)
+    // =========================================================================
+    // Slide 5 historical DB views are aggregated from Slide 3 & 4 interval tables;
+    // fetching Slide 5 here ensures API reachability and surfaces any Slide 5 errors.
+    if (s5Result.success && s5Result.data) {
+      const timelineCount = Array.isArray(s5Result.data.comparison_timeline)
+        ? s5Result.data.comparison_timeline.length
+        : 0;
+      const formsCount = Array.isArray(s5Result.data.form_submissions)
+        ? s5Result.data.form_submissions.length
+        : 0;
+      if (timelineCount > 0 || formsCount > 0) {
+        processedRecords++;
+      }
+    } else if (s5Result.error) {
+      errors.slide5 = s5Result.error;
+      failedRecords++;
+    }
+
+    // =========================================================================
     // 3. COMPLETE SYNC RUN IN DATABASE
     // =========================================================================
     const hasErrors = Object.keys(errors).length > 0;
@@ -513,7 +574,12 @@ export async function runAnalyticsSync(
       }).catch((e) => console.warn("[SyncEngine] Failed to completeSyncRun in database:", e?.message || e));
     }
 
-    lastSyncCompletedAt = new Date();
+    // BUG-013 FIX: Only set lastSyncCompletedAt on the explicit success path.
+    // Previously it was also set in the finally block, so even a failed sync reported
+    // "just synced" in the status endpoint, masking the fact that the last SUCCESS was much earlier.
+    if (syncStatus !== "failed") {
+      lastSyncCompletedAt = new Date();
+    }
 
     return {
       success: syncStatus !== "failed",
@@ -550,8 +616,11 @@ export async function runAnalyticsSync(
       message: `Sync failed: ${errorMsg}`,
     };
   } finally {
-    activeSyncDates.delete(workDate);
-    lastSyncCompletedAt = new Date();
+    // BUG-009 FIX: Release MySQL advisory lock so other instances can proceed.
+    try {
+      await execute(`SELECT RELEASE_LOCK(?)`, [lockName]).catch(() => {});
+    } catch { /* ignore release errors */ }
+    // BUG-013 FIX: Do NOT update lastSyncCompletedAt here — only set on success path above.
   }
 }
 
@@ -560,8 +629,8 @@ export async function runAnalyticsSync(
  */
 export function getSyncEngineStatus() {
   return {
-    isSyncRunning: activeSyncDates.size > 0,
-    activeDates: Array.from(activeSyncDates.keys()),
+    isSyncRunning: false, // Distributed MySQL lock state is checked per-run via GET_LOCK
+    activeDates: [] as string[],
     lastSyncCompletedAt: lastSyncCompletedAt ? lastSyncCompletedAt.toISOString() : null,
   };
 }

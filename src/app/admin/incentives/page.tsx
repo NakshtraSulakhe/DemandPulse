@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Coins,
   Users,
@@ -38,10 +39,53 @@ import MonthlyIncentiveView from "@/components/incentives/monthly-incentive-view
 import LeadershipIncentiveHub from "@/components/incentives/leadership-incentive-hub";
 import { QaIncentivePlan } from "@/types/qa-incentives";
 
-export default function IncentiveDashboardPage() {
-  const [mainTab, setMainTab] = useState<
-    "achievers" | "leadership" | "targets" | "points" | "monthly" | "qa_builder" | "qa_audits" | "pipeline"
-  >("achievers");
+type IncentiveMainTab =
+  | "achievers"
+  | "leadership"
+  | "targets"
+  | "points"
+  | "monthly"
+  | "qa_builder"
+  | "qa_audits"
+  | "pipeline";
+
+const VALID_TABS: IncentiveMainTab[] = [
+  "achievers",
+  "leadership",
+  "targets",
+  "points",
+  "monthly",
+  "qa_builder",
+  "qa_audits",
+  "pipeline",
+];
+
+function IncentiveDashboardContent() {
+  const searchParams = useSearchParams();
+  const [mainTab, setMainTab] = useState<IncentiveMainTab>("achievers");
+
+  // Sync tab from URL ?tab= parameter so the 3-stage workspace nav deep-links cleanly
+  useEffect(() => {
+    const param = searchParams.get("tab") as IncentiveMainTab | null;
+    if (param && VALID_TABS.includes(param)) {
+      setMainTab(param);
+    } else if (!param) {
+      setMainTab("achievers");
+    }
+  }, [searchParams]);
+
+  const selectTab = (tab: IncentiveMainTab) => {
+    setMainTab(tab);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (tab === "achievers") {
+        url.searchParams.delete("tab");
+      } else {
+        url.searchParams.set("tab", tab);
+      }
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
   const [editingQaPlan, setEditingQaPlan] = useState<QaIncentivePlan | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -116,147 +160,67 @@ export default function IncentiveDashboardPage() {
 
   return (
     <div className="w-full flex flex-col gap-6 animate-fadeIn pb-12">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-              Incentive Pipeline
-            </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">Agent Performance & QA Audit Administration</span>
-          </div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2 mt-1">
-            <Coins className="w-5 h-5 text-amber-500" />
-            Incentive Management Console
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Track daily agent incentive achievers from CRM and configure multi-tier QA team audit incentive plans.
-          </p>
+      {/* Grouped Hub Tabs (Calculate & Check vs. Setup & Targets) */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-2 rounded-2xl glass-panel border border-slate-200/80 dark:border-white/10">
+        {/* Group A: Calculate & Check */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 px-2">
+            Calculate:
+          </span>
+          {[
+            { id: "achievers" as const, label: "Daily Achievers", icon: Trophy },
+            { id: "qa_audits" as const, label: "QA Audit Calc", icon: FileCheck2 },
+            { id: "monthly" as const, label: "Monthly Tracker", icon: Coins },
+            { id: "pipeline" as const, label: "Daily Pipeline", icon: TrendingUp },
+          ].map((t) => {
+            const Icon = t.icon;
+            const active = mainTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => selectTab(t.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  active
+                    ? "bg-cyan-600 text-white shadow-sm"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Global Navigation Shortcuts */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Link
-            href="/admin/incentives/leadership"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
-            <span>Leadership Console</span>
-          </Link>
-          <Link
-            href="/admin/incentives/qa-plans"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all cursor-pointer"
-          >
-            <Sliders className="w-3.5 h-3.5" />
-            <span>QA Plans Console</span>
-          </Link>
-          <Link
-            href="/admin/incentives/settlements"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold shadow-md shadow-cyan-600/20 transition-all cursor-pointer"
-          >
-            <span>Settlement Console</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </Link>
+        {/* Group B: Setup & Targets */}
+        <div className="flex items-center gap-1.5 flex-wrap border-t lg:border-t-0 lg:border-l border-slate-200/80 dark:border-white/10 pt-2 lg:pt-0 lg:pl-3">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 px-2">
+            Setup:
+          </span>
+          {[
+            { id: "targets" as const, label: "Targets", icon: Target },
+            { id: "points" as const, label: "Campaign Points", icon: Award },
+            { id: "qa_builder" as const, label: "QA Plans", icon: Sliders },
+            { id: "leadership" as const, label: "Leadership", icon: ShieldCheck },
+          ].map((t) => {
+            const Icon = t.icon;
+            const active = mainTab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => selectTab(t.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  active
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
         </div>
-      </div>
-
-      {/* Main Top Navigation Tabs */}
-      <div className="flex items-center gap-2 p-1.5 rounded-2xl glass-panel border border-slate-200/80 dark:border-white/10 flex-wrap">
-        <button
-          onClick={() => setMainTab("achievers")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "achievers"
-              ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <Trophy className="w-4 h-4" />
-          <span>Daily Achievers</span>
-        </button>
-
-        <button
-          onClick={() => setMainTab("leadership")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "leadership"
-              ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-500/20"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Operations Leadership (TL & Mgr)</span>
-        </button>
-
-        <button
-          onClick={() => setMainTab("targets")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "targets"
-              ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/20"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <Target className="w-4 h-4" />
-          <span>Target Management (Agent & QA)</span>
-        </button>
-
-        <button
-          onClick={() => setMainTab("points")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "points"
-              ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <Award className="w-4 h-4" />
-          <span>Campaign Points</span>
-        </button>
-
-        <button
-          onClick={() => setMainTab("monthly")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "monthly"
-              ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <Coins className="w-4 h-4" />
-          <span>Agent Monthly Incentives</span>
-        </button>
-
-        <button
-          onClick={() => setMainTab("qa_builder")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "qa_builder"
-              ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <Sliders className="w-4 h-4" />
-          <span>QA Plans</span>
-        </button>
-
-        <button
-          onClick={() => setMainTab("qa_audits")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "qa_audits"
-              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <FileCheck2 className="w-4 h-4" />
-          <span>QA Audit Calculations</span>
-        </button>
-
-        <button
-          onClick={() => setMainTab("pipeline")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            mainTab === "pipeline"
-              ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm"
-              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-          }`}
-        >
-          <Coins className="w-4 h-4" />
-          <span>Daily Settlement Pipeline</span>
-        </button>
       </div>
 
       {/* Conditional Tab Rendering */}
@@ -739,5 +703,19 @@ export default function IncentiveDashboardPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function IncentiveDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="w-full py-12 text-center text-xs text-slate-500 dark:text-slate-400">
+          Loading Incentive Workspace...
+        </div>
+      }
+    >
+      <IncentiveDashboardContent />
+    </Suspense>
   );
 }

@@ -46,8 +46,8 @@ const OPERATIONS_ALLOWED_ROUTES = [
 // Admin full navigation
 const ADMIN_NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/incentives", label: "Incentive Hub (Agents & QA)", icon: Coins },
-  { href: "/admin/incentives/qa-plans", label: "QA Incentive Plans", icon: Award },
+  { href: "/admin/incentives", label: "Incentive Hub (Calc & Review)", icon: Coins },
+  { href: "/admin/incentive-config", label: "Incentive Policies & Slabs", icon: Award },
   { href: "/employee/productivity", label: "Employee Productivity Portal", icon: UserCheck },
   { href: "/admin/shifts", label: "US Shift Management", icon: Clock },
   { href: "/admin/campaign-targets", label: "Campaign Targets", icon: Target },
@@ -106,7 +106,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         }
       } catch (err) {
         console.warn("[PortalLayout] Auth verification error:", err);
-        if (isMounted) {
+        if (isMounted) { 
           router.replace("/login");
         }
       } finally {
@@ -311,14 +311,21 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                 <span>{isOps ? "Operations Scope" : "Target Administration"}</span>
                 {isOps && (
                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold">
-                    5 TABS
+                    {/* MED-004 FIX: Dynamic count instead of hardcoded "5 TABS" */}
+                    {OPERATIONS_NAV_ITEMS.length} TABS
                   </span>
                 )}
               </div>
 
               {displayedNavItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = pathname === item.href;
+                // IMP-008 FIX: Use startsWith for active state so nested route pages
+                // correctly highlight their parent nav item. Guard against /admin matching
+                // all /admin/* by requiring either exact match or a trailing slash.
+                const isActive =
+                  pathname === item.href ||
+                  (item.href !== "/admin" && pathname.startsWith(item.href + "/")) ||
+                  (item.href === "/admin" && pathname === "/admin");
                 return (
                   <Link
                     key={item.href}
@@ -356,7 +363,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                   </div>
                   {HISTORICAL_ANALYTICS_NAV_ITEMS.map((item) => {
                     const Icon = item.icon;
-                    const isActive = pathname === item.href;
+                    const isActive =
+                      pathname === item.href ||
+                      pathname.startsWith(item.href + "/");
                     return (
                       <Link
                         key={item.href}

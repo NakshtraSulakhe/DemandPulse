@@ -1,7 +1,7 @@
 # ========================================================
 # DemandPulse Next.js Multi-Stage Production Dockerfile
 # Native MySQL Driver (mysql2/promise) - Zero Prisma Engine
-# Optimized for Docker Desktop / Windows & Linux servers
+# Configured for Hostinger VPS & Docker (Internal Ports: 3002 / 5002)
 # ========================================================
 
 # Stage 1: Dependencies installation
@@ -43,7 +43,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
+ENV PORT=3002
 ENV HOSTNAME="0.0.0.0"
 
 # Install curl / wget for container healthchecks
@@ -64,7 +64,8 @@ RUN chown -R nextjs:nodejs /app
 
 USER nextjs
 
-EXPOSE 3000
+# Internal ports: 3002 (frontend) and 5002 (backend/api)
+EXPOSE 3002 5002
 
-# Launch Next.js production server on 0.0.0.0:3000
-CMD ["npx", "next", "start", "-p", "3000", "-H", "0.0.0.0"]
+# Launch Next.js production server using runtime PORT variable (defaults to 3002)
+CMD ["sh", "-c", "npx next start -p ${PORT:-3002} -H 0.0.0.0"]
